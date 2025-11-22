@@ -55,8 +55,8 @@
   - *Dependencies*: T001, T003
   - *Estimate*: 2-3 hours
 
-- ☐ **T005**: Background Location Tracking
-  - *Detail*: `tasks/T005-background-location.md` (create on request)
+- ✅ **T005**: Background Location Tracking
+  - *Detail*: `tasks/T005-background-location.md`
   - *Scope*: Configure flutter_background_service, foreground service, platform setup
   - *Dependencies*: T004
   - *Estimate*: 3-4 hours
@@ -320,14 +320,15 @@
 ## Progress Summary
 
 **Total Tasks**: 40
-**Completed**: 4
+**Completed**: 5
 **In Progress**: 0
-**Pending**: 36
+**Pending**: 35
 **Blocked**: 0
 
 **Current Phase**: Phase 2 - Core Location & Sensors
-**Last Completed**: T004 - Basic Location Service
-**Next Task**: T005 - Background Location Tracking
+**Last Completed**: T005 - Background Location Tracking
+**Current Task**: None (ready for next task)
+**Next Task**: T006 - Battery-Optimized Location Strategy
 
 ---
 

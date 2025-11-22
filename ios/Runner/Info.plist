@@ -45,5 +45,23 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+
+	<!-- Location Usage Descriptions (REQUIRED) -->
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>AutoRide needs location access to automatically detect your bike trips.</string>
+
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>AutoRide needs background location to track trips while the app is closed or in the background.</string>
+
+	<key>NSLocationAlwaysUsageDescription</key>
+	<string>AutoRide needs background location to track trips while the app is closed.</string>
+
+	<!-- Background Modes (REQUIRED for background location) -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>location</string>
+		<string>fetch</string>
+		<string>processing</string>
+	</array>
 </dict>
 </plist>
