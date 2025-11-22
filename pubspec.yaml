@@ -44,8 +44,5 @@ dev_dependencies:
   # Testing
   sqflite_common_ffi: ^2.3.0     # SQLite testing on desktop platforms
 
-# Note: geolocator_linux is a transitive dependency that only affects Linux builds.
-# Since we're targeting Android/iOS, it won't be included in the final app bundles.
-
 flutter:
   uses-material-design: true

@@ -17,6 +17,7 @@ flutter run --release            # Test on physical device (sensors/GPS)
 ```
 
 **Critical Rules**:
+- **NEVER commit autonomously** - Only commit when user executes `/commit` command
 - Always use `sealed class` with freezed models (see `location_data.dart`)
 - Stream providers use `Ref ref`, not specific ref types
 - Run `flutter analyze` BEFORE `flutter test`
@@ -64,7 +65,7 @@ flutter run --release            # Test on physical device (sensors/GPS)
 2. Static analysis: `flutter analyze` (MUST pass)
 3. Unit tests: `flutter test`
 4. Physical device test (for sensor/location tasks)
-5. Commit changes
+5. Wait for user to run `/commit` (NEVER commit autonomously)
 
 **Task Dependencies**: Never start a task before its dependencies are complete. See `tasks/TASKS.md` for dependency tree.
 
@@ -558,11 +559,15 @@ flutter logs --verbose
 
 ### Before Committing
 
+**IMPORTANT**: Never create commits autonomously. Only commit when user executes `/commit` command.
+
 ```bash
 flutter analyze          # Must pass
 flutter test            # All tests must pass
 git status              # Check what's staged
 git diff               # Review changes
+
+# Wait for user to run /commit - DO NOT run git commit yourself
 ```
 
 ### Creating New Features

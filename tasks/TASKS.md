@@ -91,8 +91,8 @@
   - *Dependencies*: T001
   - *Estimate*: 2 hours
 
-- ☐ **T010**: Trip Repository Implementation
-  - *Detail*: `tasks/T010-trip-repository.md` (create on request)
+- ✅ **T010**: Trip Repository Implementation
+  - *Detail*: `tasks/T010-trip-repository.md`
   - *Scope*: CRUD operations, trip history queries, Riverpod integration
   - *Dependencies*: T009, T003
   - *Estimate*: 2-3 hours
@@ -320,15 +320,15 @@
 ## Progress Summary
 
 **Total Tasks**: 40
-**Completed**: 9
+**Completed**: 10
 **In Progress**: 0
-**Pending**: 31
+**Pending**: 30
 **Blocked**: 0
 
 **Current Phase**: Phase 3 - Data Management
-**Last Completed**: T009 - SQLite Database Schema
+**Last Completed**: T010 - Trip Repository Implementation
 **Current Task**: None (ready for next task)
-**Next Task**: T010 - Trip Repository Implementation
+**Next Task**: T011 - Settings & Preferences
 
 ---
 

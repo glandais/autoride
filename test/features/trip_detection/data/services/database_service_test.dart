@@ -1,8 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
-import 'package:autoride/features/trip_detection/data/services/database_service.dart';
 import 'package:autoride/features/trip_detection/domain/models/trip.dart';
 import 'package:autoride/features/trip_detection/domain/models/activity_confidence.dart';
+import '../../../../helpers/test_database.dart';
 
 void main() {
   // Initialize FFI for desktop testing
@@ -11,29 +11,24 @@ void main() {
     databaseFactory = databaseFactoryFfi;
   });
 
-  late DatabaseService dbService;
+  late Database db;
 
   setUp(() async {
-    dbService = DatabaseService();
-    // Use in-memory database for tests
-    await dbService.deleteDatabase();
+    // Create in-memory database to avoid file conflicts
+    db = await createTestDatabase();
   });
 
   tearDown(() async {
-    await dbService.close();
-    await dbService.deleteDatabase();
+    await db.close();
   });
 
   group('DatabaseService', () {
     test('should initialize database successfully', () async {
-      final db = await dbService.database;
-
       expect(db, isNotNull);
       expect(db.isOpen, isTrue);
     });
 
     test('should create trips table', () async {
-      final db = await dbService.database;
 
       final tables = await db.rawQuery(
         "SELECT name FROM sqlite_master WHERE type='table' AND name='trips'",
@@ -44,7 +39,6 @@ void main() {
     });
 
     test('should create route_points table', () async {
-      final db = await dbService.database;
 
       final tables = await db.rawQuery(
         "SELECT name FROM sqlite_master WHERE type='table' AND name='route_points'",
@@ -55,7 +49,6 @@ void main() {
     });
 
     test('should create indexes', () async {
-      final db = await dbService.database;
 
       final indexes = await db.rawQuery(
         "SELECT name FROM sqlite_master WHERE type='index'",
@@ -70,7 +63,6 @@ void main() {
     });
 
     test('should enable foreign keys', () async {
-      final db = await dbService.database;
 
       final result = await db.rawQuery('PRAGMA foreign_keys');
 
@@ -78,7 +70,6 @@ void main() {
     });
 
     test('should insert and retrieve trip', () async {
-      final db = await dbService.database;
 
       final trip = Trip(
         startTime: DateTime.now().subtract(const Duration(hours: 1)),
@@ -110,7 +101,6 @@ void main() {
     });
 
     test('should insert and retrieve route points', () async {
-      final db = await dbService.database;
 
       // First insert a trip
       final tripMap = {
@@ -153,7 +143,6 @@ void main() {
     });
 
     test('should cascade delete route points when trip is deleted', () async {
-      final db = await dbService.database;
 
       // Insert trip
       final tripMap = {
