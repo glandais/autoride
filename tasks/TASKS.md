@@ -114,8 +114,8 @@
   - *Dependencies*: T007, T008
   - *Estimate*: 2-3 hours
 
-- ☐ **T013**: Automatic Trip Start Detection
-  - *Detail*: `tasks/T013-trip-start-detection.md` (create on request)
+- ✅ **T013**: Automatic Trip Start Detection
+  - *Detail*: `tasks/T013-trip-start-detection.md`
   - *Scope*: Combine motion + GPS for automatic trip start
   - *Dependencies*: T004, T008, T012
   - *Estimate*: 3-4 hours
@@ -320,15 +320,15 @@
 ## Progress Summary
 
 **Total Tasks**: 40
-**Completed**: 12
+**Completed**: 13
 **In Progress**: 0
-**Pending**: 28
+**Pending**: 27
 **Blocked**: 0
 
 **Current Phase**: Phase 4 - Trip Detection Logic
-**Last Completed**: T012 - Trip State Machine
+**Last Completed**: T013 - Automatic Trip Start Detection
 **Current Task**: None (ready for next task)
-**Next Task**: T013 - Automatic Trip Start Detection
+**Next Task**: T014 - Automatic Trip Stop Detection
 
 ---
 

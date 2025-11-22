@@ -82,6 +82,32 @@ class AppConstants {
   static const int maxPauseDurationSeconds = 300; // 5 min - max pause before auto-stop
   static const int resumeMovementThresholdSeconds = 5; // Movement time before resume
 
+  // Trip Start Detection Configuration (T013)
+
+  // Confidence threshold to trigger trip start (0.0-1.0)
+  static const double tripStartConfidenceThreshold = 0.7;
+
+  // Minimum consecutive detections before starting trip
+  static const int tripStartMinConsecutiveDetections = 3;
+
+  // Time window for consecutive detection counting (seconds)
+  static const int tripStartDetectionWindowSeconds = 5;
+
+  // Cooldown period after false start (seconds)
+  static const int tripStartCooldownPeriodSeconds = 30;
+
+  // GPS speed range for cycling validation (km/h)
+  // Note: cyclingSpeedMin and cyclingSpeedMax already defined above
+
+  // Grace period before GPS required (seconds)
+  // Allows motion-only detection for first N seconds (e.g., GPS lock delay)
+  static const int tripStartGpsGracePeriodSeconds = 10;
+
+  // Weighting for confidence calculation
+  static const double tripStartMotionWeight = 0.6;    // 60% when GPS available
+  static const double tripStartSpeedWeight = 0.4;     // 40% when GPS available
+  // When GPS unavailable, motion weight = 1.0 (100%)
+
   // Database
   static const String databaseName = 'autoride.db';
   static const int databaseVersion = 1;
