@@ -184,4 +184,47 @@ extension MotionWindowExtensions on MotionWindow {
 
   /// Check if window has enough samples for analysis
   bool get hasEnoughSamples => samples.length >= 50; // ~1 second at 50Hz
+
+  /// Analyze if pattern indicates cycling (enhanced)
+  /// Uses multi-factor analysis for better accuracy (T008)
+  bool get indicatesCyclingEnhanced {
+    if (samples.isEmpty) return false;
+
+    // Check minimum samples
+    if (samples.length < 100) return false;
+
+    // Basic thresholds
+    final avgAccel = averageAcceleration;
+    final avgRotation = averageRotation;
+
+    // Must meet basic acceleration and rotation criteria
+    if (avgAccel < 10.0 || avgRotation < 0.5) {
+      return false;
+    }
+
+    // Check for periodic patterns (pedaling)
+    final hasPeriodicPattern = _hasPeriodicAcceleration();
+
+    return hasPeriodicPattern;
+  }
+
+  /// Check for periodic acceleration patterns (pedaling motion)
+  bool _hasPeriodicAcceleration() {
+    final magnitudes = samples
+        .map((s) => s.accelerometer.magnitude)
+        .toList();
+
+    // Count peaks
+    int peakCount = 0;
+    for (var i = 1; i < magnitudes.length - 1; i++) {
+      if (magnitudes[i] > magnitudes[i - 1] &&
+          magnitudes[i] > magnitudes[i + 1] &&
+          magnitudes[i] > 10.0) {
+        peakCount++;
+      }
+    }
+
+    // Expect at least 2-3 peaks in a window for cycling
+    return peakCount >= 2;
+  }
 }

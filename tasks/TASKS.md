@@ -74,8 +74,8 @@
   - *Dependencies*: T003
   - *Estimate*: 2-3 hours
 
-- ☐ **T008**: Cycling Motion Pattern Detection
-  - *Detail*: `tasks/T008-cycling-detection.md` (create on request)
+- ✅ **T008**: Cycling Motion Pattern Detection
+  - *Detail*: `tasks/T008-cycling-detection.md`
   - *Scope*: Implement cycling-specific motion patterns, threshold tuning
   - *Dependencies*: T007
   - *Estimate*: 3-4 hours
@@ -320,15 +320,15 @@
 ## Progress Summary
 
 **Total Tasks**: 40
-**Completed**: 7
+**Completed**: 8
 **In Progress**: 0
-**Pending**: 33
+**Pending**: 32
 **Blocked**: 0
 
 **Current Phase**: Phase 2 - Core Location & Sensors
-**Last Completed**: T006 - Battery-Optimized Location Strategy
+**Last Completed**: T008 - Cycling Motion Pattern Detection
 **Current Task**: None (ready for next task)
-**Next Task**: T008 - Cycling Motion Pattern Detection
+**Next Task**: T009 - SQLite Database Schema
 
 ---
 
