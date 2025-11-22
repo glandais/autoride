@@ -49,8 +49,8 @@
 ## Phase 2: Core Location & Sensors
 
 ### 2.1 Location Tracking
-- ☐ **T004**: Basic Location Service
-  - *Detail*: `tasks/T004-location-service.md` (create on request)
+- ✅ **T004**: Basic Location Service
+  - *Detail*: `tasks/T004-location-service.md`
   - *Scope*: Implement geolocator integration, location provider, permission check
   - *Dependencies*: T001, T003
   - *Estimate*: 2-3 hours
@@ -320,13 +320,14 @@
 ## Progress Summary
 
 **Total Tasks**: 40
-**Completed**: 3
+**Completed**: 4
 **In Progress**: 0
-**Pending**: 37
+**Pending**: 36
 **Blocked**: 0
 
-**Current Phase**: Phase 1 - Foundation & Setup
-**Next Task**: T004 - Basic Location Service
+**Current Phase**: Phase 2 - Core Location & Sensors
+**Last Completed**: T004 - Basic Location Service
+**Next Task**: T005 - Background Location Tracking
 
 ---
 
