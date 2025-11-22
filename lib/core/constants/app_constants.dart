@@ -55,6 +55,10 @@ class AppConstants {
   static const double cyclingRotationMin = 0.5;   // Minimum rotation for cycling
   static const double cyclingRotationMax = 3.0;   // Maximum typical rotation
 
+  // Stationary thresholds (T007, used in T014)
+  static const double stationaryAccelerationMax = 1.0;  // m/s² - max for stationary
+  static const double stationaryRotationMax = 0.2;      // rad/s - max for stationary
+
   // Pedaling frequency (Hz)
   static const double pedalingFrequencyMin = 0.5;   // 30 RPM minimum
   static const double pedalingFrequencyMax = 2.0;   // 120 RPM maximum
@@ -107,6 +111,25 @@ class AppConstants {
   static const double tripStartMotionWeight = 0.6;    // 60% when GPS available
   static const double tripStartSpeedWeight = 0.4;     // 40% when GPS available
   // When GPS unavailable, motion weight = 1.0 (100%)
+
+  // Trip Stop Detection Configuration (T014)
+
+  // Minimum pause duration before considering pause state (seconds)
+  // Brief stops (< this value) keep trip active
+  static const int minPauseDurationSeconds = 30; // 30s - traffic lights, intersections
+
+  // Maximum pause duration before auto-stop (seconds)
+  // Note: maxPauseDurationSeconds already defined above = 300 (5 min)
+
+  // Minimum consecutive stationary detections before pause
+  static const int minConsecutiveStationaryDetections = 3;
+
+  // Minimum movement duration to resume trip (seconds)
+  // Note: resumeMovementThresholdSeconds already defined above = 5
+
+  // Stationary thresholds already defined in T007:
+  // - stationaryAccelerationMax = 1.0 m/s²
+  // - stationaryRotationMax = 0.2 rad/s
 
   // Database
   static const String databaseName = 'autoride.db';

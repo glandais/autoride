@@ -119,12 +119,14 @@
   - *Scope*: Combine motion + GPS for automatic trip start
   - *Dependencies*: T004, T008, T012
   - *Estimate*: 3-4 hours
+  - *Completed*: 2025-11-22
 
-- ☐ **T014**: Automatic Trip Stop Detection
-  - *Detail*: `tasks/T014-trip-stop-detection.md` (create on request)
+- ✅ **T014**: Automatic Trip Stop Detection
+  - *Detail*: `tasks/T014-trip-stop-detection.md`
   - *Scope*: Detect trip end (stationary threshold, timeout logic)
   - *Dependencies*: T013
   - *Estimate*: 2-3 hours
+  - *Completed*: 2025-11-22
 
 - ☐ **T015**: Trip Data Recording
   - *Detail*: `tasks/T015-trip-recording.md` (create on request)
@@ -320,15 +322,15 @@
 ## Progress Summary
 
 **Total Tasks**: 40
-**Completed**: 13
+**Completed**: 14
 **In Progress**: 0
-**Pending**: 27
+**Pending**: 26
 **Blocked**: 0
 
 **Current Phase**: Phase 4 - Trip Detection Logic
-**Last Completed**: T013 - Automatic Trip Start Detection
+**Last Completed**: T014 - Automatic Trip Stop Detection (2025-11-22)
 **Current Task**: None (ready for next task)
-**Next Task**: T014 - Automatic Trip Stop Detection
+**Next Task**: T015 - Trip Data Recording
 
 ---
 

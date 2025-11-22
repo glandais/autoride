@@ -3,16 +3,18 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 import '../../domain/models/location_data.dart';
 import '../../domain/models/motion_data.dart';
 import '../../domain/models/trip_state.dart';
+import '../../domain/models/trip_stop_state.dart';
 import 'sensor_service.dart';
 import 'location_service.dart';
 import 'trip_start_detector.dart';
+import 'trip_stop_detector.dart';
 import 'trip_state_machine.dart';
 
 part 'trip_detection_coordinator.g.dart';
 
 /// Coordinates trip detection by combining motion and location data
 ///
-/// Listens to sensor and GPS streams, analyzes data for trip start,
+/// Listens to sensor and GPS streams, analyzes data for trip start/stop,
 /// and manages state machine transitions.
 @riverpod
 class TripDetectionCoordinator extends _$TripDetectionCoordinator {
@@ -81,7 +83,7 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
     // Get current state machine state
     final currentState = ref.read(tripStateMachineProvider);
 
-    // Only analyze in Idle or Detecting states
+    // Analyze based on current state
     await currentState.mapOrNull(
       idle: (_) async {
         // In idle, start detection phase
@@ -89,8 +91,16 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
         await _analyzeForTripStart(motion);
       },
       detecting: (_) async {
-        // In detecting, continue analysis
+        // In detecting, continue analysis for trip start
         await _analyzeForTripStart(motion);
+      },
+      active: (_) async {
+        // In active, check for trip stop/pause
+        await _analyzeForTripStop(motion);
+      },
+      paused: (_) async {
+        // In paused, check for resume or stop
+        await _analyzeForResume(motion);
       },
     );
   }
@@ -118,6 +128,78 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
       // Stop analyzing (trip has started)
       stopListening();
     }
+  }
+
+  /// Analyze motion and location for trip stop/pause
+  Future<void> _analyzeForTripStop(MotionData motion) async {
+    // Call trip stop detector
+    final decision = await ref
+        .read(tripStopDetectorProvider.notifier)
+        .analyzeForTripStop(motion, _lastLocation);
+
+    if (decision == StopDecision.pauseTrip) {
+      // Pause trip
+      ref.read(tripStateMachineProvider.notifier).pauseTrip();
+
+      // Update coordinator state
+      final stateMachineState = ref.read(tripStateMachineProvider);
+      state = AsyncValue.data(stateMachineState);
+    } else if (decision == StopDecision.stopTrip) {
+      // Stop trip
+      await _finalizeAndStopTrip();
+    }
+  }
+
+  /// Analyze motion and location for trip resume or stop
+  Future<void> _analyzeForResume(MotionData motion) async {
+    // Check if should resume trip
+    final shouldResume = ref
+        .read(tripStopDetectorProvider.notifier)
+        .shouldResumeTrip(motion, _lastLocation);
+
+    if (shouldResume) {
+      // Resume trip
+      ref.read(tripStateMachineProvider.notifier).resumeTrip();
+
+      // Reset stop detector
+      ref.read(tripStopDetectorProvider.notifier).reset();
+
+      // Update coordinator state
+      final stateMachineState = ref.read(tripStateMachineProvider);
+      state = AsyncValue.data(stateMachineState);
+    } else {
+      // Still paused - check if should stop
+      final decision = await ref
+          .read(tripStopDetectorProvider.notifier)
+          .analyzeForTripStop(motion, _lastLocation);
+
+      if (decision == StopDecision.stopTrip) {
+        // Stop trip after extended pause
+        await _finalizeAndStopTrip();
+      }
+    }
+  }
+
+  /// Finalize trip data and stop trip
+  Future<void> _finalizeAndStopTrip() async {
+    // TODO: Save trip to database (will be implemented in T015)
+    // TODO: Calculate final statistics (will be implemented in T015)
+    // TODO: Notify user of trip completion (will be implemented in T025)
+
+    // Stop trip in state machine
+    ref.read(tripStateMachineProvider.notifier).stopTrip();
+
+    // Reset stop detector
+    ref.read(tripStopDetectorProvider.notifier).reset();
+
+    // Update coordinator state
+    final stateMachineState = ref.read(tripStateMachineProvider);
+    state = AsyncValue.data(stateMachineState);
+
+    // Return to listening for next trip
+    stopListening();
+    await Future.delayed(const Duration(milliseconds: 100));
+    await startListening();
   }
 
   /// Check if detection phase has timed out
