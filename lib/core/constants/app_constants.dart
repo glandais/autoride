@@ -157,4 +157,10 @@ class AppConstants {
   // Database
   static const String databaseName = 'autoride.db';
   static const int databaseVersion = 1;
+
+  // Onboarding Configuration (T021)
+  static const String onboardingCompleteKey = 'onboarding_complete';
+  static const int onboardingPageCount = 5;
+  static const Duration onboardingAnimationDuration = Duration(milliseconds: 300);
+  static const Duration onboardingPageTransitionDuration = Duration(milliseconds: 250);
 }

@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'core/theme/app_theme.dart';
 import 'core/theme/theme_provider.dart';
+import 'features/onboarding/data/services/onboarding_service.dart';
+import 'features/onboarding/presentation/screens/onboarding_screen.dart';
 import 'shared/providers/app_state_provider.dart';
 import 'shared/providers/example_provider.dart';
 
@@ -28,7 +30,37 @@ class AutoRideApp extends ConsumerWidget {
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.darkTheme,
       themeMode: themeMode,
-      home: const HomePage(),
+      home: const InitialRouteScreen(),
+    );
+  }
+}
+
+/// Initial route that checks onboarding status and routes accordingly
+class InitialRouteScreen extends ConsumerWidget {
+  const InitialRouteScreen({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final isFirstLaunchAsync = ref.watch(onboardingServiceProvider);
+
+    return isFirstLaunchAsync.when(
+      data: (isFirstLaunch) {
+        if (isFirstLaunch) {
+          return const OnboardingScreen();
+        } else {
+          return const HomePage();
+        }
+      },
+      loading: () => const Scaffold(
+        body: Center(
+          child: CircularProgressIndicator(),
+        ),
+      ),
+      error: (error, stack) => Scaffold(
+        body: Center(
+          child: Text('Error: $error'),
+        ),
+      ),
     );
   }
 }

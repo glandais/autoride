@@ -176,11 +176,12 @@
   - *Estimate*: 2-3 hours
   - *Completed*: 2025-11-22
 
-- ☐ **T021**: Onboarding Flow
-  - *Detail*: `tasks/T021-onboarding-flow.md` (create on request)
+- ✅ **T021**: Onboarding Flow
+  - *Detail*: `tasks/T021_onboarding_flow.md`
   - *Scope*: Welcome screens, permission requests, initial setup
   - *Dependencies*: T020
   - *Estimate*: 3-4 hours
+  - *Completed*: 2025-11-22
 
 - ☐ **T022**: Trip Tracking Screen (Active Trip)
   - *Detail*: `tasks/T022-tracking-screen.md` (create on request)
@@ -324,15 +325,15 @@
 ## Progress Summary
 
 **Total Tasks**: 40
-**Completed**: 16
+**Completed**: 17
 **In Progress**: 0
-**Pending**: 24
+**Pending**: 23
 **Blocked**: 0
 
 **Current Phase**: Phase 6 - User Interface
-**Last Completed**: T020 - App Theme & Design System (2025-11-22)
+**Last Completed**: T021 - Onboarding Flow (2025-11-22)
 **Current Task**: None (ready for next task)
-**Next Task**: T021 - Onboarding Flow OR T016 - TensorFlow Lite Integration
+**Next Task**: T022 - Trip Tracking Screen OR T016 - TensorFlow Lite Integration
 
 ---
 
