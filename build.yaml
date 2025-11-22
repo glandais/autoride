@@ -1,0 +1,7 @@
+targets:
+  $default:
+    builders:
+      riverpod_generator:
+        options:
+          # Generate riverpod code with explicit JSON serialization support
+          explicit_to_json: true

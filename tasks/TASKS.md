@@ -38,8 +38,8 @@
   - *Dependencies*: T001
   - *Estimate*: 30 min
 
-- ☐ **T003**: Riverpod Code Generation Setup
-  - *Detail*: `tasks/T003-riverpod-setup.md` (create on request)
+- ✅ **T003**: Riverpod Code Generation Setup
+  - *Detail*: `tasks/T003-riverpod-setup.md`
   - *Scope*: Configure build_runner, create first provider example
   - *Dependencies*: T001
   - *Estimate*: 1 hour
@@ -320,13 +320,13 @@
 ## Progress Summary
 
 **Total Tasks**: 40
-**Completed**: 2
+**Completed**: 3
 **In Progress**: 0
-**Pending**: 38
+**Pending**: 37
 **Blocked**: 0
 
 **Current Phase**: Phase 1 - Foundation & Setup
-**Next Task**: T003 - Riverpod Code Generation Setup
+**Next Task**: T004 - Basic Location Service
 
 ---
 
