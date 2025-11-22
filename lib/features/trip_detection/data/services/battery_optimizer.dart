@@ -3,6 +3,8 @@ import 'package:battery_plus/battery_plus.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:geolocator/geolocator.dart';
 import '../../../../core/constants/app_constants.dart';
+import '../../../settings/data/services/settings_service.dart';
+import '../../../settings/domain/models/user_settings.dart';
 
 part 'battery_optimizer.g.dart';
 
@@ -137,7 +139,34 @@ class BatteryOptimizer extends _$BatteryOptimizer {
   }
 
   /// Get power mode configuration for battery level
+  /// Respects user's battery optimization mode preference
   PowerModeConfig _getPowerModeForBatteryLevel(int batteryLevel) {
+    final settings = ref.read(currentSettingsProvider);
+
+    // Performance mode: always use normal/medium mode for best performance
+    if (settings.batteryMode == BatteryOptimizationMode.performance) {
+      // Still respect critical battery level for safety
+      if (batteryLevel < AppConstants.criticalBatteryThreshold) {
+        return PowerModeConfig.low; // Use low instead of critical in performance mode
+      }
+      return PowerModeConfig.normal; // Maximum performance otherwise
+    }
+
+    // Aggressive mode: switch to battery saving earlier
+    if (settings.batteryMode == BatteryOptimizationMode.aggressive) {
+      if (batteryLevel < AppConstants.criticalBatteryThreshold) {
+        return PowerModeConfig.critical;
+      } else if (batteryLevel < AppConstants.mediumBatteryThreshold) {
+        // Start saving battery earlier (at 50% instead of 20%)
+        return PowerModeConfig.low;
+      } else if (batteryLevel < 70) {
+        return PowerModeConfig.medium;
+      } else {
+        return PowerModeConfig.normal;
+      }
+    }
+
+    // Balanced mode (default): standard thresholds from AppConstants
     if (batteryLevel < AppConstants.criticalBatteryThreshold) {
       return PowerModeConfig.critical;
     } else if (batteryLevel < AppConstants.lowBatteryThreshold) {

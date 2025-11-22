@@ -97,8 +97,8 @@
   - *Dependencies*: T009, T003
   - *Estimate*: 2-3 hours
 
-- ☐ **T011**: Settings & Preferences
-  - *Detail*: `tasks/T011-settings-management.md` (create on request)
+- ✅ **T011**: Settings & Preferences
+  - *Detail*: `tasks/T011-settings-management.md`
   - *Scope*: SharedPreferences setup, settings provider, user preferences
   - *Dependencies*: T003
   - *Estimate*: 1-2 hours
@@ -320,15 +320,15 @@
 ## Progress Summary
 
 **Total Tasks**: 40
-**Completed**: 10
+**Completed**: 11
 **In Progress**: 0
-**Pending**: 30
+**Pending**: 29
 **Blocked**: 0
 
 **Current Phase**: Phase 3 - Data Management
-**Last Completed**: T010 - Trip Repository Implementation
+**Last Completed**: T011 - Settings & Preferences
 **Current Task**: None (ready for next task)
-**Next Task**: T011 - Settings & Preferences
+**Next Task**: T012 - Trip State Machine
 
 ---
 
