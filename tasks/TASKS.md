@@ -108,8 +108,8 @@
 ## Phase 4: Trip Detection Logic
 
 ### 4.1 Core Detection
-- ☐ **T012**: Trip State Machine
-  - *Detail*: `tasks/T012-trip-state-machine.md` (create on request)
+- ✅ **T012**: Trip State Machine
+  - *Detail*: `tasks/T012-trip-state-machine.md`
   - *Scope*: Idle/Detecting/Active/Paused states, state transitions
   - *Dependencies*: T007, T008
   - *Estimate*: 2-3 hours
@@ -320,15 +320,15 @@
 ## Progress Summary
 
 **Total Tasks**: 40
-**Completed**: 11
+**Completed**: 12
 **In Progress**: 0
-**Pending**: 29
+**Pending**: 28
 **Blocked**: 0
 
-**Current Phase**: Phase 3 - Data Management
-**Last Completed**: T011 - Settings & Preferences
+**Current Phase**: Phase 4 - Trip Detection Logic
+**Last Completed**: T012 - Trip State Machine
 **Current Task**: None (ready for next task)
-**Next Task**: T012 - Trip State Machine
+**Next Task**: T013 - Automatic Trip Start Detection
 
 ---
 

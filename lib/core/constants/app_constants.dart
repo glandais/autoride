@@ -76,6 +76,12 @@ class AppConstants {
   static const double speedScoreWeight = 0.35;     // 35% weight
   static const double frequencyScoreWeight = 0.25; // 25% weight
 
+  // Trip State Machine Configuration (T012)
+  static const int detectionTimeoutSeconds = 30; // Max time in Detecting before timeout
+  static const int stationaryThresholdSeconds = 10; // Stationary time before pause
+  static const int maxPauseDurationSeconds = 300; // 5 min - max pause before auto-stop
+  static const int resumeMovementThresholdSeconds = 5; // Movement time before resume
+
   // Database
   static const String databaseName = 'autoride.db';
   static const int databaseVersion = 1;
