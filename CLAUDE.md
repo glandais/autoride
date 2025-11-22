@@ -53,7 +53,8 @@ cat tasks/TASKS.md
 **5. Implement Task**
 - Follow detailed task guide
 - Write tests for functionality
-- Run `flutter analyze` and fix issues
+- Run `flutter analyze` before verifying tests and fix any issues
+- Run `flutter test` to verify tests pass
 - Test on physical devices when needed
 
 **6. Complete Task**
@@ -272,6 +273,318 @@ lib/
 - **Separation of Concerns**: Data → Domain → Presentation
 - **Battery First**: Design all background ops for power efficiency
 - **Feature Isolation**: Each feature is self-contained
+
+## Lessons Learned & Common Mistakes
+
+This section documents concrete mistakes encountered during development and their fixes. Learn from these to avoid repeating them.
+
+### Mistake 1: Incorrect Freezed Class Structure (T007)
+
+**Problem**: Using `class` instead of `sealed class` and placing methods inside the freezed class body.
+
+❌ **Wrong Approach**:
+```dart
+@freezed
+class AccelerometerData with _$AccelerometerData {
+  const factory AccelerometerData({
+    required double x,
+    required double y,
+    required double z,
+    required DateTime timestamp,
+  }) = _AccelerometerData;
+
+  const AccelerometerData._();
+
+  // ❌ Methods inside the class - causes compilation errors
+  double get magnitude => sqrt(x * x + y * y + z * z);
+
+  bool isStationary({double threshold = 9.8}) {
+    return (magnitude - threshold).abs() < 0.5;
+  }
+}
+```
+
+**Error**:
+```
+Error: The non-abstract class 'AccelerometerData' is missing implementations for these members:
+ - _$AccelerometerData.timestamp
+ - _$AccelerometerData.x
+ - _$AccelerometerData.y
+ - _$AccelerometerData.z
+```
+
+✅ **Correct Approach**:
+```dart
+// Use 'sealed class' and place private constructor BEFORE factory
+@freezed
+sealed class AccelerometerData with _$AccelerometerData {
+  const AccelerometerData._();  // ✅ Private constructor first
+
+  const factory AccelerometerData({
+    required double x,
+    required double y,
+    required double z,
+    required DateTime timestamp,
+  }) = _AccelerometerData;
+
+  factory AccelerometerData.fromEvent(AccelerometerEvent event) {
+    return AccelerometerData(
+      x: event.x,
+      y: event.y,
+      z: event.z,
+      timestamp: DateTime.now(),
+    );
+  }
+}
+
+// ✅ Use extensions for methods OUTSIDE the class
+extension AccelerometerDataExtensions on AccelerometerData {
+  double get magnitude => sqrt(x * x + y * y + z * z);
+
+  bool isStationary({double threshold = 9.8}) {
+    return (magnitude - threshold).abs() < 0.5;
+  }
+}
+```
+
+**Key Lessons**:
+- Always use `sealed class` with freezed (matches existing `LocationData` pattern)
+- Private constructor `const ClassName._();` goes **before** factory constructors
+- Put custom methods in **extensions**, not in the class body
+- Follow existing patterns in the codebase (check `location_data.dart`)
+
+**Reference**: See `lib/features/trip_detection/domain/models/location_data.dart` for the correct pattern
+
+---
+
+### Mistake 2: Incorrect Riverpod Stream Provider Usage (T007)
+
+**Problem**: Trying to access `.stream` property on stream providers and using wrong Ref types.
+
+❌ **Wrong Approach**:
+```dart
+@riverpod
+Stream<MotionData> motionDataStream(
+  MotionDataStreamRef ref,  // ❌ Wrong: Specific ref type doesn't exist
+) async* {
+  // ❌ Wrong: Trying to access .stream property
+  final accelStream = ref.watch(accelerometerStreamProvider.stream);
+  final gyroStream = ref.watch(gyroscopeStreamProvider.stream);
+
+  // ...
+}
+```
+
+**Errors**:
+```
+error • Undefined class 'MotionDataStreamRef'
+error • The getter 'stream' isn't defined for the type 'AccelerometerStreamProvider'
+error • The type 'AsyncValue<MotionData>' used in the 'for' loop must implement 'Stream'
+```
+
+✅ **Correct Approach**:
+```dart
+@riverpod
+Stream<MotionData> motionDataStream(
+  Ref ref,  // ✅ Use plain 'Ref', not specific types
+) async* {
+  // ✅ Call the stream function directly to get the actual Stream
+  final accelStream = accelerometerStream(ref);
+  final gyroStream = gyroscopeStream(ref);
+
+  // Combine streams...
+  await for (final accelOrGyro in _mergeStreams(accelStream, gyroStream)) {
+    // Process combined data
+  }
+}
+```
+
+**Alternative for Watching Streams in StreamNotifier**:
+```dart
+@riverpod
+class MotionDetectionService extends _$MotionDetectionService {
+  @override
+  Stream<MotionState> build() async* {
+    // ✅ Call the stream provider function directly
+    final motionStream = motionDataStream(ref);
+
+    await for (final motionData in motionStream) {
+      // Process motion data
+      yield analyzedState;
+    }
+  }
+}
+```
+
+**Key Lessons**:
+- Stream provider functions take `Ref ref`, not specific ref types
+- Don't use `ref.watch(streamProvider.stream)` - there's no `.stream` property
+- Call stream provider functions directly: `streamProviderFunction(ref)`
+- `ref.watch()` on stream providers returns `AsyncValue<T>`, not `Stream<T>`
+- For combining streams, call the provider functions to get actual `Stream` objects
+
+**Reference**: See `lib/features/trip_detection/data/services/location_service.dart:85-105` for correct stream provider pattern
+
+---
+
+### Mistake 3: Unused Variables and Imports (T007)
+
+**Problem**: Declaring variables/fields that aren't used, importing packages unnecessarily.
+
+❌ **Wrong**:
+```dart
+import 'package:sensors_plus/sensors_plus.dart';  // ❌ Unused in test file
+
+@riverpod
+class MotionDetectionService extends _$MotionDetectionService {
+  final Queue<MotionData> _buffer = Queue<MotionData>();
+  Timer? _analysisTimer;  // ❌ Declared but never used
+
+  // ...
+}
+
+// In tests:
+final window = MotionWindow(
+  samples: samples,
+  startTime: DateTime.now().subtract(Duration(seconds: 1)),  // ❌ Should be const
+  endTime: DateTime.now(),
+);
+```
+
+**Warnings**:
+```
+warning • Unused import: 'package:sensors_plus/sensors_plus.dart'
+warning • The value of the field '_analysisTimer' isn't used
+info • Use 'const' with the constructor to improve performance
+```
+
+✅ **Correct**:
+```dart
+// ✅ Only import what you use
+import 'package:autoride/features/trip_detection/domain/models/motion_data.dart';
+import 'package:autoride/features/trip_detection/data/services/sensor_utils.dart';
+
+@riverpod
+class MotionDetectionService extends _$MotionDetectionService {
+  final Queue<MotionData> _buffer = Queue<MotionData>();
+  // ✅ Removed unused _analysisTimer field
+
+  // ...
+}
+
+// In tests:
+final window = MotionWindow(
+  samples: samples,
+  startTime: DateTime.now().subtract(const Duration(seconds: 1)),  // ✅ const
+  endTime: DateTime.now(),
+);
+```
+
+**Key Lessons**:
+- Run `flutter analyze` frequently during development
+- Remove unused imports and variables immediately
+- Use `const` constructors where possible for performance
+- Don't declare fields "just in case" - add them when actually needed
+
+---
+
+### Mistake 4: Test Data Not Meeting Detection Thresholds (T007)
+
+**Problem**: Writing tests with data that doesn't actually meet the conditions being tested.
+
+❌ **Wrong**:
+```dart
+test('should determine motion state from samples', () {
+  final samples = List.generate(100, (i) {
+    return MotionData(
+      accelerometer: AccelerometerData(
+        x: 2.0, y: 2.0, z: 10.0,  // ❌ magnitude ≈ 10.39, needs > 10.5
+        timestamp: DateTime.now(),
+      ),
+      gyroscope: GyroscopeData(
+        x: 1.0, y: 0.5, z: 0.5,  // magnitude ≈ 1.22 (this is OK, > 0.5)
+        timestamp: DateTime.now(),
+      ),
+      timestamp: DateTime.now(),
+    );
+  });
+
+  // Detection logic requires: avgAccel > 10.5 AND avgRotation > 0.5
+  expect(window.state, equals(MotionState.cycling));  // ❌ Fails!
+});
+```
+
+**Test Failure**:
+```
+Expected: MotionState:<MotionState.cycling>
+  Actual: MotionState:<MotionState.moving>
+```
+
+✅ **Correct**:
+```dart
+test('should determine motion state from samples', () {
+  // ✅ Calculate values that meet thresholds
+  // Need: avgAccel > 10.5 AND avgRotation > 0.5
+  final samples = List.generate(100, (i) {
+    return MotionData(
+      accelerometer: AccelerometerData(
+        x: 3.0, y: 3.0, z: 10.0,  // ✅ magnitude = sqrt(118) ≈ 10.86 > 10.5
+        timestamp: DateTime.now(),
+      ),
+      gyroscope: GyroscopeData(
+        x: 1.0, y: 0.5, z: 0.5,  // magnitude ≈ 1.22 > 0.5 ✓
+        timestamp: DateTime.now(),
+      ),
+      timestamp: DateTime.now(),
+    );
+  });
+
+  expect(window.state, equals(MotionState.cycling));  // ✅ Passes!
+});
+```
+
+**Key Lessons**:
+- **Verify test data meets the conditions** being tested
+- Calculate expected values manually before writing assertions
+- Add comments showing the math: `// magnitude = sqrt(118) ≈ 10.86`
+- When tests fail, check if the test data is actually correct first
+- Use edge cases intentionally: test values just above/below thresholds
+
+**Quick Verification**:
+```dart
+// For vector magnitude: sqrt(x² + y² + z²)
+// x=3, y=3, z=10 → sqrt(9 + 9 + 100) = sqrt(118) ≈ 10.86 ✓
+```
+
+---
+
+### Best Practices Summary
+
+**Before Starting Implementation**:
+1. ✅ Check existing similar code for patterns (e.g., `location_data.dart` for freezed models)
+2. ✅ Read generated code to understand Riverpod provider types
+3. ✅ Review AppConstants for any relevant configuration values
+
+**During Implementation**:
+1. ✅ Run `flutter pub run build_runner watch` in a separate terminal
+2. ✅ Write tests with calculated values that actually meet thresholds
+3. ✅ Run `flutter analyze` before verifying tests to catch static analysis issues
+4. ✅ Run `flutter test` to verify tests pass
+5. ✅ Test on physical devices for sensor/location features
+
+**When Encountering Errors**:
+1. ✅ Read the full error message carefully
+2. ✅ Check generated `.g.dart` and `.freezed.dart` files
+3. ✅ Compare with working examples in the codebase
+4. ✅ Verify test data mathematically before debugging logic
+
+**Quality Gates** (run in this order):
+1. Code generation successful: `flutter pub run build_runner build`
+2. No analyze issues: `flutter analyze` (run before verifying tests)
+3. All tests passing: `flutter test`
+4. Follows existing patterns in the codebase
+
+---
 
 ## Essential Dependencies
 

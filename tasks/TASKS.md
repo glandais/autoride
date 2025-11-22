@@ -68,8 +68,8 @@
   - *Estimate*: 2-3 hours
 
 ### 2.2 Motion Detection
-- ☐ **T007**: Sensor Integration (Accelerometer/Gyroscope)
-  - *Detail*: `tasks/T007-sensor-integration.md` (create on request)
+- ✅ **T007**: Sensor Integration (Accelerometer/Gyroscope)
+  - *Detail*: `tasks/T007-sensor-integration.md`
   - *Scope*: sensors_plus setup, motion data provider, basic movement detection
   - *Dependencies*: T003
   - *Estimate*: 2-3 hours
@@ -320,15 +320,15 @@
 ## Progress Summary
 
 **Total Tasks**: 40
-**Completed**: 5
+**Completed**: 6
 **In Progress**: 0
-**Pending**: 35
+**Pending**: 34
 **Blocked**: 0
 
 **Current Phase**: Phase 2 - Core Location & Sensors
-**Last Completed**: T005 - Background Location Tracking
+**Last Completed**: T007 - Sensor Integration (Accelerometer/Gyroscope)
 **Current Task**: None (ready for next task)
-**Next Task**: T006 - Battery-Optimized Location Strategy
+**Next Task**: T006 - Battery-Optimized Location Strategy OR T008 - Cycling Motion Pattern Detection
 
 ---
 
