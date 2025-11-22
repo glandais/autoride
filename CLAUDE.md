@@ -10,6 +10,216 @@
 - **Core Tech**: Flutter 3.10.1+, TensorFlow Lite (HAR), Geolocator, Sensors
 - **Key Challenge**: Balance accuracy with battery efficiency for background tracking
 
+## Task Progression Workflow
+
+**Task Management System**: This project uses a structured task tracking system to organize development work and maintain clear progress visibility.
+
+### Task File Structure
+
+```
+tasks/
+├── TASKS.md              # High-level task tracker (master file)
+├── T001-project-setup.md # Detailed task guide (created on-demand)
+├── T002-directory-structure.md
+└── ...                   # Additional detailed task files
+```
+
+### Workflow Process
+
+**1. Review Current Status**
+```bash
+# Check master task list
+cat tasks/TASKS.md
+```
+
+**2. Select Next Task**
+- Start with ☐ Pending tasks
+- Respect task dependencies
+- Choose based on priority and current phase
+
+**3. Request Detailed Task Document**
+```
+"Create detailed task for T001"
+```
+- Detailed `.md` file will be generated in `tasks/` folder
+- Contains implementation guide, code examples, testing criteria
+
+**4. Update Task Status**
+```markdown
+# In TASKS.md, update:
+☐ T001: Project Setup  →  ⏳ T001: Project Setup
+```
+
+**5. Implement Task**
+- Follow detailed task guide
+- Write tests for functionality
+- Run `flutter analyze` and fix issues
+- Test on physical devices when needed
+
+**6. Complete Task**
+```markdown
+# Update status:
+⏳ T001: Project Setup  →  ✅ T001: Project Setup
+```
+
+**7. Commit Changes**
+```bash
+git add .
+git commit -m "T001: Project setup and dependencies
+
+- Added dependencies to pubspec.yaml
+- Configured Riverpod with code generation
+- Created initial project structure"
+```
+
+**8. Update Progress Summary**
+```markdown
+# In TASKS.md:
+**Completed**: 1  # Increment count
+**Current Phase**: Phase 1 - Foundation & Setup
+**Next Task**: T002 - Directory Structure
+```
+
+### Task Status Indicators
+
+| Symbol | Status | Meaning |
+|--------|--------|---------|
+| ☐ | Pending | Not started, ready to begin |
+| ⏳ | In Progress | Currently being worked on |
+| ✅ | Complete | Finished, tested, committed |
+| ⚠️ | Blocked | Waiting on dependency or decision |
+
+### Task Identification
+
+**Task ID Format**: `T###` (e.g., T001, T023)
+- **T001-T010**: Foundation & Setup
+- **T011-T020**: Core Features (Location, Sensors)
+- **T021-T030**: Data & Business Logic
+- **T031-T040**: UI/UX & Testing
+
+### Best Practices
+
+**Before Starting a Task**:
+- ✅ Check all dependencies are complete
+- ✅ Review related code/documentation
+- ✅ Ensure development environment is ready
+- ✅ Create feature branch if needed
+
+**During Task Implementation**:
+- ✅ Follow CLAUDE.md best practices
+- ✅ Write tests alongside code
+- ✅ Commit incrementally (not giant commits)
+- ✅ Document decisions in code comments
+
+**After Task Completion**:
+- ✅ Run full test suite
+- ✅ Verify on physical device (for sensor/location tasks)
+- ✅ Update TASKS.md progress
+- ✅ Clean up temporary files
+
+### Task Dependencies
+
+**Respect Dependencies**: Never start a task before its dependencies are complete.
+
+**Dependency Examples**:
+- T004 (Location Service) depends on T001 (Project Setup)
+- T006 (Battery Optimization) depends on T005 (Background Location)
+- T022 (Tracking Screen) depends on T015 (Trip Recording)
+
+**Blocking Tasks**: If blocked by external factors (API issues, design decisions), mark as ⚠️ and move to next unblocked task.
+
+### Detailed Task Document Format
+
+When requesting a detailed task, expect this structure:
+
+```markdown
+# T001: Project Setup & Dependencies
+
+## Overview
+[Brief description]
+
+## Prerequisites
+[What must be done first]
+
+## Implementation Steps
+1. Step-by-step guide
+2. Code examples
+3. Configuration details
+
+## Testing
+[How to verify completion]
+
+## Acceptance Criteria
+- [ ] Criteria 1
+- [ ] Criteria 2
+
+## Common Pitfalls
+[What to watch out for]
+
+## Resources
+[Links to documentation]
+```
+
+### Progress Tracking
+
+**Review Progress Regularly**:
+```bash
+# Quick status check
+grep -E "^- [☐⏳✅⚠️]" tasks/TASKS.md | wc -l
+
+# See what's in progress
+grep "⏳" tasks/TASKS.md
+
+# Count completed tasks
+grep "✅" tasks/TASKS.md | wc -l
+```
+
+**Weekly Review**:
+- Update progress summary
+- Identify blockers
+- Adjust priorities if needed
+- Archive completed phase documentation
+
+### Integration with Git
+
+**Branch Strategy**:
+```bash
+# Create feature branch for task
+git checkout -b feature/T001-project-setup
+
+# Work on task...
+
+# Commit with task ID
+git commit -m "T001: Add project dependencies"
+
+# Merge to main when complete
+git checkout main
+git merge feature/T001-project-setup
+```
+
+**Commit Message Format**:
+```
+T###: Brief description
+
+- Detailed change 1
+- Detailed change 2
+- Testing notes
+```
+
+### Master Task List
+
+**Single Source of Truth**: `tasks/TASKS.md` is the authoritative task tracker.
+
+**Keep Updated**: After every completed task, update:
+- Task status (☐ → ✅)
+- Progress summary (completed count)
+- Current phase
+- Next task
+
+**Review Periodically**: Weekly review to ensure task list reflects project reality.
+
+---
+
 ## Architecture Principles
 
 ### Riverpod State Management
