@@ -1,5 +1,5 @@
 name: autoride
-description: "A new Flutter project."
+description: "Automatic bike trip detection using motion sensors and ML-powered activity recognition"
 publish_to: 'none'
 version: 0.1.0
 
@@ -10,10 +10,52 @@ dependencies:
   flutter:
     sdk: flutter
 
+  # Background Services
+  flutter_background_service: ^5.0.0  # Background task execution
+
+  # State Management - Riverpod with code generation
+  flutter_riverpod: ^3.0.3
+
+  # Location & Sensors
+  geolocator: ^14.0.2            # GPS location tracking
+
+  # Permissions
+  permission_handler: ^12.0.1    # Runtime permission handling
+
+  # State Management - Riverpod annotations
+  riverpod_annotation: ^3.0.3
+
+  # Sensors
+  sensors_plus: ^7.0.0           # Accelerometer & gyroscope
+
+  # Data Persistence
+  shared_preferences: ^2.2.0     # User settings storage
+  sqflite: ^2.3.0                # SQLite database for trips
+
+  # Machine Learning
+  tflite_flutter: ^0.12.1        # TensorFlow Lite for activity recognition
+
+  # Background Services - Wakelock
+  wakelock_plus: ^1.3.3          # Keep device awake during tracking
+
 dev_dependencies:
+  # Code Generation
+  build_runner: ^2.4.0           # Code generation tool
+
+  # Assets
+  flutter_launcher_icons: ^0.14.4  # App icon generation
+
+  # Linting
+  flutter_lints: ^6.0.0
+
   flutter_test:
     sdk: flutter
-  flutter_lints: ^6.0.0
+
+  # Code Generation - Riverpod
+  riverpod_generator: ^3.0.3     # Riverpod code generation
+
+# Note: geolocator_linux is a transitive dependency that only affects Linux builds.
+# Since we're targeting Android/iOS, it won't be included in the final app bundles.
 
 flutter:
   uses-material-design: true

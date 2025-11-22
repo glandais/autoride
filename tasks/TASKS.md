@@ -26,8 +26,8 @@
 ## Phase 1: Foundation & Setup
 
 ### 1.1 Project Infrastructure
-- ☐ **T001**: Project Setup & Dependencies
-  - *Detail*: `tasks/T001-project-setup.md` (create on request)
+- ✅ **T001**: Project Setup & Dependencies
+  - *Detail*: `tasks/T001-project-setup.md`
   - *Scope*: Add dependencies, configure pubspec.yaml, project structure
   - *Dependencies*: None
   - *Estimate*: 1-2 hours
@@ -320,13 +320,13 @@
 ## Progress Summary
 
 **Total Tasks**: 40
-**Completed**: 0
+**Completed**: 1
 **In Progress**: 0
-**Pending**: 40
+**Pending**: 39
 **Blocked**: 0
 
 **Current Phase**: Phase 1 - Foundation & Setup
-**Next Task**: T001 - Project Setup & Dependencies
+**Next Task**: T002 - Feature-First Directory Structure
 
 ---
 
