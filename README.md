@@ -193,8 +193,9 @@ See [CLAUDE.md](CLAUDE.md) for detailed development guidelines and best practice
 - **Dart** 3.10.1+ - Programming language
 
 ### State Management
-- **Riverpod** - Reactive state management with code generation
+- **flutter_riverpod** - Reactive state management
 - **riverpod_annotation** - Code generation for type-safe providers
+- **riverpod_generator** - Riverpod code generation
 
 ### Location & Sensors
 - **geolocator** - GPS location tracking with background support
@@ -205,13 +206,23 @@ See [CLAUDE.md](CLAUDE.md) for detailed development guidelines and best practice
 - **tflite_flutter** - TensorFlow Lite for on-device activity recognition
 - **Custom HAR model** - Human Activity Recognition trained on cycling data
 
+### Data Modeling
+- **freezed** - Immutable model code generation
+- **freezed_annotation** - Freezed annotations
+
 ### Persistence
 - **sqflite** - Local SQLite database for trip history
 - **shared_preferences** - User settings and preferences
 
-### Other
+### System
 - **permission_handler** - Runtime permission management
 - **wakelock_plus** - Prevent screen sleep during active trips
+- **battery_plus** - Battery level monitoring for power optimization
+
+### Development Tools
+- **build_runner** - Code generation tool
+- **flutter_lints** - Lint rules
+- **flutter_launcher_icons** - App icon generation
 
 ---
 

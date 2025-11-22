@@ -588,35 +588,38 @@ test('should determine motion state from samples', () {
 
 ## Essential Dependencies
 
-### Core Dependencies
-```yaml
-dependencies:
-  # State Management
-  flutter_riverpod: ^2.4.0
-  riverpod_annotation: ^2.3.0
+See `pubspec.yaml` for current versions. Key dependencies:
 
-  # Location & Sensors
-  geolocator: ^11.0.0
-  sensors_plus: ^4.0.0
-  flutter_background_service: ^5.0.0
-  wakelock_plus: ^1.1.0
+### State Management
+- **flutter_riverpod** - Reactive state management
+- **riverpod_annotation** - Code generation for type-safe providers
+- **riverpod_generator** - Riverpod code generation
 
-  # ML & Activity Recognition
-  tflite_flutter: ^0.10.0
+### Location & Sensors
+- **geolocator** - GPS location tracking with background support
+- **sensors_plus** - Accelerometer and gyroscope access
+- **flutter_background_service** - Reliable background task execution
 
-  # Persistence
-  sqflite: ^2.3.0
-  shared_preferences: ^2.2.0
+### Machine Learning
+- **tflite_flutter** - TensorFlow Lite for on-device activity recognition
 
-  # Permissions
-  permission_handler: ^11.0.0
+### Data Modeling
+- **freezed** - Immutable model code generation
+- **freezed_annotation** - Freezed annotations
 
-dev_dependencies:
-  # Code Generation
-  build_runner: ^2.4.0
-  riverpod_generator: ^2.3.0
-  flutter_launcher_icons: ^0.13.0
-```
+### Persistence
+- **sqflite** - Local SQLite database for trip history
+- **shared_preferences** - User settings and preferences
+
+### System
+- **permission_handler** - Runtime permission management
+- **wakelock_plus** - Prevent screen sleep during active trips
+- **battery_plus** - Battery level monitoring for power optimization
+
+### Development Tools
+- **build_runner** - Code generation tool
+- **flutter_lints** - Lint rules
+- **flutter_launcher_icons** - App icon generation
 
 ## Background Location Tracking
 
