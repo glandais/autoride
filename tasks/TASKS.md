@@ -169,11 +169,12 @@
 ## Phase 6: User Interface
 
 ### 6.1 Core UI Screens
-- ☐ **T020**: App Theme & Design System
-  - *Detail*: `tasks/T020-theme-design.md` (create on request)
+- ✅ **T020**: App Theme & Design System
+  - *Detail*: `tasks/T020-theme-design.md`
   - *Scope*: Color scheme, typography, shared widgets
   - *Dependencies*: T001
   - *Estimate*: 2-3 hours
+  - *Completed*: 2025-11-22
 
 - ☐ **T021**: Onboarding Flow
   - *Detail*: `tasks/T021-onboarding-flow.md` (create on request)
@@ -323,15 +324,15 @@
 ## Progress Summary
 
 **Total Tasks**: 40
-**Completed**: 15
+**Completed**: 16
 **In Progress**: 0
-**Pending**: 25
+**Pending**: 24
 **Blocked**: 0
 
-**Current Phase**: Phase 4 - Trip Detection Logic
-**Last Completed**: T015 - Trip Data Recording (2025-11-22)
+**Current Phase**: Phase 6 - User Interface
+**Last Completed**: T020 - App Theme & Design System (2025-11-22)
 **Current Task**: None (ready for next task)
-**Next Task**: T016 - TensorFlow Lite Integration (Phase 5)
+**Next Task**: T021 - Onboarding Flow OR T016 - TensorFlow Lite Integration
 
 ---
 
