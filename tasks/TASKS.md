@@ -85,8 +85,8 @@
 ## Phase 3: Data Management
 
 ### 3.1 Database & Persistence
-- ☐ **T009**: SQLite Database Schema
-  - *Detail*: `tasks/T009-database-schema.md` (create on request)
+- ✅ **T009**: SQLite Database Schema
+  - *Detail*: `tasks/T009-database-schema.md`
   - *Scope*: Create trips/route_points tables, repository pattern
   - *Dependencies*: T001
   - *Estimate*: 2 hours
@@ -320,15 +320,15 @@
 ## Progress Summary
 
 **Total Tasks**: 40
-**Completed**: 8
+**Completed**: 9
 **In Progress**: 0
-**Pending**: 32
+**Pending**: 31
 **Blocked**: 0
 
-**Current Phase**: Phase 2 - Core Location & Sensors
-**Last Completed**: T008 - Cycling Motion Pattern Detection
+**Current Phase**: Phase 3 - Data Management
+**Last Completed**: T009 - SQLite Database Schema
 **Current Task**: None (ready for next task)
-**Next Task**: T009 - SQLite Database Schema
+**Next Task**: T010 - Trip Repository Implementation
 
 ---
 
