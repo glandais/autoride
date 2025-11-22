@@ -61,8 +61,8 @@
   - *Dependencies*: T004
   - *Estimate*: 3-4 hours
 
-- ☐ **T006**: Battery-Optimized Location Strategy
-  - *Detail*: `tasks/T006-battery-optimization.md` (create on request)
+- ✅ **T006**: Battery-Optimized Location Strategy
+  - *Detail*: `tasks/T006-battery-optimization.md`
   - *Scope*: Adaptive accuracy, distance filtering, motion-gated GPS
   - *Dependencies*: T005, T007
   - *Estimate*: 2-3 hours
@@ -320,15 +320,15 @@
 ## Progress Summary
 
 **Total Tasks**: 40
-**Completed**: 6
+**Completed**: 7
 **In Progress**: 0
-**Pending**: 34
+**Pending**: 33
 **Blocked**: 0
 
 **Current Phase**: Phase 2 - Core Location & Sensors
-**Last Completed**: T007 - Sensor Integration (Accelerometer/Gyroscope)
+**Last Completed**: T006 - Battery-Optimized Location Strategy
 **Current Task**: None (ready for next task)
-**Next Task**: T006 - Battery-Optimized Location Strategy OR T008 - Cycling Motion Pattern Detection
+**Next Task**: T008 - Cycling Motion Pattern Detection
 
 ---
 
