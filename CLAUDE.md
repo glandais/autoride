@@ -1,204 +1,74 @@
-# AutoRide - Automatic Bike Trip Detection
+# CLAUDE.md
 
-**Flutter app that automatically detects and records bike trips using motion sensors and ML-powered activity recognition.**
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Project Overview
+## Quick Start
 
-- **Purpose**: Automatic bike trip detection and recording with battery-optimized background tracking
-- **Platforms**: iOS & Android (primary)
-- **State Management**: Riverpod with code generation
-- **Core Tech**: Flutter 3.10.1+, TensorFlow Lite (HAR), Geolocator, Sensors
-- **Key Challenge**: Balance accuracy with battery efficiency for background tracking
-
-## Task Progression Workflow
-
-**Task Management System**: This project uses a structured task tracking system to organize development work and maintain clear progress visibility.
-
-### Task File Structure
-
-```
-tasks/
-├── TASKS.md              # High-level task tracker (master file)
-├── T001-project-setup.md # Detailed task guide (created on-demand)
-├── T002-directory-structure.md
-└── ...                   # Additional detailed task files
-```
-
-### Workflow Process
-
-**1. Review Current Status**
+**Essential Commands**:
 ```bash
-# Check master task list
-cat tasks/TASKS.md
+# Code generation (MUST run during development)
+flutter pub run build_runner watch
+
+# Quality gates (run in order)
+flutter analyze                  # MUST pass before testing
+flutter test                     # All tests must pass
+flutter test test/path/to/specific_test.dart  # Run single test
+flutter run --release            # Test on physical device (sensors/GPS)
 ```
 
-**2. Select Next Task**
-- Start with ☐ Pending tasks
-- Respect task dependencies
-- Choose based on priority and current phase
+**Critical Rules**:
+- Always use `sealed class` with freezed models (see `location_data.dart`)
+- Stream providers use `Ref ref`, not specific ref types
+- Run `flutter analyze` BEFORE `flutter test`
+- Test sensor/location features on **physical devices only** (not emulators)
+- Check `AppConstants` for all thresholds before implementation
+- Follow existing patterns in the codebase
 
-**3. Request Detailed Task Document**
-```
-"Create detailed task for T001"
-```
-- Detailed `.md` file will be generated in `tasks/` folder
-- Contains implementation guide, code examples, testing criteria
+**Current Branch**: `feat/claude-md`
+**Main Branch**: `develop` (use for PRs)
+**Task Tracker**: `tasks/TASKS.md` (8/40 complete, Phase 3)
 
-**4. Update Task Status**
-```markdown
-# In TASKS.md, update:
-☐ T001: Project Setup  →  ⏳ T001: Project Setup
-```
+---
 
-**5. Implement Task**
-- Follow detailed task guide
-- Write tests for functionality
-- Run `flutter analyze` before verifying tests and fix any issues
-- Run `flutter test` to verify tests pass
-- Test on physical devices when needed
+## Key Files Reference
 
-**6. Complete Task**
-```markdown
-# Update status:
-⏳ T001: Project Setup  →  ✅ T001: Project Setup
-```
+| Purpose | Location |
+|---------|----------|
+| **All Constants/Thresholds** | `lib/core/constants/app_constants.dart` |
+| **Task Tracker** | `tasks/TASKS.md` (authoritative progress) |
+| **Freezed Pattern Example** | `lib/features/trip_detection/domain/models/location_data.dart` |
+| **Stream Provider Pattern** | `lib/features/trip_detection/data/services/location_service.dart:85-105` |
+| **Cycling Detection Logic** | `lib/features/trip_detection/data/services/cycling_pattern_detector.dart` |
+| **GPS Motion-Gating** | `lib/features/trip_detection/data/services/gps_controller.dart` |
+| **Battery Optimization** | `lib/features/trip_detection/data/services/battery_optimizer.dart` |
+| **Android Permissions** | `android/app/src/main/AndroidManifest.xml` |
 
-**7. Commit Changes**
-```bash
-git add .
-git commit -m "T001: Project setup and dependencies
+---
 
-- Added dependencies to pubspec.yaml
-- Configured Riverpod with code generation
-- Created initial project structure"
-```
+## Task Workflow
 
-**8. Update Progress Summary**
-```markdown
-# In TASKS.md:
-**Completed**: 1  # Increment count
-**Current Phase**: Phase 1 - Foundation & Setup
-**Next Task**: T002 - Directory Structure
-```
+**Task System**: This project uses a structured task tracking system in `tasks/TASKS.md`.
 
-### Task Status Indicators
+**Progress**: 8/40 tasks complete, currently at **Phase 3 - Data Management**
 
-| Symbol | Status | Meaning |
-|--------|--------|---------|
-| ☐ | Pending | Not started, ready to begin |
-| ⏳ | In Progress | Currently being worked on |
-| ✅ | Complete | Finished, tested, committed |
-| ⚠️ | Blocked | Waiting on dependency or decision |
+**Quick Flow**:
+1. Check `tasks/TASKS.md` for next pending (☐) task
+2. Request detailed guide: "Create detailed task for T009"
+3. Update status: ☐ → ⏳ → ✅
+4. Implement following quality gates below
+5. Commit with task ID: `git commit -m "T009: Brief description"`
+6. Update progress summary in `tasks/TASKS.md`
 
-### Task Identification
+**Quality Gates** (run in this order):
+1. Code generation: `flutter pub run build_runner build`
+2. Static analysis: `flutter analyze` (MUST pass)
+3. Unit tests: `flutter test`
+4. Physical device test (for sensor/location tasks)
+5. Commit changes
 
-**Task ID Format**: `T###` (e.g., T001, T023)
-- **T001-T010**: Foundation & Setup
-- **T011-T020**: Core Features (Location, Sensors)
-- **T021-T030**: Data & Business Logic
-- **T031-T040**: UI/UX & Testing
+**Task Dependencies**: Never start a task before its dependencies are complete. See `tasks/TASKS.md` for dependency tree.
 
-### Best Practices
-
-**Before Starting a Task**:
-- ✅ Check all dependencies are complete
-- ✅ Review related code/documentation
-- ✅ Ensure development environment is ready
-- ✅ Create feature branch if needed
-
-**During Task Implementation**:
-- ✅ Follow CLAUDE.md best practices
-- ✅ Write tests alongside code
-- ✅ Commit incrementally (not giant commits)
-- ✅ Document decisions in code comments
-
-**After Task Completion**:
-- ✅ Run full test suite
-- ✅ Verify on physical device (for sensor/location tasks)
-- ✅ Update TASKS.md progress
-- ✅ Clean up temporary files
-
-### Task Dependencies
-
-**Respect Dependencies**: Never start a task before its dependencies are complete.
-
-**Dependency Examples**:
-- T004 (Location Service) depends on T001 (Project Setup)
-- T006 (Battery Optimization) depends on T005 (Background Location)
-- T022 (Tracking Screen) depends on T015 (Trip Recording)
-
-**Blocking Tasks**: If blocked by external factors (API issues, design decisions), mark as ⚠️ and move to next unblocked task.
-
-### Detailed Task Document Format
-
-When requesting a detailed task, expect this structure:
-
-```markdown
-# T001: Project Setup & Dependencies
-
-## Overview
-[Brief description]
-
-## Prerequisites
-[What must be done first]
-
-## Implementation Steps
-1. Step-by-step guide
-2. Code examples
-3. Configuration details
-
-## Testing
-[How to verify completion]
-
-## Acceptance Criteria
-- [ ] Criteria 1
-- [ ] Criteria 2
-
-## Common Pitfalls
-[What to watch out for]
-
-## Resources
-[Links to documentation]
-```
-
-### Progress Tracking
-
-**Review Progress Regularly**:
-```bash
-# Quick status check
-grep -E "^- [☐⏳✅⚠️]" tasks/TASKS.md | wc -l
-
-# See what's in progress
-grep "⏳" tasks/TASKS.md
-
-# Count completed tasks
-grep "✅" tasks/TASKS.md | wc -l
-```
-
-**Weekly Review**:
-- Update progress summary
-- Identify blockers
-- Adjust priorities if needed
-- Archive completed phase documentation
-
-### Integration with Git
-
-**Branch Strategy**:
-```bash
-# Create feature branch for task
-git checkout -b feature/T001-project-setup
-
-# Work on task...
-
-# Commit with task ID
-git commit -m "T001: Add project dependencies"
-
-# Merge to main when complete
-git checkout main
-git merge feature/T001-project-setup
-```
-
-**Commit Message Format**:
+**Commit Format**:
 ```
 T###: Brief description
 
@@ -207,82 +77,153 @@ T###: Brief description
 - Testing notes
 ```
 
-### Master Task List
-
-**Single Source of Truth**: `tasks/TASKS.md` is the authoritative task tracker.
-
-**Keep Updated**: After every completed task, update:
-- Task status (☐ → ✅)
-- Progress summary (completed count)
-- Current phase
-- Next task
-
-**Review Periodically**: Weekly review to ensure task list reflects project reality.
-
 ---
 
-## Architecture Principles
+## Architecture Overview
 
-### Riverpod State Management
+**Project**: AutoRide - Automatic bike trip detection using motion sensors and ML
 
-**Code Generation Pattern** (Recommended):
-```dart
-// Use @riverpod annotation for compile-time safety
-@riverpod
-class TripDetectionState extends _$TripDetectionState {
-  @override
-  TripState build() => TripState.idle();
+**Core Tech Stack**:
+- **Flutter**: 3.10.1+
+- **State Management**: Riverpod with code generation (`@riverpod` annotation)
+- **Data Models**: Freezed with `sealed class` pattern
+- **Location**: Geolocator (GPS with background support)
+- **Sensors**: sensors_plus (accelerometer, gyroscope)
+- **ML**: TensorFlow Lite for activity recognition (future)
+- **Database**: sqflite (local SQLite)
+- **Persistence**: shared_preferences (settings)
 
-  void startTracking() { /* ... */ }
-}
-```
-
-**Core Rules**:
-- Use `autoDispose` for ephemeral state (UI state, form inputs)
-- Use `keepAlive()` for persistent data (active trip, settings)
-- Declare providers as **top-level final variables**
-- **Never** initialize providers in widget `initState`
-- Run `flutter pub run build_runner watch` during development
-
-### Project Structure
-
-**Feature-First Organization**:
+**Project Structure** (Feature-First):
 ```
 lib/
 ├── core/
-│   ├── constants/        # App-wide constants
-│   ├── utils/            # Helper functions
-│   └── theme/            # App theme
+│   ├── constants/        # AppConstants - all thresholds
+│   ├── utils/
+│   └── theme/
 ├── features/
 │   ├── trip_detection/   # Core trip tracking
-│   │   ├── data/         # Repository, data sources
-│   │   ├── domain/       # Models, entities
-│   │   ├── presentation/ # UI, providers
-│   │   └── services/     # Background service, ML
-│   ├── trip_history/     # View past trips
-│   ├── settings/         # User preferences
-│   └── onboarding/       # First-run experience
-├── shared/
-│   ├── models/           # Cross-feature models
-│   ├── providers/        # Global providers
-│   └── widgets/          # Reusable widgets
-└── main.dart
+│   │   ├── data/         # Services, repositories
+│   │   ├── domain/       # Models (freezed)
+│   │   ├── presentation/ # UI providers
+│   │   └── services/     # Background service
+│   ├── trip_history/
+│   ├── settings/
+│   └── onboarding/
+└── shared/
+    ├── models/
+    ├── providers/
+    └── widgets/
 ```
 
-**Design Philosophy**:
+**Key Architecture Decisions**:
+- **Battery-First Design**: Motion-gated GPS (sensors trigger location, not continuous)
 - **Separation of Concerns**: Data → Domain → Presentation
-- **Battery First**: Design all background ops for power efficiency
 - **Feature Isolation**: Each feature is self-contained
+- **Background Tracking**: Foreground service with notification (required for reliability)
+
+---
+
+## Critical Patterns
+
+### Freezed Models
+
+**Pattern** (use `sealed class` with extensions):
+```dart
+@freezed
+sealed class ModelName with _$ModelName {
+  const ModelName._();  // ✅ Private constructor BEFORE factory
+
+  const factory ModelName({
+    required Type field1,
+    required Type field2,
+  }) = _ModelName;
+
+  factory ModelName.fromSomething(Something obj) {
+    return ModelName(field1: obj.x, field2: obj.y);
+  }
+}
+
+// ✅ Methods in extensions OUTSIDE the class
+extension ModelNameExtensions on ModelName {
+  double get calculatedValue => field1 * field2;
+  bool isValid() => field1 > 0;
+}
+```
+
+**Reference**: See `lib/features/trip_detection/domain/models/location_data.dart`
+
+### Riverpod Providers
+
+**Stream Providers**:
+```dart
+@riverpod
+Stream<Data> dataStream(
+  Ref ref,  // ✅ Use plain 'Ref', NOT DataStreamRef
+) async* {
+  // ✅ Call provider function directly (no .stream property)
+  final otherStream = otherStreamProvider(ref);
+
+  await for (final data in otherStream) {
+    yield processedData;
+  }
+}
+```
+
+**Class Providers** (Notifiers):
+```dart
+@riverpod
+class MyService extends _$MyService {
+  @override
+  State build() {
+    // Initialize
+    return State.initial();
+  }
+
+  void doSomething() {
+    state = state.copyWith(updated: true);
+  }
+}
+```
+
+**Reference**: See `lib/features/trip_detection/data/services/location_service.dart:85-105`
+
+### Code Generation
+
+**Required for**: Riverpod providers, Freezed models
+
+**Workflow**:
+```bash
+# Watch mode (auto-regenerate on file changes)
+flutter pub run build_runner watch
+
+# One-time generation
+flutter pub run build_runner build --delete-conflicting-outputs
+
+# Clean and rebuild
+flutter pub run build_runner clean
+flutter pub run build_runner build --delete-conflicting-outputs
+```
+
+**Required directives**:
+```dart
+import 'package:riverpod_annotation/riverpod_annotation.dart';
+part 'filename.g.dart';  // ✅ Must match filename
+
+@riverpod
+class MyProvider extends _$MyProvider { /* ... */ }
+```
+
+---
 
 ## Lessons Learned & Common Mistakes
 
-This section documents concrete mistakes encountered during development and their fixes. Learn from these to avoid repeating them.
+**This section documents concrete mistakes from development. Learn from these to avoid repeating them.**
 
 ### Mistake 1: Incorrect Freezed Class Structure (T007)
 
 **Problem**: Using `class` instead of `sealed class` and placing methods inside the freezed class body.
 
-❌ **Wrong Approach**:
+❌ **Wrong**:
 ```dart
 @freezed
 class AccelerometerData with _$AccelerometerData {
@@ -290,252 +231,153 @@ class AccelerometerData with _$AccelerometerData {
     required double x,
     required double y,
     required double z,
-    required DateTime timestamp,
   }) = _AccelerometerData;
 
   const AccelerometerData._();
 
-  // ❌ Methods inside the class - causes compilation errors
+  // ❌ Methods inside - causes compilation errors
   double get magnitude => sqrt(x * x + y * y + z * z);
-
-  bool isStationary({double threshold = 9.8}) {
-    return (magnitude - threshold).abs() < 0.5;
-  }
 }
 ```
 
 **Error**:
 ```
-Error: The non-abstract class 'AccelerometerData' is missing implementations for these members:
- - _$AccelerometerData.timestamp
- - _$AccelerometerData.x
- - _$AccelerometerData.y
- - _$AccelerometerData.z
+Error: The non-abstract class 'AccelerometerData' is missing implementations...
 ```
 
-✅ **Correct Approach**:
+✅ **Correct**:
 ```dart
-// Use 'sealed class' and place private constructor BEFORE factory
 @freezed
 sealed class AccelerometerData with _$AccelerometerData {
-  const AccelerometerData._();  // ✅ Private constructor first
+  const AccelerometerData._();  // ✅ Private constructor BEFORE factory
 
   const factory AccelerometerData({
     required double x,
     required double y,
     required double z,
-    required DateTime timestamp,
   }) = _AccelerometerData;
-
-  factory AccelerometerData.fromEvent(AccelerometerEvent event) {
-    return AccelerometerData(
-      x: event.x,
-      y: event.y,
-      z: event.z,
-      timestamp: DateTime.now(),
-    );
-  }
 }
 
-// ✅ Use extensions for methods OUTSIDE the class
+// ✅ Extensions OUTSIDE the class
 extension AccelerometerDataExtensions on AccelerometerData {
   double get magnitude => sqrt(x * x + y * y + z * z);
-
-  bool isStationary({double threshold = 9.8}) {
-    return (magnitude - threshold).abs() < 0.5;
-  }
 }
 ```
 
 **Key Lessons**:
-- Always use `sealed class` with freezed (matches existing `LocationData` pattern)
-- Private constructor `const ClassName._();` goes **before** factory constructors
-- Put custom methods in **extensions**, not in the class body
-- Follow existing patterns in the codebase (check `location_data.dart`)
-
-**Reference**: See `lib/features/trip_detection/domain/models/location_data.dart` for the correct pattern
+- Use `sealed class` with freezed (matches existing `LocationData` pattern)
+- Private constructor goes **before** factory constructors
+- Methods go in **extensions**, not in class body
+- Check `location_data.dart` for reference
 
 ---
 
 ### Mistake 2: Incorrect Riverpod Stream Provider Usage (T007)
 
-**Problem**: Trying to access `.stream` property on stream providers and using wrong Ref types.
+**Problem**: Trying to access `.stream` property and using wrong Ref types.
 
-❌ **Wrong Approach**:
+❌ **Wrong**:
 ```dart
 @riverpod
 Stream<MotionData> motionDataStream(
-  MotionDataStreamRef ref,  // ❌ Wrong: Specific ref type doesn't exist
+  MotionDataStreamRef ref,  // ❌ Specific ref type doesn't exist
 ) async* {
-  // ❌ Wrong: Trying to access .stream property
-  final accelStream = ref.watch(accelerometerStreamProvider.stream);
-  final gyroStream = ref.watch(gyroscopeStreamProvider.stream);
-
-  // ...
+  final accelStream = ref.watch(accelerometerStreamProvider.stream);  // ❌ No .stream property
 }
 ```
 
-**Errors**:
-```
-error • Undefined class 'MotionDataStreamRef'
-error • The getter 'stream' isn't defined for the type 'AccelerometerStreamProvider'
-error • The type 'AsyncValue<MotionData>' used in the 'for' loop must implement 'Stream'
-```
-
-✅ **Correct Approach**:
+✅ **Correct**:
 ```dart
 @riverpod
 Stream<MotionData> motionDataStream(
-  Ref ref,  // ✅ Use plain 'Ref', not specific types
+  Ref ref,  // ✅ Plain 'Ref'
 ) async* {
-  // ✅ Call the stream function directly to get the actual Stream
+  // ✅ Call the function directly
   final accelStream = accelerometerStream(ref);
-  final gyroStream = gyroscopeStream(ref);
-
-  // Combine streams...
-  await for (final accelOrGyro in _mergeStreams(accelStream, gyroStream)) {
-    // Process combined data
-  }
-}
-```
-
-**Alternative for Watching Streams in StreamNotifier**:
-```dart
-@riverpod
-class MotionDetectionService extends _$MotionDetectionService {
-  @override
-  Stream<MotionState> build() async* {
-    // ✅ Call the stream provider function directly
-    final motionStream = motionDataStream(ref);
-
-    await for (final motionData in motionStream) {
-      // Process motion data
-      yield analyzedState;
-    }
+  await for (final data in accelStream) {
+    yield processedData;
   }
 }
 ```
 
 **Key Lessons**:
-- Stream provider functions take `Ref ref`, not specific ref types
-- Don't use `ref.watch(streamProvider.stream)` - there's no `.stream` property
-- Call stream provider functions directly: `streamProviderFunction(ref)`
-- `ref.watch()` on stream providers returns `AsyncValue<T>`, not `Stream<T>`
-- For combining streams, call the provider functions to get actual `Stream` objects
-
-**Reference**: See `lib/features/trip_detection/data/services/location_service.dart:85-105` for correct stream provider pattern
+- Stream providers use `Ref ref`, not specific ref types
+- Call provider functions directly: `streamProvider(ref)`
+- No `.stream` property exists
+- `ref.watch(streamProvider)` returns `AsyncValue<T>`, not `Stream<T>`
 
 ---
 
 ### Mistake 3: Unused Variables and Imports (T007)
 
-**Problem**: Declaring variables/fields that aren't used, importing packages unnecessarily.
+**Problem**: Declaring variables/fields that aren't used.
 
 ❌ **Wrong**:
 ```dart
-import 'package:sensors_plus/sensors_plus.dart';  // ❌ Unused in test file
+import 'package:sensors_plus/sensors_plus.dart';  // ❌ Unused
 
 @riverpod
-class MotionDetectionService extends _$MotionDetectionService {
-  final Queue<MotionData> _buffer = Queue<MotionData>();
-  Timer? _analysisTimer;  // ❌ Declared but never used
-
-  // ...
+class Service extends _$Service {
+  Timer? _timer;  // ❌ Declared but never used
 }
 
-// In tests:
 final window = MotionWindow(
-  samples: samples,
   startTime: DateTime.now().subtract(Duration(seconds: 1)),  // ❌ Should be const
-  endTime: DateTime.now(),
 );
-```
-
-**Warnings**:
-```
-warning • Unused import: 'package:sensors_plus/sensors_plus.dart'
-warning • The value of the field '_analysisTimer' isn't used
-info • Use 'const' with the constructor to improve performance
 ```
 
 ✅ **Correct**:
 ```dart
 // ✅ Only import what you use
 import 'package:autoride/features/trip_detection/domain/models/motion_data.dart';
-import 'package:autoride/features/trip_detection/data/services/sensor_utils.dart';
 
 @riverpod
-class MotionDetectionService extends _$MotionDetectionService {
-  final Queue<MotionData> _buffer = Queue<MotionData>();
-  // ✅ Removed unused _analysisTimer field
-
-  // ...
+class Service extends _$Service {
+  // ✅ Removed unused field
 }
 
-// In tests:
 final window = MotionWindow(
-  samples: samples,
   startTime: DateTime.now().subtract(const Duration(seconds: 1)),  // ✅ const
-  endTime: DateTime.now(),
 );
 ```
 
 **Key Lessons**:
-- Run `flutter analyze` frequently during development
-- Remove unused imports and variables immediately
-- Use `const` constructors where possible for performance
-- Don't declare fields "just in case" - add them when actually needed
+- Run `flutter analyze` frequently
+- Remove unused imports/variables immediately
+- Use `const` constructors where possible
+- Don't declare fields "just in case"
 
 ---
 
 ### Mistake 4: Test Data Not Meeting Detection Thresholds (T007)
 
-**Problem**: Writing tests with data that doesn't actually meet the conditions being tested.
+**Problem**: Writing tests with data that doesn't meet the conditions being tested.
 
 ❌ **Wrong**:
 ```dart
-test('should determine motion state from samples', () {
+test('should detect cycling', () {
   final samples = List.generate(100, (i) {
     return MotionData(
       accelerometer: AccelerometerData(
         x: 2.0, y: 2.0, z: 10.0,  // ❌ magnitude ≈ 10.39, needs > 10.5
-        timestamp: DateTime.now(),
       ),
-      gyroscope: GyroscopeData(
-        x: 1.0, y: 0.5, z: 0.5,  // magnitude ≈ 1.22 (this is OK, > 0.5)
-        timestamp: DateTime.now(),
-      ),
-      timestamp: DateTime.now(),
     );
   });
 
-  // Detection logic requires: avgAccel > 10.5 AND avgRotation > 0.5
   expect(window.state, equals(MotionState.cycling));  // ❌ Fails!
 });
 ```
 
-**Test Failure**:
-```
-Expected: MotionState:<MotionState.cycling>
-  Actual: MotionState:<MotionState.moving>
-```
-
 ✅ **Correct**:
 ```dart
-test('should determine motion state from samples', () {
+test('should detect cycling', () {
   // ✅ Calculate values that meet thresholds
-  // Need: avgAccel > 10.5 AND avgRotation > 0.5
+  // Need: avgAccel > 10.5 (from AppConstants)
   final samples = List.generate(100, (i) {
     return MotionData(
       accelerometer: AccelerometerData(
         x: 3.0, y: 3.0, z: 10.0,  // ✅ magnitude = sqrt(118) ≈ 10.86 > 10.5
-        timestamp: DateTime.now(),
       ),
-      gyroscope: GyroscopeData(
-        x: 1.0, y: 0.5, z: 0.5,  // magnitude ≈ 1.22 > 0.5 ✓
-        timestamp: DateTime.now(),
-      ),
-      timestamp: DateTime.now(),
     );
   });
 
@@ -544,549 +386,127 @@ test('should determine motion state from samples', () {
 ```
 
 **Key Lessons**:
-- **Verify test data meets the conditions** being tested
-- Calculate expected values manually before writing assertions
-- Add comments showing the math: `// magnitude = sqrt(118) ≈ 10.86`
-- When tests fail, check if the test data is actually correct first
-- Use edge cases intentionally: test values just above/below thresholds
-
-**Quick Verification**:
-```dart
-// For vector magnitude: sqrt(x² + y² + z²)
-// x=3, y=3, z=10 → sqrt(9 + 9 + 100) = sqrt(118) ≈ 10.86 ✓
-```
+- **Verify test data meets thresholds** before writing assertions
+- Calculate expected values manually: `// magnitude = sqrt(118) ≈ 10.86`
+- Check `AppConstants` for actual threshold values
+- When tests fail, verify test data is correct first
 
 ---
 
 ### Best Practices Summary
 
-**Before Starting Implementation**:
-1. ✅ Check existing similar code for patterns (e.g., `location_data.dart` for freezed models)
-2. ✅ Read generated code to understand Riverpod provider types
-3. ✅ Review AppConstants for any relevant configuration values
+**Before Starting**:
+1. Check existing similar code for patterns
+2. Review `AppConstants` for relevant configuration
+3. Read generated `.g.dart` files to understand provider types
 
 **During Implementation**:
-1. ✅ Run `flutter pub run build_runner watch` in a separate terminal
-2. ✅ Write tests with calculated values that actually meet thresholds
-3. ✅ Run `flutter analyze` before verifying tests to catch static analysis issues
-4. ✅ Run `flutter test` to verify tests pass
-5. ✅ Test on physical devices for sensor/location features
+1. Run `flutter pub run build_runner watch` in separate terminal
+2. Write tests with calculated values that meet thresholds
+3. Run `flutter analyze` before `flutter test`
+4. Test on physical devices for sensor/location features
 
 **When Encountering Errors**:
-1. ✅ Read the full error message carefully
-2. ✅ Check generated `.g.dart` and `.freezed.dart` files
-3. ✅ Compare with working examples in the codebase
-4. ✅ Verify test data mathematically before debugging logic
-
-**Quality Gates** (run in this order):
-1. Code generation successful: `flutter pub run build_runner build`
-2. No analyze issues: `flutter analyze` (run before verifying tests)
-3. All tests passing: `flutter test`
-4. Follows existing patterns in the codebase
+1. Read full error message carefully
+2. Check generated `.g.dart` and `.freezed.dart` files
+3. Compare with working examples in codebase
+4. Verify test data mathematically
 
 ---
 
-## Essential Dependencies
-
-See `pubspec.yaml` for current versions. Key dependencies:
-
-### State Management
-- **flutter_riverpod** - Reactive state management
-- **riverpod_annotation** - Code generation for type-safe providers
-- **riverpod_generator** - Riverpod code generation
-
-### Location & Sensors
-- **geolocator** - GPS location tracking with background support
-- **sensors_plus** - Accelerometer and gyroscope access
-- **flutter_background_service** - Reliable background task execution
-
-### Machine Learning
-- **tflite_flutter** - TensorFlow Lite for on-device activity recognition
-
-### Data Modeling
-- **freezed** - Immutable model code generation
-- **freezed_annotation** - Freezed annotations
-
-### Persistence
-- **sqflite** - Local SQLite database for trip history
-- **shared_preferences** - User settings and preferences
-
-### System
-- **permission_handler** - Runtime permission management
-- **wakelock_plus** - Prevent screen sleep during active trips
-- **battery_plus** - Battery level monitoring for power optimization
-
-### Development Tools
-- **build_runner** - Code generation tool
-- **flutter_lints** - Lint rules
-- **flutter_launcher_icons** - App icon generation
-
-## Background Location Tracking
-
-### Battery Optimization Strategy
-
-**Motion-Gated GPS Activation**:
-```dart
-// Don't run GPS continuously - use sensors to detect movement first
-accelerometerEventStream().listen((event) {
-  double magnitude = sqrt(pow(event.x, 2) + pow(event.y, 2) + pow(event.z, 2));
-
-  if (magnitude > MOVEMENT_THRESHOLD && !isGPSActive) {
-    startGPSTracking(); // Only activate GPS when moving
-  }
-});
-```
-
-**Adaptive Location Accuracy**:
-```dart
-final locationSettings = LocationSettings(
-  accuracy: LocationAccuracy.medium,  // Balance: not too precise, not too coarse
-  distanceFilter: 15,                 // Update every 15m (optimized for cycling)
-  timeLimit: Duration(seconds: 30),   // Timeout for location requests
-);
-
-// Stream-based (not polling!)
-Geolocator.getPositionStream(locationSettings: locationSettings)
-  .listen((Position position) {
-    // Process location update
-  });
-```
-
-### Platform-Specific Setup
-
-**Android** (`android/app/src/main/AndroidManifest.xml`):
-```xml
-<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
-<uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-<uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
-<uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
-
-<application>
-  <service
-    android:name="com.your.app.BackgroundService"
-    android:foregroundServiceType="location"
-    android:exported="false" />
-</application>
-```
-
-**iOS** (`ios/Runner/Info.plist`):
-```xml
-<key>NSLocationWhenInUseUsageDescription</key>
-<string>We need location access to automatically detect your bike trips.</string>
-<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-<string>We need background location to track trips while the app is closed.</string>
-<key>UIBackgroundModes</key>
-<array>
-  <string>location</string>
-</array>
-```
-
-**Foreground Service Pattern** (Android):
-```dart
-// MUST show notification during active tracking
-await FlutterBackgroundService().configure(
-  androidConfiguration: AndroidConfiguration(
-    onStart: onStart,
-    isForegroundMode: true,  // Required for reliable background execution
-    notificationChannelId: 'trip_tracking',
-    initialNotificationTitle: 'AutoRide',
-    initialNotificationContent: 'Tracking your bike trip',
-    foregroundServiceNotificationId: 888,
-  ),
-  iosConfiguration: IosConfiguration(onForeground: onStart),
-);
-```
-
-## Motion Detection & Sensors
-
-### Cycling Detection Pattern
-
-**Multi-Sensor Approach**:
-```dart
-@riverpod
-Stream<MotionData> motionDataStream(MotionDataStreamRef ref) {
-  // Combine accelerometer + gyroscope
-  return Rx.combineLatest2<AccelerometerEvent, GyroscopeEvent, MotionData>(
-    accelerometerEventStream(),
-    gyroscopeEventStream(),
-    (accel, gyro) => MotionData(
-      acceleration: sqrt(pow(accel.x, 2) + pow(accel.y, 2) + pow(accel.z, 2)),
-      rotation: sqrt(pow(gyro.x, 2) + pow(gyro.y, 2) + pow(gyro.z, 2)),
-      timestamp: DateTime.now(),
-    ),
-  );
-}
-
-@riverpod
-class TripDetector extends _$TripDetector {
-  @override
-  DetectionState build() {
-    // Listen to motion data
-    ref.listen(motionDataStreamProvider, (previous, next) {
-      next.when(
-        data: (motionData) => _analyzeMotion(motionData),
-        loading: () {},
-        error: (err, stack) => _handleError(err),
-      );
-    });
-
-    return DetectionState.idle();
-  }
-
-  void _analyzeMotion(MotionData data) {
-    // 1. Check for sustained movement (velocity threshold)
-    if (data.acceleration > CYCLING_THRESHOLD) {
-      // 2. Validate with gyroscope (repetitive circular motion = pedaling)
-      if (_detectPedalingPattern(data.rotation)) {
-        // 3. Start GPS to validate speed (5-30 km/h typical for cycling)
-        _startGPSValidation();
-      }
-    }
-  }
-}
-```
-
-**Sampling Strategy**:
-- **Rate**: 50-100 Hz for cycling detection (balance responsiveness vs battery)
-- **Buffer**: Use sliding window (e.g., 5-second windows) for pattern analysis
-- **Threshold Tuning**: Adjust based on real-world testing
-
-## Human Activity Recognition (HAR)
-
-### ML Model Architecture
-
-**Input → Model → Output**:
-```
-Time-series sensor data (60s window)
-├── Accelerometer (x, y, z) @ 50 Hz
-├── Gyroscope (x, y, z) @ 50 Hz
-└── GPS speed (when available)
-         ↓
-    LSTM/CNN Model
-         ↓
-Activity Classification:
-- Stationary (0.95 confidence)
-- Walking (0.80 confidence)
-- Cycling (0.92 confidence) ← Target
-- Driving (0.75 confidence)
-```
-
-**Model Requirements**:
-- **Size**: <500 KB (with quantization for mobile)
-- **Inference Time**: <100ms on mid-range devices
-- **Accuracy Target**: >90% for cycling vs other activities
-
-### TensorFlow Lite Integration
-
-**Model Training (Python/PyTorch) → Conversion → Deployment**:
-```dart
-@riverpod
-class ActivityClassifier extends _$ActivityClassifier {
-  late Interpreter _interpreter;
-
-  @override
-  Future<void> build() async {
-    // Load TFLite model from assets
-    _interpreter = await Interpreter.fromAsset('models/activity_classifier.tflite');
-    ref.onDispose(() => _interpreter.close());
-  }
-
-  ActivityPrediction classify(SensorWindow window) {
-    // 1. Prepare input tensor (normalize sensor data)
-    var input = _preprocessSensorData(window);
-
-    // 2. Allocate output tensor
-    var output = List.filled(NUM_ACTIVITIES, 0.0).reshape([1, NUM_ACTIVITIES]);
-
-    // 3. Run inference
-    _interpreter.run(input, output);
-
-    // 4. Parse predictions
-    return ActivityPrediction.fromTensor(output);
-  }
-}
-```
-
-**Inference Optimization**:
-- Run every **5-10 seconds** (not continuously)
-- Use **sliding window** approach (30-60 second windows with 50% overlap)
-- **Cache** predictions to reduce redundant calculations
-- Only run during **suspected activity** (gated by accelerometer)
-
-### Data Collection for Model Improvement
-
-**Privacy-First Approach**:
-```dart
-@riverpod
-class DataCollectionService extends _$DataCollectionService {
-  // Collect raw sensor data + GPS during trips (with user consent)
-  Future<void> recordTrainingData(Trip trip) async {
-    if (!await _hasUserConsent()) return;
-
-    // Store anonymized data locally
-    await _database.insert('training_data', {
-      'trip_id': trip.id,
-      'sensor_data': _anonymizeSensorData(trip.sensorReadings),
-      'gps_trace': _anonymizeGPSTrace(trip.routePoints),
-      'user_labeled_activity': trip.confirmedActivity, // User feedback
-      'timestamp': DateTime.now().millisecondsSinceEpoch,
-    });
-
-    // Batch upload weekly (Wi-Fi only, user-controlled)
-    if (_shouldUploadTrainingData()) {
-      await _uploadBatchToServer();
-    }
-  }
-}
-```
-
-**User Consent Flow**:
-1. Explain data usage clearly (improve detection accuracy)
-2. Show what data is collected (anonymized sensor readings)
-3. Allow opt-out anytime
-4. Provide data export option
-
-## Data Persistence
-
-### Database Schema
-
-**SQLite Structure** (`sqflite`):
-```dart
-// trips table
-CREATE TABLE trips (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  start_time INTEGER NOT NULL,
-  end_time INTEGER NOT NULL,
-  distance REAL NOT NULL,        -- meters
-  duration INTEGER NOT NULL,      -- seconds
-  avg_speed REAL,                 -- km/h
-  max_speed REAL,                 -- km/h
-  detected_activity TEXT,         -- 'cycling', 'walking', etc.
-  confidence_score REAL,          -- 0.0 - 1.0
-  user_confirmed INTEGER DEFAULT 0 -- user validated the activity
-);
-
-// route_points table
-CREATE TABLE route_points (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  trip_id INTEGER NOT NULL,
-  latitude REAL NOT NULL,
-  longitude REAL NOT NULL,
-  altitude REAL,
-  timestamp INTEGER NOT NULL,
-  accuracy REAL,
-  speed REAL,
-  FOREIGN KEY (trip_id) REFERENCES trips(id) ON DELETE CASCADE
-);
-
-// Create index for efficient queries
-CREATE INDEX idx_trip_start_time ON trips(start_time);
-CREATE INDEX idx_route_points_trip_id ON route_points(trip_id);
-```
-
-**Repository Pattern**:
-```dart
-@riverpod
-class TripRepository extends _$TripRepository {
-  Database? _database;
-
-  @override
-  Future<void> build() async {
-    _database = await openDatabase(
-      'autoride.db',
-      version: 1,
-      onCreate: _createTables,
-    );
-  }
-
-  Future<int> saveTrip(Trip trip) async {
-    return await _database!.transaction((txn) async {
-      // Insert trip
-      final tripId = await txn.insert('trips', trip.toMap());
-
-      // Insert route points in batch
-      for (var point in trip.routePoints) {
-        await txn.insert('route_points', {
-          'trip_id': tripId,
-          ...point.toMap(),
-        });
-      }
-
-      return tripId;
-    });
-  }
-
-  Future<List<Trip>> getTripHistory({int limit = 50}) async {
-    final trips = await _database!.query(
-      'trips',
-      orderBy: 'start_time DESC',
-      limit: limit,
-    );
-
-    return Future.wait(trips.map((trip) async {
-      final points = await _getRoutePoints(trip['id'] as int);
-      return Trip.fromMap(trip, points);
-    }));
-  }
-}
-```
-
-### Storage Strategy
-
-**Active Trip State**:
-- **In-memory** (Riverpod state) for real-time updates
-- **Periodic checkpoints** to disk (every 30 seconds)
-- **Crash recovery**: Resume from last checkpoint
-
-**Sensor Data Buffer**:
-- **Circular buffer** in memory (e.g., last 60 seconds)
-- **Flush to disk** only when trip is saved
-- **Discard** if trip is cancelled (privacy)
-
-**Settings**:
-```dart
-@riverpod
-class SettingsRepository extends _$SettingsRepository {
-  late SharedPreferences _prefs;
-
-  @override
-  Future<UserSettings> build() async {
-    _prefs = await SharedPreferences.getInstance();
-    return UserSettings.fromPrefs(_prefs);
-  }
-
-  Future<void> updateSettings(UserSettings settings) async {
-    await _prefs.setBool('auto_detect_enabled', settings.autoDetectEnabled);
-    await _prefs.setDouble('sensitivity', settings.detectionSensitivity);
-    await _prefs.setBool('data_collection_consent', settings.dataCollectionConsent);
-    state = AsyncValue.data(settings);
-  }
-}
-```
-
-## Battery Optimization Checklist
-
-**Critical Optimizations**:
-- [ ] Use accelerometer to **gate GPS activation** (don't run GPS continuously)
-- [ ] Implement **adaptive location accuracy** (low → medium → high based on activity)
-- [ ] Use **distance-based filtering** (`distanceFilter: 10-20m` for cycling)
-- [ ] **Batch sensor readings** and process in intervals (not real-time for every sample)
-- [ ] Run ML inference **every 5-10 seconds**, not continuously
-- [ ] Use **foreground service only** during active trips
-- [ ] **Stop all services** when trip ends (no background processing when idle)
-- [ ] Implement **power state awareness** (reduce sampling when battery <20%)
-- [ ] Use **stream-based location updates**, not polling
-- [ ] Test with **battery profiler** (Android Studio / Xcode Energy Log)
-
-**Power State Adaptation**:
-```dart
-@riverpod
-class BatteryOptimizer extends _$BatteryOptimizer {
-  Future<void> adaptTobatterylevel() async {
-    final batteryLevel = await Battery().batteryLevel;
-
-    if (batteryLevel < 20) {
-      // Reduce sampling rates
-      _locationUpdateInterval = Duration(seconds: 60);
-      _sensorSamplingRate = 25; // Hz (reduced from 50)
-      _mlInferenceInterval = Duration(seconds: 15);
-    } else {
-      // Normal operation
-      _locationUpdateInterval = Duration(seconds: 30);
-      _sensorSamplingRate = 50; // Hz
-      _mlInferenceInterval = Duration(seconds: 10);
-    }
-  }
-}
-```
-
-## Permission Handling
-
-### Progressive Permission Strategy
-
-**Timing Matters**:
-```dart
-@riverpod
-class PermissionManager extends _$PermissionManager {
-  // 1. Basic location on first launch (with rationale)
-  Future<bool> requestLocationPermission() async {
-    // Show custom dialog explaining why
-    await _showRationaleDialog(
-      title: 'Location Access',
-      message: 'AutoRide needs location access to automatically detect your bike trips.',
-    );
-
-    var status = await Permission.location.request();
-    return status.isGranted;
-  }
-
-  // 2. Background location ONLY when user starts first trip
-  Future<bool> requestBackgroundLocation() async {
-    // Android 10+: Must request foreground first
-    if (!await Permission.location.isGranted) {
-      return false;
-    }
-
-    await _showRationaleDialog(
-      title: 'Background Location',
-      message: 'To track trips while the app is closed, we need background location access.',
-    );
-
-    var status = await Permission.locationAlways.request();
-    return status.isGranted;
-  }
-
-  // Handle denials gracefully
-  Future<void> handlePermissionDenied() async {
-    await _showFeatureLimitationDialog(
-      'Without location access, AutoRide cannot automatically detect trips. '
-      'You can still manually start/stop trip recording.',
-    );
-  }
-}
-```
-
-**Platform Differences**:
-- **Android 10+**: Foreground → Background (two-step)
-- **Android 11+**: Background requires user to select "Allow all the time" in settings
-- **iOS 14+**: "Allow Once" vs "While Using" vs "Always"
-
-## Testing & Quality
-
-### Test Coverage Strategy
-
-**Unit Tests** (business logic, data):
-```dart
-test('Trip distance calculation is accurate', () {
-  final trip = Trip(
-    routePoints: [
-      RoutePoint(lat: 48.8566, lon: 2.3522), // Paris
-      RoutePoint(lat: 48.8606, lon: 2.3376), // ~1.2 km away
-    ],
-  );
-
-  expect(trip.distance, closeTo(1200, 50)); // meters, ±50m tolerance
-});
-
-test('Activity classifier detects cycling correctly', () async {
-  final classifier = ActivityClassifier();
-  final mockSensorData = _generateCyclingSensorData();
-
-  final prediction = classifier.classify(mockSensorData);
-
-  expect(prediction.activity, equals(Activity.cycling));
-  expect(prediction.confidence, greaterThan(0.85));
-});
+## Battery Optimization Strategy
+
+**Core Principle**: Motion-gated GPS (don't run GPS continuously)
+
+**Implementation**:
+1. **Sensors first**: Use accelerometer to detect movement
+2. **GPS on demand**: Only activate GPS when motion detected
+3. **Adaptive accuracy**: Adjust based on battery level and activity
+4. **Distance filtering**: Update every 15m for cycling (not every meter)
+5. **Foreground service**: Required for reliable background tracking
+
+**Battery States** (see `AppConstants`):
+- **Normal** (>50%): 50Hz sensors, 30s location updates, 15m distance filter
+- **Medium** (20-50%): 40Hz sensors, 40s updates, 20m filter
+- **Low** (10-20%): 25Hz sensors, 60s updates, 20m filter
+- **Critical** (<10%): 20Hz sensors, 90s updates, 100m filter
+
+**Target**: <5% battery drain per hour of active tracking
+
+**Key Files**:
+- `lib/features/trip_detection/data/services/battery_optimizer.dart`
+- `lib/features/trip_detection/data/services/gps_controller.dart`
+- `lib/features/trip_detection/data/services/adaptive_location_settings.dart`
+
+---
+
+## Cycling Detection Logic
+
+**Multi-Layer Approach**:
+
+1. **Motion Pattern Analysis** (Layer 1)
+   - Acceleration range: 10-20 m/s² (cycling range)
+   - Rotation range: 0.5-3.0 rad/s (pedaling motion)
+   - Score: 0-1 based on how well values fit cycling profile
+
+2. **Pedaling Frequency Analysis** (Layer 2)
+   - Detect peaks in acceleration (pedaling cycles)
+   - Expected frequency: 0.5-2.0 Hz (30-120 RPM)
+   - Typical: 1.2 Hz (72 RPM)
+
+3. **GPS Speed Validation** (Layer 3 - when available)
+   - Cycling speed range: 8-40 km/h
+   - Typical: 18 km/h
+   - Too slow (<8): likely walking
+   - Too fast (>40): likely driving
+
+**Final Confidence Score**:
+- Motion score: 40% weight
+- Speed score: 35% weight
+- Frequency score: 25% weight
+- Threshold: 0.6 minimum for detection
+
+**All thresholds defined in**: `lib/core/constants/app_constants.dart`
+
+**Implementation**: `lib/features/trip_detection/data/services/cycling_pattern_detector.dart`
+
+---
+
+## Testing Strategy
+
+### Test Types
+
+**Unit Tests** (business logic):
+```bash
+flutter test test/features/trip_detection/data/services/
 ```
 
 **Widget Tests** (UI with mocked providers):
+```bash
+flutter test test/features/trip_detection/presentation/
+```
+
+**Integration Tests** (not yet implemented)
+
+### Physical Device Testing
+
+**Critical**: Sensor and location features **MUST** be tested on physical devices.
+
+**Test Scenarios**:
+- [ ] Cycling trip (10+ minutes)
+- [ ] Walking trip (false positive check)
+- [ ] Driving trip (false positive check)
+- [ ] Stationary (no false detection)
+- [ ] App backgrounded during trip
+- [ ] Low battery scenario (<20%)
+
+### Mocking Providers in Tests
+
 ```dart
-testWidgets('Trip detection button starts tracking', (tester) async {
+testWidgets('test description', (tester) async {
   final container = ProviderContainer(
     overrides: [
-      tripDetectionStateProvider.overrideWith(
-        (ref) => MockTripDetectionState(),
-      ),
+      myServiceProvider.overrideWith((ref) => MockMyService()),
     ],
   );
 
@@ -1097,279 +517,265 @@ testWidgets('Trip detection button starts tracking', (tester) async {
     ),
   );
 
-  await tester.tap(find.byIcon(Icons.play_arrow));
-  await tester.pump();
-
-  verify(mockTripDetection.startTracking()).called(1);
+  // Test implementation
 });
 ```
 
-**Integration Tests** (end-to-end flow):
-```dart
-testWidgets('Complete trip detection flow', (tester) async {
-  // Mock location and sensor streams
-  when(mockGeolocator.getPositionStream()).thenAnswer((_) => _mockLocationStream());
-  when(mockSensors.accelerometer()).thenAnswer((_) => _mockAccelerometerStream());
+---
 
-  // Start app
-  await tester.pumpWidget(MyApp());
+## Common Issues Quick Reference
 
-  // Simulate movement detection
-  _simulateCyclingMotion();
-  await tester.pumpAndSettle();
+| Issue | Quick Fix | Reference |
+|-------|-----------|-----------|
+| `Undefined class XxxRef` | Use `Ref ref`, not specific types | Mistake #2 |
+| Freezed compilation errors | Check `sealed class`, constructor order | Mistake #1 |
+| Tests fail unexpectedly | Verify test data meets thresholds | Mistake #4 |
+| Unused import/variable warnings | Run `flutter analyze`, remove them | Mistake #3 |
+| Code generation not working | Check `part 'file.g.dart';` directive | - |
+| Build runner conflicts | Run with `--delete-conflicting-outputs` | - |
+| Sensor data in emulator | Use physical device, emulators don't work | - |
 
-  // Verify trip started
-  expect(find.text('Trip in progress'), findsOneWidget);
-
-  // Stop trip
-  await tester.tap(find.byIcon(Icons.stop));
-  await tester.pumpAndSettle();
-
-  // Verify trip saved
-  final trips = await container.read(tripRepositoryProvider).getTripHistory();
-  expect(trips.length, equals(1));
-});
-```
-
-**Battery Profiling**:
-- **Android**: Use Android Studio Battery Profiler
-- **iOS**: Use Xcode Energy Log
-- **Target**: <5% battery drain per hour of active tracking
-
-## Common Pitfalls & Solutions
-
-### Background Service Killed by OS
-
-**Problem**: Android/iOS kills background service to save battery.
-
-**Solution**:
-```dart
-// 1. Use foreground service with persistent notification
-await FlutterBackgroundService().configure(
-  androidConfiguration: AndroidConfiguration(
-    isForegroundMode: true,  // Critical!
-    autoStartOnBoot: false,  // Don't auto-start (privacy)
-  ),
-);
-
-// 2. Implement restart logic
-@override
-void onStart(ServiceInstance service) {
-  service.on('stopService').listen((event) {
-    service.stopSelf();
-  });
-
-  // Periodic heartbeat to detect if killed
-  Timer.periodic(Duration(minutes: 1), (timer) {
-    if (!service.isRunning()) {
-      _attemptRestart();
-    }
-  });
-}
-```
-
-### Excessive Battery Drain
-
-**Problem**: Battery drains too quickly during tracking.
-
-**Solution**:
-```dart
-// Profile with Android Studio Battery Profiler to identify culprits
-// Common fixes:
-// 1. Reduce GPS accuracy
-LocationSettings(accuracy: LocationAccuracy.medium) // Not 'best'
-
-// 2. Increase distance filter
-LocationSettings(distanceFilter: 20) // meters
-
-// 3. Gate GPS with accelerometer
-if (isMoving && !isGPSActive) {
-  startGPS(); // Only when needed
-}
-
-// 4. Reduce sensor sampling rate
-accelerometerEventStream(samplingPeriod: Duration(milliseconds: 50)) // 20 Hz, not 100 Hz
-```
-
-### Inaccurate Trip Detection
-
-**Problem**: False positives (detecting trips when not cycling) or false negatives (missing actual trips).
-
-**Solution**:
-```dart
-// 1. Collect training data from real users
-await dataCollectionService.recordLabeledTrip(trip, userConfirmedActivity);
-
-// 2. Retrain ML model with new data
-// (Python/PyTorch pipeline, then convert to TFLite)
-
-// 3. Adjust detection thresholds based on analytics
-const CYCLING_SPEED_MIN = 8.0; // km/h (tune based on data)
-const CYCLING_SPEED_MAX = 40.0; // km/h
-const MOVEMENT_THRESHOLD = 1.5; // m/s² acceleration
-
-// 4. Add user feedback loop
-void onTripEnd(Trip trip) {
-  showDialog(
-    context: context,
-    builder: (_) => AlertDialog(
-      title: Text('Was this a bike trip?'),
-      actions: [
-        TextButton(
-          onPressed: () => _confirmActivity(trip, Activity.cycling),
-          child: Text('Yes'),
-        ),
-        TextButton(
-          onPressed: () => _correctActivity(trip),
-          child: Text('No, it was...'),
-        ),
-      ],
-    ),
-  );
-}
-```
-
-### Permission Handling Complexity
-
-**Problem**: Different Android versions and iOS have different permission models.
-
-**Solution**:
-```dart
-// Abstract platform differences into single interface
-@riverpod
-class PlatformPermissions extends _$PlatformPermissions {
-  Future<LocationPermissionStatus> requestLocationPermission() async {
-    if (Platform.isAndroid) {
-      final androidInfo = await DeviceInfoPlugin().androidInfo;
-
-      if (androidInfo.version.sdkInt >= 30) { // Android 11+
-        return _handleAndroid11Permissions();
-      } else if (androidInfo.version.sdkInt >= 29) { // Android 10
-        return _handleAndroid10Permissions();
-      } else {
-        return _handleLegacyAndroidPermissions();
-      }
-    } else {
-      return _handleIOSPermissions();
-    }
-  }
-}
-
-// Test all scenarios:
-// - Fresh install
-// - Permission denied → re-request
-// - Permission "denied forever" → open settings
-// - Background permission on Android 11+ (requires settings navigation)
-```
+---
 
 ## Development Workflow
 
-### Daily Development Pattern
+### Daily Pattern
 
 ```bash
-# 1. Start code generation watcher
+# Terminal 1: Code generation watcher
 flutter pub run build_runner watch
 
-# 2. Run on device (not emulator for sensor/GPS testing!)
-flutter run --release  # Test battery usage in release mode
+# Terminal 2: Run app on physical device
+flutter run --release  # Test battery in release mode
 
-# 3. Enable verbose logging for debugging
+# Check logs
 flutter logs --verbose
 
-# 4. Profile battery usage
+# Profile battery (critical!)
 # Android: Android Studio → Profiler → Energy
 # iOS: Xcode → Debug Navigator → Energy Impact
 ```
 
-### Code Generation Workflow
+### Before Committing
 
-```dart
-// 1. Write provider with annotation
-@riverpod
-class MyProvider extends _$MyProvider {
-  @override
-  String build() => 'initial';
-}
-
-// 2. Generate code (automatic with watch, or manual)
-flutter pub run build_runner build --delete-conflicting-outputs
-
-// 3. Import generated file
-import 'my_provider.g.dart'; // Generated
+```bash
+flutter analyze          # Must pass
+flutter test            # All tests must pass
+git status              # Check what's staged
+git diff               # Review changes
 ```
 
-### Testing on Real Devices
+### Creating New Features
 
-**Critical**: Always test location/sensor features on **physical devices**, not emulators.
-
-**Test Scenarios**:
-- [ ] Cycling trip (10+ minutes)
-- [ ] Walking trip (false positive check)
-- [ ] Driving trip (false positive check)
-- [ ] Stationary (no trip detection)
-- [ ] App backgrounded during trip
-- [ ] App killed during trip (restart detection)
-- [ ] Low battery scenario (<20%)
-- [ ] No GPS signal (indoors)
-
-## Resources & Documentation
-
-### Official Documentation
-- [Riverpod](https://riverpod.dev) - State management
-- [Geolocator](https://pub.dev/packages/geolocator) - Location services
-- [Flutter Background Service](https://pub.dev/packages/flutter_background_service) - Background tasks
-- [Sensors Plus](https://pub.dev/packages/sensors_plus) - Accelerometer, gyroscope
-- [TensorFlow Lite Flutter](https://pub.dev/packages/tflite_flutter) - ML inference
-
-### Research & Best Practices
-- [Handling Background Location Tracking Responsibly](https://vibe-studio.ai/insights/handling-background-location-tracking-responsibly-in-flutter)
-- [Battery Optimization for Background Tasks](https://kotlincodes.com/flutter-dart/advanced-concepts/handling-battery-optimization-for-background-tasks-in-flutter/)
-- [Human Activity Recognition Research](https://link.springer.com/article/10.1007/s12243-023-00962-x)
-- [Building Lightweight HAR Models with TFLite](https://link.springer.com/article/10.1007/s12243-023-00962-x)
-
-### Community Resources
-- [Flutter Background Geolocation](https://github.com/transistorsoft/flutter_background_geolocation) - Advanced geolocation plugin
-- [TensorFlow Lite Examples](https://github.com/tensorflow/examples/tree/master/lite) - ML model examples
+```bash
+mkdir -p lib/features/feature_name/{data,domain,presentation,services}
+```
 
 ---
 
-## Quick Reference
+## Platform-Specific Notes
 
-**Start New Feature**:
-```bash
-mkdir -p lib/features/my_feature/{data,domain,presentation,services}
+### Android Permissions
+
+Required permissions configured in `android/app/src/main/AndroidManifest.xml`:
+- `ACCESS_FINE_LOCATION`
+- `ACCESS_BACKGROUND_LOCATION` (Android 10+)
+- `FOREGROUND_SERVICE`
+- `FOREGROUND_SERVICE_LOCATION` (Android 9+)
+- `WAKE_LOCK`
+
+**Background service**:
+```xml
+<service
+    android:name="id.flutter.flutter_background_service.BackgroundService"
+    android:foregroundServiceType="location"
+    android:exported="false" />
 ```
 
-**Add Riverpod Provider**:
+### iOS Permissions
+
+Configure in `ios/Runner/Info.plist`:
+- `NSLocationWhenInUseUsageDescription`
+- `NSLocationAlwaysAndWhenInUseUsageDescription`
+- `UIBackgroundModes` (location)
+
+### Permission Strategy
+
+**Progressive approach**:
+1. Request basic location on first launch (with rationale)
+2. Request background location when user starts first trip
+3. Handle denials gracefully (allow manual tracking)
+
+**Platform differences**:
+- Android 10+: Two-step (foreground → background)
+- Android 11+: User must select "Allow all the time" in settings
+- iOS 14+: "Allow Once" vs "While Using" vs "Always"
+
+---
+
+## Reference Examples
+
+### Complete Freezed Model Example
+
 ```dart
-@riverpod
-class MyProvider extends _$MyProvider {
-  @override
-  State build() => State();
+import 'package:freezed_annotation/freezed_annotation.dart';
+import 'package:geolocator/geolocator.dart';
+
+part 'location_data.freezed.dart';
+
+@freezed
+sealed class LocationData with _$LocationData {
+  const LocationData._();
+
+  const factory LocationData({
+    required double latitude,
+    required double longitude,
+    required double accuracy,
+    required double altitude,
+    required double speed, // m/s
+    required double heading,
+    required DateTime timestamp,
+  }) = _LocationData;
+
+  factory LocationData.fromPosition(Position position) {
+    return LocationData(
+      latitude: position.latitude,
+      longitude: position.longitude,
+      accuracy: position.accuracy,
+      altitude: position.altitude,
+      speed: position.speed,
+      heading: position.heading,
+      timestamp: position.timestamp,
+    );
+  }
+}
+
+extension LocationDataExtensions on LocationData {
+  double get speedKmh => speed * 3.6;
+
+  double distanceTo(LocationData other) {
+    return Geolocator.distanceBetween(
+      latitude, longitude,
+      other.latitude, other.longitude,
+    );
+  }
 }
 ```
 
-**Run Code Generation**:
-```bash
-flutter pub run build_runner watch
+### Complete Stream Provider Example
+
+```dart
+import 'package:riverpod_annotation/riverpod_annotation.dart';
+import 'package:geolocator/geolocator.dart';
+import '../../domain/models/location_data.dart';
+
+part 'location_service.g.dart';
+
+@riverpod
+Stream<LocationData> locationStream(Ref ref) async* {
+  const settings = LocationSettings(
+    accuracy: LocationAccuracy.medium,
+    distanceFilter: 15,
+  );
+
+  await for (final position in Geolocator.getPositionStream(locationSettings: settings)) {
+    yield LocationData.fromPosition(position);
+  }
+}
+
+@riverpod
+class LocationService extends _$LocationService {
+  @override
+  Stream<LocationData> build() async* {
+    final stream = locationStream(ref);
+    await for (final location in stream) {
+      yield location;
+    }
+  }
+
+  Future<LocationData> getCurrentLocation() async {
+    final position = await Geolocator.getCurrentPosition();
+    return LocationData.fromPosition(position);
+  }
+}
 ```
 
-**Test Battery Usage**:
-```bash
-flutter run --release  # On physical device
-# Then: Profile → Energy
+### Complete Test Example
+
+```dart
+import 'package:flutter_test/flutter_test.dart';
+import 'package:autoride/features/trip_detection/domain/models/motion_data.dart';
+import 'package:autoride/features/trip_detection/data/services/sensor_utils.dart';
+
+void main() {
+  group('MotionWindow', () {
+    test('should calculate average acceleration correctly', () {
+      final samples = List.generate(100, (i) {
+        return MotionData(
+          accelerometer: AccelerometerData(
+            x: 3.0, y: 3.0, z: 10.0,  // magnitude ≈ 10.86
+            timestamp: DateTime.now(),
+          ),
+          gyroscope: GyroscopeData(
+            x: 1.0, y: 0.5, z: 0.5,
+            timestamp: DateTime.now(),
+          ),
+          timestamp: DateTime.now(),
+        );
+      });
+
+      final window = MotionWindow(
+        samples: samples,
+        startTime: DateTime.now().subtract(const Duration(seconds: 2)),
+        endTime: DateTime.now(),
+      );
+
+      expect(window.averageAcceleration, closeTo(10.86, 0.1));
+    });
+
+    test('should determine cycling state correctly', () {
+      // Create data that meets cycling thresholds:
+      // avgAccel > 10.5, avgRotation > 0.5 (from AppConstants)
+      final samples = List.generate(100, (i) {
+        return MotionData(
+          accelerometer: AccelerometerData(
+            x: 3.0, y: 3.0, z: 10.0,  // ✅ sqrt(118) ≈ 10.86 > 10.5
+            timestamp: DateTime.now(),
+          ),
+          gyroscope: GyroscopeData(
+            x: 1.0, y: 0.5, z: 0.5,  // ✅ sqrt(1.5) ≈ 1.22 > 0.5
+            timestamp: DateTime.now(),
+          ),
+          timestamp: DateTime.now(),
+        );
+      });
+
+      final window = MotionWindow(samples: samples);
+      expect(window.state, equals(MotionState.cycling));
+    });
+  });
+}
 ```
 
-**Common Commands**:
-```bash
-flutter analyze                    # Static analysis
-flutter test                       # Run tests
-flutter pub outdated               # Check dependencies
-flutter clean && flutter pub get   # Clean build
-```
+---
+
+## Resources
+
+### Official Documentation
+- [Flutter](https://flutter.dev) - Framework
+- [Riverpod](https://riverpod.dev) - State management
+- [Freezed](https://pub.dev/packages/freezed) - Immutable models
+- [Geolocator](https://pub.dev/packages/geolocator) - Location services
+- [Sensors Plus](https://pub.dev/packages/sensors_plus) - Motion sensors
+- [Flutter Background Service](https://pub.dev/packages/flutter_background_service) - Background tasks
+
+### External Resources
+- [Battery Optimization Guide](https://kotlincodes.com/flutter-dart/advanced-concepts/handling-battery-optimization-for-background-tasks-in-flutter/)
+- [Background Location Best Practices](https://vibe-studio.ai/insights/handling-background-location-tracking-responsibly-in-flutter)
 
 ---
 
 **Last Updated**: 2025-11-22
 **Flutter Version**: 3.10.1+
 **Target SDK**: iOS 13+, Android 8+ (API 26+)
+**Project Status**: Phase 3 - Data Management (8/40 tasks complete)
