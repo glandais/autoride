@@ -13,19 +13,19 @@ part 'trip_recorder_service.g.dart';
 
 /// Real-time trip metrics exposed to UI
 class TripMetrics {
-  final double distanceMeters;
-  final int durationSeconds;
-  final double? avgSpeedKmh;
-  final double? maxSpeedKmh;
-  final int routePointCount;
-
   const TripMetrics({
     required this.distanceMeters,
     required this.durationSeconds,
+    required this.routePointCount,
     this.avgSpeedKmh,
     this.maxSpeedKmh,
-    required this.routePointCount,
   });
+
+  final double distanceMeters;
+  final int durationSeconds;
+  final int routePointCount;
+  final double? avgSpeedKmh;
+  final double? maxSpeedKmh;
 
   TripMetrics copyWith({
     double? distanceMeters,
@@ -248,9 +248,7 @@ class TripRecorderService extends _$TripRecorderService {
     // For example, manual pause/resume from UI
     if (previous?.isRecording == true && next.isRecording == false) {
       // Paused
-      if (_pauseStartTime == null) {
-        _pauseStartTime = DateTime.now();
-      }
+      _pauseStartTime ??= DateTime.now();
     } else if (previous?.isRecording == false && next.isRecording == true) {
       // Resumed
       if (_pauseStartTime != null) {
@@ -352,7 +350,7 @@ class TripRecorderService extends _$TripRecorderService {
   /// Start periodic flush timer
   void _startFlushTimer() {
     _flushTimer = Timer.periodic(
-      Duration(seconds: AppConstants.maxRecordingIntervalSeconds),
+      const Duration(seconds: AppConstants.maxRecordingIntervalSeconds),
       (_) => _flushRoutePointBuffer(),
     );
   }
