@@ -1,0 +1,393 @@
+import 'dart:async';
+import 'package:riverpod_annotation/riverpod_annotation.dart';
+import '../../domain/models/activity_confidence.dart';
+import '../../domain/models/location_data.dart';
+import '../../domain/models/trip.dart';
+import '../../domain/models/trip_state.dart';
+import '../../../trip_history/data/repositories/trip_repository.dart';
+import '../../../../core/constants/app_constants.dart';
+import 'trip_state_machine.dart';
+import 'location_service.dart';
+
+part 'trip_recorder_service.g.dart';
+
+/// Real-time trip metrics exposed to UI
+class TripMetrics {
+  final double distanceMeters;
+  final int durationSeconds;
+  final double? avgSpeedKmh;
+  final double? maxSpeedKmh;
+  final int routePointCount;
+
+  const TripMetrics({
+    required this.distanceMeters,
+    required this.durationSeconds,
+    this.avgSpeedKmh,
+    this.maxSpeedKmh,
+    required this.routePointCount,
+  });
+
+  TripMetrics copyWith({
+    double? distanceMeters,
+    int? durationSeconds,
+    double? avgSpeedKmh,
+    double? maxSpeedKmh,
+    int? routePointCount,
+  }) {
+    return TripMetrics(
+      distanceMeters: distanceMeters ?? this.distanceMeters,
+      durationSeconds: durationSeconds ?? this.durationSeconds,
+      avgSpeedKmh: avgSpeedKmh ?? this.avgSpeedKmh,
+      maxSpeedKmh: maxSpeedKmh ?? this.maxSpeedKmh,
+      routePointCount: routePointCount ?? this.routePointCount,
+    );
+  }
+
+  double get distanceKm => distanceMeters / 1000.0;
+
+  String get formattedDistance {
+    if (distanceKm < 1) {
+      return '${distanceMeters.toStringAsFixed(0)} m';
+    }
+    return '${distanceKm.toStringAsFixed(2)} km';
+  }
+
+  String get formattedDuration {
+    final hours = durationSeconds ~/ 3600;
+    final minutes = (durationSeconds % 3600) ~/ 60;
+    final seconds = durationSeconds % 60;
+
+    if (hours > 0) {
+      return '${hours}h ${minutes}m ${seconds}s';
+    } else if (minutes > 0) {
+      return '${minutes}m ${seconds}s';
+    }
+    return '${seconds}s';
+  }
+}
+
+@riverpod
+class TripRecorderService extends _$TripRecorderService {
+  // Dependencies (initialized in build)
+  TripRepository? _repository;
+  TripStateMachine? _stateMachine;
+
+  // State
+  Trip? _activeTrip;
+  final List<RoutePoint> _routePointBuffer = [];
+  StreamSubscription<LocationData>? _locationSubscription;
+  LocationData? _lastLocation;
+  Timer? _flushTimer;
+
+  // Pause tracking
+  DateTime? _pauseStartTime;
+  int _totalPauseDurationSeconds = 0;
+
+  // Metrics
+  double _totalDistanceMeters = 0.0;
+  double _maxSpeedKmh = 0.0;
+
+  @override
+  Future<TripMetrics> build() async {
+    // Initialize repository (async)
+    _repository = await ref.watch(tripRepositoryProvider.future);
+    _stateMachine = ref.read(tripStateMachineProvider.notifier);
+
+    // Listen to state machine changes
+    ref.listen(tripStateMachineProvider, (previous, next) {
+      _handleStateChange(previous, next);
+    });
+
+    // Cleanup on dispose
+    ref.onDispose(() {
+      _stopLocationStream();
+      _stopFlushTimer();
+    });
+
+    return const TripMetrics(
+      distanceMeters: 0.0,
+      durationSeconds: 0,
+      avgSpeedKmh: null,
+      maxSpeedKmh: null,
+      routePointCount: 0,
+    );
+  }
+
+  /// Start recording a new trip
+  Future<void> startRecording({
+    required double confidenceScore,
+    required ActivityType activity,
+  }) async {
+    if (_activeTrip != null) {
+      throw StateError('Trip already recording');
+    }
+
+    // Create initial trip in database
+    final initialTrip = Trip(
+      startTime: DateTime.now(),
+      endTime: DateTime.now(), // Temporary
+      distance: 0.0,
+      duration: 0,
+      avgSpeed: null,
+      maxSpeed: null,
+      detectedActivity: activity,
+      confidenceScore: confidenceScore,
+      routePoints: [],
+    );
+
+    // Save to database to get real ID
+    _activeTrip = await _repository!.saveTrip(initialTrip);
+
+    // Update state machine with database ID
+    _stateMachine!.startTripWithId(_activeTrip!.id!);
+
+    // Reset metrics
+    _totalDistanceMeters = 0.0;
+    _maxSpeedKmh = 0.0;
+    _totalPauseDurationSeconds = 0;
+    _lastLocation = null;
+    _routePointBuffer.clear();
+
+    // Start location stream
+    _startLocationStream();
+
+    // Start flush timer (backup for distance filter)
+    _startFlushTimer();
+
+    // Update UI state
+    _updateMetrics();
+  }
+
+  /// Pause trip recording
+  Future<void> pauseRecording() async {
+    if (_activeTrip == null) return;
+
+    _pauseStartTime = DateTime.now();
+    _stateMachine!.pauseTrip();
+
+    // Don't cancel location stream, just stop recording points
+    // This allows us to detect resume (motion) faster
+  }
+
+  /// Resume trip recording
+  Future<void> resumeRecording() async {
+    if (_activeTrip == null || _pauseStartTime == null) return;
+
+    // Calculate pause duration
+    final pauseDuration = DateTime.now().difference(_pauseStartTime!);
+    _totalPauseDurationSeconds += pauseDuration.inSeconds;
+    _pauseStartTime = null;
+
+    _stateMachine!.resumeTrip();
+    _updateMetrics();
+  }
+
+  /// Stop recording and save final trip
+  Future<Trip> stopRecording() async {
+    if (_activeTrip == null) {
+      throw StateError('No active trip to stop');
+    }
+
+    // If still paused, calculate final pause duration
+    if (_pauseStartTime != null) {
+      final pauseDuration = DateTime.now().difference(_pauseStartTime!);
+      _totalPauseDurationSeconds += pauseDuration.inSeconds;
+      _pauseStartTime = null;
+    }
+
+    // Flush remaining route points
+    await _flushRoutePointBuffer();
+
+    // Calculate final metrics
+    final endTime = DateTime.now();
+    final totalDuration = endTime.difference(_activeTrip!.startTime).inSeconds;
+    final activeDuration = totalDuration - _totalPauseDurationSeconds;
+    final avgSpeed = activeDuration > 0
+        ? (_totalDistanceMeters / activeDuration) * 3.6 // m/s to km/h
+        : null;
+
+    // Update trip with final metrics
+    final finalTrip = _activeTrip!.copyWith(
+      endTime: endTime,
+      distance: _totalDistanceMeters,
+      duration: activeDuration,
+      avgSpeed: avgSpeed,
+      maxSpeed: _maxSpeedKmh > 0 ? _maxSpeedKmh : null,
+    );
+
+    await _repository!.updateTrip(finalTrip);
+
+    // Cleanup
+    _stopLocationStream();
+    _stopFlushTimer();
+    _activeTrip = null;
+    _routePointBuffer.clear();
+    _lastLocation = null;
+    _totalDistanceMeters = 0.0;
+    _maxSpeedKmh = 0.0;
+    _totalPauseDurationSeconds = 0;
+
+    // Update state machine
+    _stateMachine!.stopTrip();
+
+    // Reset UI metrics
+    state = const AsyncValue.data(TripMetrics(
+      distanceMeters: 0.0,
+      durationSeconds: 0,
+      avgSpeedKmh: null,
+      maxSpeedKmh: null,
+      routePointCount: 0,
+    ));
+
+    return finalTrip;
+  }
+
+  /// Handle state machine changes
+  void _handleStateChange(TripState? previous, TripState next) {
+    // This allows external state changes to trigger recording actions
+    // For example, manual pause/resume from UI
+    if (previous?.isRecording == true && next.isRecording == false) {
+      // Paused
+      if (_pauseStartTime == null) {
+        _pauseStartTime = DateTime.now();
+      }
+    } else if (previous?.isRecording == false && next.isRecording == true) {
+      // Resumed
+      if (_pauseStartTime != null) {
+        final pauseDuration = DateTime.now().difference(_pauseStartTime!);
+        _totalPauseDurationSeconds += pauseDuration.inSeconds;
+        _pauseStartTime = null;
+      }
+    }
+  }
+
+  /// Start location stream subscription
+  void _startLocationStream() {
+    // Get location stream with appropriate settings
+    final stream = locationStream(ref);
+
+    _locationSubscription = stream.listen(
+      _handleLocationUpdate,
+      onError: (error) {
+        // Log error but continue recording
+        // TODO: Add proper error logging
+      },
+    );
+  }
+
+  /// Stop location stream subscription
+  void _stopLocationStream() {
+    _locationSubscription?.cancel();
+    _locationSubscription = null;
+  }
+
+  /// Handle new location update
+  void _handleLocationUpdate(LocationData location) {
+    if (_activeTrip == null) return;
+
+    // Don't record during pause
+    final currentState = ref.read(tripStateMachineProvider);
+    if (!currentState.isRecording) return;
+
+    // Filter by accuracy
+    if (location.accuracy > AppConstants.maxLocationAccuracyMeters) {
+      return; // Poor GPS fix, skip
+    }
+
+    // Filter by speed (outlier rejection)
+    if (location.speedKmh > AppConstants.maxCyclingSpeedKmh) {
+      return; // Unlikely for cycling, probably GPS error
+    }
+
+    // Filter by distance
+    if (_lastLocation != null) {
+      final distance = location.distanceTo(_lastLocation!);
+
+      // Skip if too close (GPS drift)
+      if (distance < AppConstants.minRoutePointDistanceMeters) {
+        return;
+      }
+
+      // Update total distance
+      _totalDistanceMeters += distance;
+    }
+
+    // Update max speed
+    if (location.speedKmh > _maxSpeedKmh) {
+      _maxSpeedKmh = location.speedKmh;
+    }
+
+    // Create route point
+    final routePoint = RoutePoint.fromLocationData(
+      location,
+      _activeTrip!.id!,
+    );
+
+    // Add to buffer
+    _routePointBuffer.add(routePoint);
+    _lastLocation = location;
+
+    // Update UI metrics
+    _updateMetrics();
+
+    // Flush if buffer full
+    if (_routePointBuffer.length >= AppConstants.routePointBufferSize) {
+      _flushRoutePointBuffer();
+    }
+  }
+
+  /// Flush route point buffer to database
+  Future<void> _flushRoutePointBuffer() async {
+    if (_routePointBuffer.isEmpty) return;
+
+    try {
+      await _repository!.saveRoutePoints(_routePointBuffer);
+      _routePointBuffer.clear();
+    } catch (e) {
+      // TODO: Add proper error handling
+      // For now, keep points in buffer and retry on next flush
+    }
+  }
+
+  /// Start periodic flush timer
+  void _startFlushTimer() {
+    _flushTimer = Timer.periodic(
+      Duration(seconds: AppConstants.maxRecordingIntervalSeconds),
+      (_) => _flushRoutePointBuffer(),
+    );
+  }
+
+  /// Stop flush timer
+  void _stopFlushTimer() {
+    _flushTimer?.cancel();
+    _flushTimer = null;
+  }
+
+  /// Update UI metrics
+  void _updateMetrics() {
+    if (_activeTrip == null) return;
+
+    final now = DateTime.now();
+    final totalDuration = now.difference(_activeTrip!.startTime).inSeconds;
+
+    // Calculate active duration (exclude pauses)
+    int activeDuration = totalDuration - _totalPauseDurationSeconds;
+    if (_pauseStartTime != null) {
+      // Currently paused - exclude current pause duration
+      final currentPauseDuration = now.difference(_pauseStartTime!).inSeconds;
+      activeDuration -= currentPauseDuration;
+    }
+
+    final avgSpeed = activeDuration > 0
+        ? (_totalDistanceMeters / activeDuration) * 3.6 // m/s to km/h
+        : null;
+
+    state = AsyncValue.data(TripMetrics(
+      distanceMeters: _totalDistanceMeters,
+      durationSeconds: activeDuration,
+      avgSpeedKmh: avgSpeed,
+      maxSpeedKmh: _maxSpeedKmh > 0 ? _maxSpeedKmh : null,
+      routePointCount: _routePointBuffer.length,
+    ));
+  }
+}

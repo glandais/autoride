@@ -24,22 +24,16 @@ class TripStateMachine extends _$TripStateMachine {
   }
 
   /// Transition to Active state when cycling is confirmed
-  /// Returns the new trip ID
-  Future<int> startTrip() async {
-    return await state.mapOrNull(
-      detecting: (_) async {
-        // Generate new trip ID (will be from database in T015)
-        final tripId = DateTime.now().millisecondsSinceEpoch;
-
+  /// Accepts trip ID from database (T015)
+  void startTripWithId(int tripId) {
+    state.mapOrNull(
+      detecting: (_) {
         state = TripState.active(
           tripId: tripId,
           startTime: DateTime.now(),
         );
-
-        return tripId;
       },
-    ) ??
-        -1;
+    );
   }
 
   /// Transition to Paused state when stationary during active trip

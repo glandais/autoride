@@ -49,25 +49,26 @@ void main() {
       final stateMachine = container.read(tripStateMachineProvider.notifier);
 
       stateMachine.startDetecting();
-      final tripId = await stateMachine.startTrip();
+      const testTripId = 1; // Mock database trip ID
+      stateMachine.startTripWithId(testTripId);
 
       final state = container.read(tripStateMachineProvider);
       state.when(
         idle: () => fail('Should be Active'),
         detecting: (_) => fail('Should be Active'),
-        active: (id, startTime) => expect(id, equals(tripId)), // State is Active
+        active: (id, startTime) => expect(id, equals(testTripId)), // State is Active
         paused: (tripId, startTime, pauseStartTime) => fail('Should be Active'),
       );
       expect(state.hasActiveTrip, isTrue);
       expect(state.isRecording, isTrue);
-      expect(state.currentTripId, equals(tripId));
+      expect(state.currentTripId, equals(testTripId));
     });
 
     test('should transition from Active to Paused', () async {
       final stateMachine = container.read(tripStateMachineProvider.notifier);
 
       stateMachine.startDetecting();
-      await stateMachine.startTrip();
+      stateMachine.startTripWithId(1); // Mock database trip ID
       stateMachine.pauseTrip();
 
       final state = container.read(tripStateMachineProvider);
@@ -85,7 +86,8 @@ void main() {
       final stateMachine = container.read(tripStateMachineProvider.notifier);
 
       stateMachine.startDetecting();
-      final tripId = await stateMachine.startTrip();
+      const testTripId = 1; // Mock database trip ID
+      stateMachine.startTripWithId(testTripId);
       stateMachine.pauseTrip();
       stateMachine.resumeTrip();
 
@@ -93,17 +95,17 @@ void main() {
       state.when(
         idle: () => fail('Should be Active'),
         detecting: (_) => fail('Should be Active'),
-        active: (id, startTime) => expect(id, equals(tripId)), // State is Active
+        active: (id, startTime) => expect(id, equals(testTripId)), // State is Active
         paused: (tripId, startTime, pauseStartTime) => fail('Should be Active'),
       );
-      expect(state.currentTripId, equals(tripId));
+      expect(state.currentTripId, equals(testTripId));
     });
 
     test('should transition from Active to Idle on stop', () async {
       final stateMachine = container.read(tripStateMachineProvider.notifier);
 
       stateMachine.startDetecting();
-      await stateMachine.startTrip();
+      stateMachine.startTripWithId(1); // Mock database trip ID
       stateMachine.stopTrip();
 
       final state = container.read(tripStateMachineProvider);
@@ -156,15 +158,16 @@ void main() {
       final stateMachine = container.read(tripStateMachineProvider.notifier);
 
       stateMachine.startDetecting();
-      final tripId = await stateMachine.startTrip();
+      const testTripId = 1; // Mock database trip ID
+      stateMachine.startTripWithId(testTripId);
 
       stateMachine.pauseTrip();
       var state = container.read(tripStateMachineProvider);
-      expect(state.currentTripId, equals(tripId));
+      expect(state.currentTripId, equals(testTripId));
 
       stateMachine.resumeTrip();
       state = container.read(tripStateMachineProvider);
-      expect(state.currentTripId, equals(tripId));
+      expect(state.currentTripId, equals(testTripId));
     });
   });
 

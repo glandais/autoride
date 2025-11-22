@@ -131,6 +131,29 @@ class AppConstants {
   // - stationaryAccelerationMax = 1.0 m/s²
   // - stationaryRotationMax = 0.2 rad/s
 
+  // Trip Recording Configuration (T015)
+
+  // Route point distance filtering (meters)
+  // Reuses cycling distance filter value for consistency
+  static const double minRoutePointDistanceMeters = 15.0;
+
+  // Route point buffer size before batch database save
+  // 100 points ≈ 2KB memory, saves every ~1.5km at 15m intervals
+  static const int routePointBufferSize = 100;
+
+  // Maximum interval between buffer flushes (seconds)
+  // Fallback if distance filter not triggered (ensures data persistence)
+  static const int maxRecordingIntervalSeconds = 30;
+
+  // Maximum GPS accuracy threshold (meters)
+  // Route points with accuracy > this value are rejected (poor GPS fix)
+  static const double maxLocationAccuracyMeters = 50.0;
+
+  // Maximum cycling speed for outlier rejection (km/h)
+  // Route points with speed > this value are rejected (likely GPS error)
+  // Higher than cyclingSpeedMax to allow safety margin
+  static const double maxCyclingSpeedKmh = 60.0;
+
   // Database
   static const String databaseName = 'autoride.db';
   static const int databaseVersion = 1;

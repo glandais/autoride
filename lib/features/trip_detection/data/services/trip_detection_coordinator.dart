@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
+import '../../domain/models/activity_confidence.dart';
 import '../../domain/models/location_data.dart';
 import '../../domain/models/motion_data.dart';
 import '../../domain/models/trip_state.dart';
@@ -9,6 +10,7 @@ import 'location_service.dart';
 import 'trip_start_detector.dart';
 import 'trip_stop_detector.dart';
 import 'trip_state_machine.dart';
+import 'trip_recorder_service.dart';
 
 part 'trip_detection_coordinator.g.dart';
 
@@ -118,8 +120,16 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
         .analyzeForTripStart(motion, _lastLocation);
 
     if (shouldStart) {
-      // Trigger trip start
-      await ref.read(tripStateMachineProvider.notifier).startTrip();
+      // Get confidence score from detector
+      final detector = ref.read(tripStartDetectorProvider);
+      final confidence = detector.confidence;
+
+      // Trigger trip recording (T015)
+      // This will create trip in database and update state machine
+      await ref.read(tripRecorderServiceProvider.notifier).startRecording(
+            confidenceScore: confidence,
+            activity: ActivityType.cycling,
+          );
 
       // Update coordinator state
       final stateMachineState = ref.read(tripStateMachineProvider);
@@ -182,12 +192,11 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
 
   /// Finalize trip data and stop trip
   Future<void> _finalizeAndStopTrip() async {
-    // TODO: Save trip to database (will be implemented in T015)
-    // TODO: Calculate final statistics (will be implemented in T015)
-    // TODO: Notify user of trip completion (will be implemented in T025)
+    // Stop recording and save trip (T015)
+    // This calculates final metrics and saves to database
+    await ref.read(tripRecorderServiceProvider.notifier).stopRecording();
 
-    // Stop trip in state machine
-    ref.read(tripStateMachineProvider.notifier).stopTrip();
+    // TODO: Notify user of trip completion (will be implemented in T025)
 
     // Reset stop detector
     ref.read(tripStopDetectorProvider.notifier).reset();

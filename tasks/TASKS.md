@@ -128,11 +128,12 @@
   - *Estimate*: 2-3 hours
   - *Completed*: 2025-11-22
 
-- ☐ **T015**: Trip Data Recording
-  - *Detail*: `tasks/T015-trip-recording.md` (create on request)
+- ✅ **T015**: Trip Data Recording
+  - *Detail*: `tasks/T015-trip-recording.md`
   - *Scope*: Record route points, calculate distance/duration/speed
   - *Dependencies*: T010, T013
   - *Estimate*: 2-3 hours
+  - *Completed*: 2025-11-22
 
 ---
 
@@ -322,15 +323,15 @@
 ## Progress Summary
 
 **Total Tasks**: 40
-**Completed**: 14
+**Completed**: 15
 **In Progress**: 0
-**Pending**: 26
+**Pending**: 25
 **Blocked**: 0
 
 **Current Phase**: Phase 4 - Trip Detection Logic
-**Last Completed**: T014 - Automatic Trip Stop Detection (2025-11-22)
+**Last Completed**: T015 - Trip Data Recording (2025-11-22)
 **Current Task**: None (ready for next task)
-**Next Task**: T015 - Trip Data Recording
+**Next Task**: T016 - TensorFlow Lite Integration (Phase 5)
 
 ---
 

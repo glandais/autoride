@@ -115,7 +115,7 @@ void main() {
       // First detection - start pause
       await detector.analyzeForTripStop(motion, location);
 
-      var state = container.read(tripStopDetectorProvider);
+      final state = container.read(tripStopDetectorProvider);
       expect(state.pauseStartTime, isNotNull);
 
       // Set pause start time to 35 seconds ago (exceeds threshold)
