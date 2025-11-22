@@ -32,8 +32,8 @@
   - *Dependencies*: None
   - *Estimate*: 1-2 hours
 
-- ☐ **T002**: Feature-First Directory Structure
-  - *Detail*: `tasks/T002-directory-structure.md` (create on request)
+- ✅ **T002**: Feature-First Directory Structure
+  - *Detail*: `tasks/T002-directory-structure.md`
   - *Scope*: Create core/, features/, shared/ directories with initial files
   - *Dependencies*: T001
   - *Estimate*: 30 min
@@ -320,13 +320,13 @@
 ## Progress Summary
 
 **Total Tasks**: 40
-**Completed**: 1
+**Completed**: 2
 **In Progress**: 0
-**Pending**: 39
+**Pending**: 38
 **Blocked**: 0
 
 **Current Phase**: Phase 1 - Foundation & Setup
-**Next Task**: T002 - Feature-First Directory Structure
+**Next Task**: T003 - Riverpod Code Generation Setup
 
 ---
 
