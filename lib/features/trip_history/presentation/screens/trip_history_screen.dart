@@ -4,7 +4,9 @@ import 'package:autoride/features/trip_history/presentation/providers/trip_histo
 import 'package:autoride/features/trip_history/presentation/widgets/trip_list_item.dart';
 import 'package:autoride/features/trip_history/presentation/screens/trip_detail_screen.dart';
 import 'package:autoride/shared/widgets/empty_state.dart';
+import 'package:autoride/shared/widgets/error_view.dart';
 import 'package:autoride/core/theme/app_spacing.dart';
+import 'package:autoride/core/utils/error_handler.dart';
 
 /// Trip history screen showing list of all recorded trips
 ///
@@ -116,31 +118,9 @@ class TripHistoryScreen extends ConsumerWidget {
           );
         },
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, stack) => Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(Icons.error_outline, size: 64, color: Colors.red),
-              const SizedBox(height: AppSpacing.md),
-              Text(
-                'Failed to load trips',
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-              const SizedBox(height: AppSpacing.sm),
-              Text(
-                error.toString(),
-                style: Theme.of(context).textTheme.bodySmall,
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: AppSpacing.lg),
-              ElevatedButton(
-                onPressed: () {
-                  ref.read(tripHistoryProvider.notifier).refresh();
-                },
-                child: const Text('Retry'),
-              ),
-            ],
-          ),
+        error: (error, stack) => ErrorView.generic(
+          message: ErrorHandler.getErrorMessage(error),
+          onRetry: () => ref.read(tripHistoryProvider.notifier).refresh(),
         ),
       ),
     );

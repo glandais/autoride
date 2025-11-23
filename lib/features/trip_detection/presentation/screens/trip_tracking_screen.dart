@@ -14,8 +14,11 @@ import 'package:autoride/features/trip_detection/presentation/widgets/trip_stats
 import 'package:autoride/features/trip_detection/presentation/widgets/trip_control_buttons.dart';
 import 'package:autoride/features/trip_detection/presentation/widgets/stop_confirmation_dialog.dart';
 import 'package:autoride/shared/widgets/status_badge.dart';
+import 'package:autoride/shared/widgets/error_view.dart';
+import 'package:autoride/shared/widgets/loading_view.dart';
 import 'package:autoride/core/theme/app_spacing.dart';
 import 'package:autoride/core/theme/app_colors.dart';
+import 'package:autoride/core/utils/error_handler.dart';
 
 part 'trip_tracking_screen.g.dart';
 
@@ -178,11 +181,11 @@ class _TripTrackingScreenState extends ConsumerState<TripTrackingScreen> {
                       followLocation: _isFollowingLocation,
                       onMapMoved: _onMapMoved,
                     ),
-                    loading: () => const Center(
-                      child: CircularProgressIndicator(),
+                    loading: () => const LoadingView.inline(
+                      message: 'Loading map...',
                     ),
-                    error: (error, stack) => Center(
-                      child: Text('Error loading map: $error'),
+                    error: (error, stack) => ErrorView.generic(
+                      message: 'Failed to load map: ${ErrorHandler.getErrorMessage(error)}',
                     ),
                   ),
 
@@ -215,25 +218,14 @@ class _TripTrackingScreenState extends ConsumerState<TripTrackingScreen> {
                     // Trip statistics
                     metricsAsync.when(
                       data: (metrics) => TripStatsGrid(metrics: metrics),
-                      loading: () => const Center(
-                        child: CircularProgressIndicator(),
+                      loading: () => const LoadingView.inline(
+                        message: 'Loading metrics...',
                       ),
-                      error: (error, stack) => Center(
-                        child: Column(
-                          children: [
-                            const Icon(Icons.error_outline, size: 48),
-                            const SizedBox(height: AppSpacing.md),
-                            Text(
-                              'Error loading trip data',
-                              style: theme.textTheme.titleMedium,
-                            ),
-                            const SizedBox(height: AppSpacing.sm),
-                            Text(
-                              error.toString(),
-                              style: theme.textTheme.bodySmall,
-                              textAlign: TextAlign.center,
-                            ),
-                          ],
+                      error: (error, stack) => Padding(
+                        padding: const EdgeInsets.all(AppSpacing.md),
+                        child: ErrorView.generic(
+                          message: ErrorHandler.getErrorMessage(error),
+                          onRetry: () => ref.refresh(tripRecorderServiceProvider),
                         ),
                       ),
                     ),

@@ -4,8 +4,11 @@ import 'package:autoride/features/trip_history/presentation/providers/trip_detai
 import 'package:autoride/features/trip_history/presentation/providers/trip_history_provider.dart';
 import 'package:autoride/features/trip_history/presentation/widgets/trip_detail_card.dart';
 import 'package:autoride/features/trip_history/presentation/widgets/trip_route_map.dart';
+import 'package:autoride/shared/widgets/error_view.dart';
+import 'package:autoride/shared/widgets/loading_view.dart';
 import 'package:autoride/core/theme/app_spacing.dart';
 import 'package:autoride/core/theme/app_colors.dart';
+import 'package:autoride/core/utils/error_handler.dart';
 
 /// Trip detail screen showing comprehensive trip statistics and route map
 ///
@@ -98,60 +101,23 @@ class TripDetailScreen extends ConsumerWidget {
             ),
           );
         },
-        loading: () => const Center(child: CircularProgressIndicator()),
+        loading: () => const LoadingView.fullScreen(
+          message: 'Loading trip details...',
+        ),
         error: (error, stack) {
           // Handle trip not found error
           if (error is TripNotFoundException) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(Icons.error_outline, size: 64, color: Colors.red),
-                  const SizedBox(height: AppSpacing.md),
-                  Text(
-                    'Trip Not Found',
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  const SizedBox(height: AppSpacing.sm),
-                  Text(
-                    error.message,
-                    style: Theme.of(context).textTheme.bodySmall,
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: AppSpacing.lg),
-                  ElevatedButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: const Text('Go Back'),
-                  ),
-                ],
-              ),
+            return ErrorView.notFound(
+              title: 'Trip Not Found',
+              message: error.message,
+              onRetry: () => Navigator.of(context).pop(),
             );
           }
 
-          // Generic error
-          return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(Icons.error_outline, size: 64, color: Colors.red),
-                const SizedBox(height: AppSpacing.md),
-                Text(
-                  'Failed to load trip',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                Text(
-                  error.toString(),
-                  style: Theme.of(context).textTheme.bodySmall,
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: AppSpacing.lg),
-                ElevatedButton(
-                  onPressed: () => ref.refresh(tripDetailProvider(tripId)),
-                  child: const Text('Retry'),
-                ),
-              ],
-            ),
+          // Generic error with retry
+          return ErrorView.generic(
+            message: ErrorHandler.getErrorMessage(error),
+            onRetry: () => ref.refresh(tripDetailProvider(tripId)),
           );
         },
       ),

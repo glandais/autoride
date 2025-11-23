@@ -4,6 +4,7 @@ import '../../domain/models/user_settings.dart';
 import '../../data/services/settings_service.dart';
 import '../../../trip_history/data/repositories/trip_repository.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/utils/error_handler.dart';
 import 'setting_section.dart';
 import 'setting_tile.dart';
 
@@ -37,13 +38,29 @@ class DataManagementSection extends ConsumerWidget {
             );
 
             if (confirmed && context.mounted) {
-              final repository = await ref.read(tripRepositoryProvider.future);
-              await repository.deleteAllTrips();
+              try {
+                final repository = await ref.read(tripRepositoryProvider.future);
+                await repository.deleteAllTrips();
 
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('All trips deleted')),
-                );
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('All trips deleted'),
+                      backgroundColor: AppColors.success,
+                    ),
+                  );
+                }
+              } catch (e) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        'Failed to delete trips: ${ErrorHandler.getErrorMessage(e)}',
+                      ),
+                      backgroundColor: AppColors.error,
+                    ),
+                  );
+                }
               }
             }
           },
@@ -66,12 +83,28 @@ class DataManagementSection extends ConsumerWidget {
             );
 
             if (confirmed && context.mounted) {
-              await ref.read(settingsServiceProvider.notifier).resetToDefaults();
+              try {
+                await ref.read(settingsServiceProvider.notifier).resetToDefaults();
 
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Settings reset to defaults')),
-                );
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Settings reset to defaults'),
+                      backgroundColor: AppColors.success,
+                    ),
+                  );
+                }
+              } catch (e) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        'Failed to reset settings: ${ErrorHandler.getErrorMessage(e)}',
+                      ),
+                      backgroundColor: AppColors.error,
+                    ),
+                  );
+                }
               }
             }
           },

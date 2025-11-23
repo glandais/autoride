@@ -9,8 +9,11 @@ import '../widgets/privacy_settings_section.dart';
 import '../widgets/display_settings_section.dart';
 import '../widgets/data_management_section.dart';
 import '../widgets/developer_settings_section.dart';
+import '../../../../shared/widgets/error_view.dart';
+import '../../../../shared/widgets/loading_view.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/utils/error_handler.dart';
 
 /// Main settings screen for configuring all app preferences
 ///
@@ -83,38 +86,12 @@ class SettingsScreen extends ConsumerWidget {
             ],
           ),
         ),
-        loading: () => const Center(
-          child: CircularProgressIndicator(),
+        loading: () => const LoadingView.fullScreen(
+          message: 'Loading settings...',
         ),
-        error: (error, stack) => Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(
-                Icons.error_outline,
-                size: 48,
-                color: AppColors.error,
-              ),
-              const SizedBox(height: AppSpacing.md),
-              Text(
-                'Failed to load settings',
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-              const SizedBox(height: AppSpacing.sm),
-              Text(
-                error.toString(),
-                style: Theme.of(context).textTheme.bodySmall,
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: AppSpacing.lg),
-              ElevatedButton(
-                onPressed: () {
-                  ref.invalidate(settingsServiceProvider);
-                },
-                child: const Text('Retry'),
-              ),
-            ],
-          ),
+        error: (error, stack) => ErrorView.generic(
+          message: ErrorHandler.getErrorMessage(error),
+          onRetry: () => ref.refresh(settingsServiceProvider),
         ),
       ),
     );
