@@ -1,6 +1,8 @@
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import '../../domain/models/trip_state.dart';
 import '../../../../core/constants/app_constants.dart';
+import 'notification_service.dart';
+import 'trip_recorder_service.dart';
 
 part 'trip_state_machine.g.dart';
 
@@ -32,6 +34,9 @@ class TripStateMachine extends _$TripStateMachine {
           tripId: tripId,
           startTime: DateTime.now(),
         );
+
+        // Show trip start notification
+        ref.read(notificationServiceProvider.notifier).showTripStartNotification();
       },
     );
   }
@@ -63,10 +68,43 @@ class TripStateMachine extends _$TripStateMachine {
 
   /// Stop trip and return to Idle (manual stop or timeout)
   void stopTrip() {
+    // Capture trip metrics before stopping (for notification)
+    final recorderAsync = ref.read(tripRecorderServiceProvider);
+
     state.mapOrNull(
-      detecting: (_) => state = const TripState.idle(),
-      active: (_) => state = const TripState.idle(),
-      paused: (_) => state = const TripState.idle(),
+      detecting: (_) {
+        state = const TripState.idle();
+      },
+      active: (_) {
+        // Show trip stop notification with final metrics
+        recorderAsync.whenData((metrics) {
+          ref.read(notificationServiceProvider.notifier).showTripStopNotification(
+            distance: metrics.distanceMeters,
+            duration: Duration(seconds: metrics.durationSeconds),
+            avgSpeed: metrics.avgSpeedKmh ?? 0.0,
+          );
+
+          // Cancel foreground notification
+          ref.read(notificationServiceProvider.notifier).cancelForegroundNotification();
+        });
+
+        state = const TripState.idle();
+      },
+      paused: (_) {
+        // Show trip stop notification with final metrics
+        recorderAsync.whenData((metrics) {
+          ref.read(notificationServiceProvider.notifier).showTripStopNotification(
+            distance: metrics.distanceMeters,
+            duration: Duration(seconds: metrics.durationSeconds),
+            avgSpeed: metrics.avgSpeedKmh ?? 0.0,
+          );
+
+          // Cancel foreground notification
+          ref.read(notificationServiceProvider.notifier).cancelForegroundNotification();
+        });
+
+        state = const TripState.idle();
+      },
     );
   }
 

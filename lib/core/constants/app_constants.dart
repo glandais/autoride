@@ -163,4 +163,20 @@ class AppConstants {
   static const int onboardingPageCount = 5;
   static const Duration onboardingAnimationDuration = Duration(milliseconds: 300);
   static const Duration onboardingPageTransitionDuration = Duration(milliseconds: 250);
+
+  // Notification Configuration (T025)
+
+  // Notification IDs
+  static const int foregroundNotificationId = 888;
+  static const int tripStartNotificationId = 100;
+  static const int tripStopNotificationId = 101;
+
+  // Notification Channels (Android)
+  static const String tripTrackingChannelId = 'autoride_tracking';
+  static const String tripTrackingChannelName = 'Trip Tracking';
+  static const String tripEventsChannelId = 'autoride_trip_events';
+  static const String tripEventsChannelName = 'Trip Events';
+
+  // Notification Update Intervals
+  static const Duration notificationUpdateInterval = Duration(seconds: 5);
 }

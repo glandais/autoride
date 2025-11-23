@@ -205,11 +205,13 @@
   - *Completed*: 2025-11-23
 
 ### 6.2 UI Polish
-- ☐ **T025**: Notifications & Foreground Service UI
-  - *Detail*: `tasks/T025-notifications.md` (create on request)
+- ✅ **T025**: Notifications & Foreground Service UI
+  - *Detail*: `tasks/T025-notifications.md`
   - *Scope*: Trip progress notification, service controls
   - *Dependencies*: T005, T022
   - *Estimate*: 2 hours
+  - *Started*: 2025-11-23
+  - *Completed*: 2025-11-23
 
 - ☐ **T026**: Loading States & Error Handling
   - *Detail*: `tasks/T026-loading-errors.md` (create on request)
@@ -328,15 +330,15 @@
 ## Progress Summary
 
 **Total Tasks**: 40
-**Completed**: 20
+**Completed**: 21
 **In Progress**: 0
-**Pending**: 20
+**Pending**: 19
 **Blocked**: 0
 
 **Current Phase**: Phase 6 - User Interface
-**Last Completed**: T024 - Settings Screen (2025-11-23)
+**Last Completed**: T025 - Notifications & Foreground Service UI (2025-11-23)
 **Current Task**: None (ready for next task)
-**Next Task**: T025 - Notifications & Foreground Service UI OR T016 - TensorFlow Lite Integration
+**Next Task**: T026 - Loading States & Error Handling OR T016 - TensorFlow Lite Integration
 
 ---
 

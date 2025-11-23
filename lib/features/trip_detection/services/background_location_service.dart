@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
+import '../../../core/constants/app_constants.dart';
 
 part 'background_location_service.g.dart';
 
@@ -86,10 +87,10 @@ class BackgroundLocationService extends _$BackgroundLocationService {
         onStart: onStart,
         autoStart: false, // Don't auto-start on boot
         isForegroundMode: true, // Critical: keeps service alive
-        notificationChannelId: 'autoride_tracking',
+        notificationChannelId: AppConstants.tripTrackingChannelId,
         initialNotificationTitle: 'AutoRide',
         initialNotificationContent: 'Initializing trip tracking...',
-        foregroundServiceNotificationId: 888,
+        foregroundServiceNotificationId: AppConstants.foregroundNotificationId,
         foregroundServiceTypes: [AndroidForegroundType.location],
       ),
       iosConfiguration: IosConfiguration(

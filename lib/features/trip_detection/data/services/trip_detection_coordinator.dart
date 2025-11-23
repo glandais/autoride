@@ -194,9 +194,9 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
   Future<void> _finalizeAndStopTrip() async {
     // Stop recording and save trip (T015)
     // This calculates final metrics and saves to database
+    // Note: stopRecording() calls TripStateMachine.stopTrip() which triggers
+    // trip completion notification (implemented in T025)
     await ref.read(tripRecorderServiceProvider.notifier).stopRecording();
-
-    // TODO: Notify user of trip completion (will be implemented in T025)
 
     // Reset stop detector
     ref.read(tripStopDetectorProvider.notifier).reset();

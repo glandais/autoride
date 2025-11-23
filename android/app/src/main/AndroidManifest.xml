@@ -13,6 +13,9 @@
     <!-- Wake Lock (keeps service alive) -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
+    <!-- Notifications (Android 13+) -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+
     <!-- Internet (for future features) -->
     <uses-permission android:name="android.permission.INTERNET"/>
 
