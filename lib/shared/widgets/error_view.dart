@@ -11,12 +11,6 @@ enum ErrorType {
 }
 
 class ErrorView extends StatelessWidget {
-  final ErrorType type;
-  final String? title;
-  final String? message;
-  final VoidCallback? onRetry;
-  final String? retryLabel;
-
   const ErrorView({
     super.key,
     this.type = ErrorType.unknown,
@@ -93,6 +87,12 @@ class ErrorView extends StatelessWidget {
       retryLabel: 'Retry',
     );
   }
+
+  final ErrorType type;
+  final String? title;
+  final String? message;
+  final VoidCallback? onRetry;
+  final String? retryLabel;
 
   @override
   Widget build(BuildContext context) {

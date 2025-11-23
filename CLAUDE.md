@@ -394,6 +394,70 @@ test('should detect cycling', () {
 
 ---
 
+### Mistake 5: Incorrect Constructor Ordering (Lint Rule)
+
+**Problem**: Placing field declarations before constructors violates the `sort_constructors_first` lint rule.
+
+❌ **Wrong**:
+```dart
+class ErrorView extends StatelessWidget {
+  final ErrorType type;  // ❌ Fields before constructors
+  final String? title;
+  final String? message;
+
+  const ErrorView({  // ❌ Constructor after fields
+    super.key,
+    this.type = ErrorType.unknown,
+    this.title,
+    this.message,
+  });
+
+  factory ErrorView.notFound() { /* ... */ }  // ❌ Factory after fields
+
+  @override
+  Widget build(BuildContext context) { /* ... */ }
+}
+```
+
+**Error**:
+```
+info • Constructor declarations should be before non-constructor declarations
+     • lib/shared/widgets/error_view.dart:20:9
+     • sort_constructors_first
+```
+
+✅ **Correct**:
+```dart
+class ErrorView extends StatelessWidget {
+  const ErrorView({  // ✅ Constructors FIRST
+    super.key,
+    this.type = ErrorType.unknown,
+    this.title,
+    this.message,
+  });
+
+  factory ErrorView.notFound() { /* ... */ }  // ✅ All constructors together
+
+  final ErrorType type;  // ✅ Fields AFTER constructors
+  final String? title;
+  final String? message;
+
+  @override
+  Widget build(BuildContext context) { /* ... */ }
+}
+```
+
+**Key Lessons**:
+- The `sort_constructors_first` lint rule requires **all constructors** (const, factory, named) before **all other members** (fields, methods)
+- Constructor order: const constructor → factory constructors → named constructors
+- Then fields, then methods
+- Run `flutter analyze` to catch these issues early
+- This is opposite to some common Dart style guides, but matches Flutter lint rules
+
+**Detection**: `flutter analyze` will show `sort_constructors_first` warnings
+
+---
+
 ### Best Practices Summary
 
 **Before Starting**:
@@ -532,6 +596,7 @@ testWidgets('test description', (tester) async {
 | Freezed compilation errors | Check `sealed class`, constructor order | Mistake #1 |
 | Tests fail unexpectedly | Verify test data meets thresholds | Mistake #4 |
 | Unused import/variable warnings | Run `flutter analyze`, remove them | Mistake #3 |
+| `sort_constructors_first` warning | Move all constructors before fields | Mistake #5 |
 | Code generation not working | Check `part 'file.g.dart';` directive | - |
 | Build runner conflicts | Run with `--delete-conflicting-outputs` | - |
 | Sensor data in emulator | Use physical device, emulators don't work | - |
