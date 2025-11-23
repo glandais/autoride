@@ -1,7 +1,7 @@
 import 'package:sqflite/sqflite.dart';
-import 'package:geolocator/geolocator.dart';
 import 'package:autoride/features/trip_history/presentation/providers/trip_detail_provider.dart';
 import 'package:autoride/shared/widgets/error_view.dart';
+import 'package:autoride/core/permissions/exceptions/permission_exceptions.dart';
 
 enum AppErrorType {
   notFound,
@@ -119,8 +119,9 @@ class ErrorHandler {
 
 /// Custom timeout exception
 class TimeoutException implements Exception {
-  final String message;
   const TimeoutException(this.message);
+
+  final String message;
 
   @override
   String toString() => message;

@@ -6,6 +6,10 @@ import 'setting_section.dart';
 import 'setting_tile.dart';
 import 'setting_slider.dart';
 import 'setting_radio_group.dart';
+import '../../../../core/permissions/widgets/permission_rationale_dialog.dart';
+import '../../../../core/permissions/models/permission_rationale.dart';
+import '../../../../core/permissions/exceptions/permission_exceptions.dart';
+import '../../../../core/permissions/services/permission_handler_service.dart';
 
 /// Location settings section for GPS configuration
 class LocationSettingsSection extends ConsumerWidget {
@@ -77,20 +81,102 @@ class LocationSettingsSection extends ConsumerWidget {
             value: settings.backgroundLocationEnabled,
             onChanged: (value) async {
               if (value) {
-                // TODO: Request background location permission in T027
-                // For now, just update the setting
-                ref.read(settingsServiceProvider.notifier).updatePartial(
-                      (s) => s.copyWith(backgroundLocationEnabled: value),
+                // Show rationale dialog before requesting permission
+                final shouldRequest = await PermissionRationaleDialog.show(
+                  context,
+                  PermissionRationale.locationAlways,
+                );
+
+                if (shouldRequest == true) {
+                  // Request background location permission
+                  final service =
+                      ref.read(permissionHandlerServiceProvider.notifier);
+
+                  try {
+                    final status = await service.requestPermission(
+                      AppPermission.locationAlways,
                     );
+
+                    if (status.isGranted) {
+                      // Update setting
+                      if (context.mounted) {
+                        ref.read(settingsServiceProvider.notifier).updatePartial(
+                              (s) => s.copyWith(backgroundLocationEnabled: true),
+                            );
+                      }
+                    } else if (status.isPermanentlyDenied) {
+                      // Show settings dialog
+                      if (context.mounted) {
+                        _showOpenSettingsDialog(context, ref);
+                      }
+                    }
+                  } on PermissionDeniedException {
+                    // User denied, don't update setting
+                  } on LocationServiceDisabledException {
+                    // Show enable location service dialog
+                    if (context.mounted) {
+                      _showEnableLocationDialog(context);
+                    }
+                  }
+                }
               } else {
+                // Just disable the setting
                 ref.read(settingsServiceProvider.notifier).updatePartial(
-                      (s) => s.copyWith(backgroundLocationEnabled: value),
+                      (s) => s.copyWith(backgroundLocationEnabled: false),
                     );
               }
             },
           ),
         ),
       ],
+    );
+  }
+
+  /// Show dialog to open app settings for permanently denied permissions
+  void _showOpenSettingsDialog(BuildContext context, WidgetRef ref) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Permission Required'),
+        content: const Text(
+          'Background location permission is permanently denied. '
+          'Please enable it in app settings.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () async {
+              Navigator.of(context).pop();
+              await ref
+                  .read(permissionHandlerServiceProvider.notifier)
+                  .openAppSettings();
+            },
+            child: const Text('Open Settings'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Show dialog to enable location service
+  void _showEnableLocationDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Location Service Disabled'),
+        content: const Text(
+          'Please enable location services in your device settings to use background tracking.',
+        ),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
     );
   }
 }
