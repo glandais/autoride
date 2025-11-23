@@ -8,6 +8,7 @@ environment:
 
 dependencies:
   battery_plus: ^6.0.0           # Battery level monitoring for power optimization
+  device_info_plus: ^10.1.0      # Platform info (Android API level, iOS version)
   flutter:
     sdk: flutter
   flutter_background_service: ^5.0.0  # Background task execution

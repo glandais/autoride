@@ -47,7 +47,14 @@ Future<Database> createTestDatabase() async {
         await db.execute('CREATE INDEX idx_route_points_timestamp ON route_points(timestamp)');
       },
       onConfigure: (db) async {
+        // Enable foreign key constraints
         await db.execute('PRAGMA foreign_keys = ON');
+
+        // Test-optimized settings for performance
+        await db.execute('PRAGMA journal_mode = MEMORY'); // Faster for in-memory DBs
+        await db.execute('PRAGMA synchronous = OFF'); // No disk sync needed in tests
+        await db.execute('PRAGMA temp_store = MEMORY'); // Keep temp data in memory
+        await db.execute('PRAGMA cache_size = 10000'); // Larger cache for test performance
       },
     ),
   );

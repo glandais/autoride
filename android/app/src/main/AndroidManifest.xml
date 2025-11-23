@@ -1,22 +1,100 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- Location Permissions -->
+    <!--
+    ============================================
+    LOCATION PERMISSIONS
+    ============================================
+    Required for core trip tracking functionality.
+    Progressive disclosure: Requested via T027 PermissionHandlerService.
+    -->
+
+    <!--
+    ACCESS_FINE_LOCATION:
+    - Required for precise GPS coordinates
+    - Accuracy: ~5-10 meters (ideal for cycling routes)
+    - Battery impact: Moderate (optimized in T006)
+    - Requested: During onboarding (T021)
+    - API Level: All (26+)
+    -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+
+    <!--
+    ACCESS_COARSE_LOCATION:
+    - Fallback for approximate location (~100 meters)
+    - Used when user denies fine location
+    - Battery impact: Low
+    - API Level: All (26+)
+    - Note: Android 12+ allows user to choose "Approximate" location
+    -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 
-    <!-- Background Location Permission (Android 10+) -->
+    <!--
+    ACCESS_BACKGROUND_LOCATION:
+    - Required for automatic trip detection when app is closed
+    - Introduced: Android 10 (API 29)
+    - Request flow: Foreground permission → Background permission
+    - Android 11+: User must manually enable in settings
+    - Requested: When user enables background tracking in settings (T024)
+    - Battery optimization: Motion-gated GPS (T006)
+    -->
     <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
 
-    <!-- Foreground Service Permissions (Android 9+) -->
+    <!--
+    ============================================
+    FOREGROUND SERVICE PERMISSIONS
+    ============================================
+    Required for reliable background location tracking.
+    Android kills background services aggressively - foreground service prevents this.
+    -->
+
+    <!--
+    FOREGROUND_SERVICE:
+    - Allows app to run foreground service
+    - Required: Android 9+ (API 28+)
+    - Shows persistent notification (cannot be dismissed)
+    - Prevents service from being killed by Android
+    -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+
+    <!--
+    FOREGROUND_SERVICE_LOCATION:
+    - Declares foreground service will use location
+    - Required: Android 10+ (API 29+)
+    - Must match android:foregroundServiceType in service declaration
+    - Enforced strictly in Android 14+ (API 34+)
+    -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
 
-    <!-- Wake Lock (keeps service alive) -->
+    <!--
+    ============================================
+    SYSTEM PERMISSIONS
+    ============================================
+    -->
+
+    <!--
+    WAKE_LOCK:
+    - Prevents device from sleeping during active tracking
+    - Used by flutter_background_service
+    - Battery impact: Minimal (only during active trips)
+    - Automatically released when service stops
+    -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
-    <!-- Notifications (Android 13+) -->
+    <!--
+    POST_NOTIFICATIONS:
+    - Required for showing notifications on Android 13+ (API 33+)
+    - Runtime permission (requested via T027)
+    - Required for foreground service notification
+    - Requested: During onboarding (T021)
+    - Note: Apps targeting API 33+ MUST request this
+    -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
 
-    <!-- Internet (for future features) -->
+    <!--
+    INTERNET:
+    - Future use: Trip sync, map tiles, etc.
+    - Currently: Not actively used
+    - No runtime permission required
+    -->
     <uses-permission android:name="android.permission.INTERNET"/>
 
     <application
@@ -24,7 +102,23 @@
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
 
-        <!-- Background Location Service -->
+        <!--
+        ============================================
+        BACKGROUND LOCATION SERVICE
+        ============================================
+        Service declaration for flutter_background_service.
+        Runs in foreground mode with persistent notification.
+
+        Configuration:
+        - android:name: Must match flutter_background_service package
+        - android:foregroundServiceType: "location" (required for location tracking)
+        - android:exported: "false" (not accessible from other apps)
+
+        Usage:
+        - Started by BackgroundLocationService (T005)
+        - Managed by LocationTracking provider
+        - Notification created by NotificationService (T025)
+        -->
         <service
             android:name="id.flutter.flutter_background_service.BackgroundService"
             android:foregroundServiceType="location"
@@ -39,10 +133,7 @@
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
             android:hardwareAccelerated="true"
             android:windowSoftInputMode="adjustResize">
-            <!-- Specifies an Android theme to apply to this Activity as soon as
-                 the Android process has started. This theme is visible to the user
-                 while the Flutter UI initializes. After that, this theme continues
-                 to determine the Window background behind the Flutter UI. -->
+
             <meta-data
               android:name="io.flutter.embedding.android.NormalTheme"
               android:resource="@style/NormalTheme"
@@ -52,17 +143,16 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
-        <!-- Don't delete the meta-data below.
-             This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
+
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
     </application>
-    <!-- Required to query activities that can process text, see:
-         https://developer.android.com/training/package-visibility and
-         https://developer.android.com/reference/android/content/Intent#ACTION_PROCESS_TEXT.
 
-         In particular, this is used by the Flutter engine in io.flutter.plugin.text.ProcessTextPlugin. -->
+    <!--
+    Required for text processing functionality.
+    See: https://developer.android.com/training/package-visibility
+    -->
     <queries>
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>

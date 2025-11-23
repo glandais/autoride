@@ -6,6 +6,8 @@ import 'package:geolocator/geolocator.dart' hide
     LocationServiceDisabledException;
 import '../models/permission_status.dart';
 import '../exceptions/permission_exceptions.dart';
+import '../../platform/models/platform_info.dart';
+import '../../platform/services/platform_info_service.dart';
 
 part 'permission_handler_service.g.dart';
 
@@ -87,6 +89,37 @@ class PermissionHandlerService extends _$PermissionHandlerService {
         if (!foregroundStatus.isGranted) {
           throw const PermissionDeniedException(
             AppPermission.locationWhenInUse,
+          );
+        }
+
+        // Android 11+ requires user to manually enable in settings
+        // We can't request it directly via permission dialog
+        final platformInfo = await ref.read(platformInfoServiceProvider.future);
+        if (platformInfo.isAndroid11Plus) {
+          // Check current status - if not granted, user must go to settings
+          final currentStatus = await checkPermission(permission);
+          if (!currentStatus.isGranted) {
+            // Open settings and let user manually enable
+            await openAppSettings();
+            // Return current status (user will need to check again after returning)
+            return currentStatus;
+          }
+        }
+      }
+
+      // Android 13+ requires notification permission before showing notifications
+      if (permission == AppPermission.notification) {
+        final platformInfo = await ref.read(platformInfoServiceProvider.future);
+        if (!platformInfo.isAndroid13Plus) {
+          // Notification permission not required on Android <13
+          // Return granted status without requesting
+          return const AppPermissionStatus(
+            permission: AppPermission.notification,
+            isGranted: true,
+            isDenied: false,
+            isPermanentlyDenied: false,
+            isRestricted: false,
+            isLimited: false,
           );
         }
       }

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'core/theme/app_theme.dart';
 import 'core/theme/theme_provider.dart';
+import 'core/utils/platform_config_validator.dart';
 import 'features/onboarding/data/services/onboarding_service.dart';
 import 'features/onboarding/presentation/screens/onboarding_screen.dart';
 import 'features/settings/presentation/screens/settings_screen.dart';
@@ -15,7 +16,12 @@ import 'features/trip_history/presentation/screens/trip_history_screen.dart';
 // Global navigator key for auto-navigation
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // Validate platform configuration (debug mode only)
+  await PlatformConfigValidator.printConfigStatus();
+
   runApp(
     const ProviderScope(
       child: AutoRideApp(),

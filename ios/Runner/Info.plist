@@ -46,21 +46,55 @@
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 
-	<!-- Location Usage Descriptions (REQUIRED) -->
+	<!--
+	============================================
+	LOCATION PERMISSION DESCRIPTIONS
+	============================================
+	CRITICAL: These descriptions appear in iOS permission dialogs.
+	Apple Review Guidelines require clear, specific explanations.
+	-->
+
+	<!--
+	When In Use Permission:
+	Requested: During onboarding (T021)
+	Used for: Trip tracking when app is open
+	iOS 14+: User can choose "Allow Once", "While Using", or "Don't Allow"
+	-->
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>AutoRide needs location access to automatically detect your bike trips.</string>
+	<string>AutoRide tracks your location to record cycling routes, calculate distance and speed, and map your trips while you're using the app.</string>
 
+	<!--
+	Always Permission (Background Location):
+	Requested: When user enables automatic trip detection in settings (T024)
+	Used for: Automatic trip start/stop detection
+	iOS Requirement: Must explain BOTH foreground and background use
+	Apple Guidelines: Must clearly explain why background access is needed
+	-->
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>AutoRide needs background location to track trips while the app is closed or in the background.</string>
+	<string>AutoRide needs background location access to automatically detect when you start cycling, even when the app is closed. This enables hands-free trip tracking without needing to manually start or stop recording. Your location data stays private on your device and is never shared.</string>
 
+	<!--
+	Legacy Always Permission:
+	Required for: iOS 10 compatibility (though our min is iOS 13)
+	Apple requires this even if not supporting iOS 10
+	-->
 	<key>NSLocationAlwaysUsageDescription</key>
-	<string>AutoRide needs background location to track trips while the app is closed.</string>
+	<string>AutoRide needs background location access to automatically detect your cycling trips when the app is closed.</string>
 
-	<!-- Background Modes (REQUIRED for background location) -->
+	<!--
+	============================================
+	BACKGROUND MODES
+	============================================
+	Declares app capabilities for background execution.
+	Required for background location tracking.
+	-->
 	<key>UIBackgroundModes</key>
 	<array>
+		<!-- Location updates while app is in background -->
 		<string>location</string>
+		<!-- Periodic background updates -->
 		<string>fetch</string>
+		<!-- Background processing tasks -->
 		<string>processing</string>
 	</array>
 </dict>

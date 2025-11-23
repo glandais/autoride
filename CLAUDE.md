@@ -42,7 +42,10 @@ flutter run --release            # Test on physical device (sensors/GPS)
 | **Cycling Detection Logic** | `lib/features/trip_detection/data/services/cycling_pattern_detector.dart` |
 | **GPS Motion-Gating** | `lib/features/trip_detection/data/services/gps_controller.dart` |
 | **Battery Optimization** | `lib/features/trip_detection/data/services/battery_optimizer.dart` |
+| **Platform Info Service** | `lib/core/platform/services/platform_info_service.dart` |
 | **Android Permissions** | `android/app/src/main/AndroidManifest.xml` |
+| **iOS Permissions** | `ios/Runner/Info.plist` |
+| **iOS Privacy Manifest** | `ios/Runner/PrivacyInfo.xcprivacy` |
 
 ---
 
@@ -680,6 +683,96 @@ Configure in `ios/Runner/Info.plist`:
 - Android 10+: Two-step (foreground → background)
 - Android 11+: User must select "Allow all the time" in settings
 - iOS 14+: "Allow Once" vs "While Using" vs "Always"
+
+---
+
+## Platform Configuration Reference
+
+### Android
+
+**API Level Handling**:
+- Use `PlatformInfoService` to detect API level at runtime
+- Android 10+ (API 29): Background location is separate permission
+- Android 11+ (API 30): Background location requires settings navigation
+- Android 13+ (API 33): Notification permission required
+
+**Configuration Files**:
+- `android/app/src/main/AndroidManifest.xml`: All permissions and service config
+- See inline comments for detailed explanation of each permission
+
+**Runtime Detection**:
+```dart
+final platformInfo = await ref.read(platformInfoServiceProvider.future);
+
+if (platformInfo.isAndroid11Plus) {
+  // Background location requires settings navigation
+  await openAppSettings();
+} else if (platformInfo.isAndroid10Plus) {
+  // Can request background permission directly
+  await requestBackgroundPermission();
+}
+
+if (platformInfo.isAndroid13Plus) {
+  // Must request notification permission
+  await requestNotificationPermission();
+}
+```
+
+### iOS
+
+**Version Handling**:
+- Use `PlatformInfoService` to detect iOS version at runtime
+- iOS 14+: User can choose "Allow Once" (temporary permission)
+- iOS 17+: Privacy manifest required (PrivacyInfo.xcprivacy)
+
+**Configuration Files**:
+- `ios/Runner/Info.plist`: Permission descriptions and background modes
+- `ios/Runner/PrivacyInfo.xcprivacy`: Privacy manifest (iOS 17+)
+- See inline comments for App Store compliance notes
+
+**Runtime Detection**:
+```dart
+final platformInfo = await ref.read(platformInfoServiceProvider.future);
+
+if (platformInfo.isIos14Plus) {
+  // Handle "Allow Once" temporary permission
+  // Re-request on next app launch if needed
+}
+
+if (platformInfo.isIos17Plus) {
+  // Privacy manifest is required for App Store submission
+  // File is included automatically in build
+}
+```
+
+### Platform Info Service
+
+**Purpose**: Runtime detection of Android API levels and iOS versions for adaptive behavior
+
+**Usage**:
+```dart
+// Get platform info
+final platformInfo = await ref.read(platformInfoServiceProvider.future);
+
+// Check specific API levels
+if (platformInfo.isAndroid13Plus) { /* ... */ }
+if (platformInfo.isIos17Plus) { /* ... */ }
+
+// Get platform description
+final service = ref.read(platformInfoServiceProvider.notifier);
+final description = service.getPlatformDescription();
+// Returns: "Android 13 (API 33)" or "iOS 17.0"
+
+// Check if emulator
+if (service.isEmulator()) {
+  print('⚠️ Running on emulator. Use physical device for accurate testing.');
+}
+```
+
+**Files**:
+- `lib/core/platform/models/platform_info.dart`: Platform info model
+- `lib/core/platform/services/platform_info_service.dart`: Platform detection service
+- `lib/core/utils/platform_config_validator.dart`: Configuration validator
 
 ---
 

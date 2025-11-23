@@ -1,0 +1,114 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	============================================
+	PRIVACY TRACKING DOMAINS
+	============================================
+	Domains used for tracking. AutoRide does NOT track users.
+	-->
+	<key>NSPrivacyTrackingDomains</key>
+	<array>
+		<!-- No tracking domains - we don't track users -->
+	</array>
+
+	<!--
+	============================================
+	PRIVACY TRACKING ENABLED
+	============================================
+	Does this app track users? NO - AutoRide is privacy-focused.
+	All data stays on device, nothing is uploaded or shared.
+	-->
+	<key>NSPrivacyTracking</key>
+	<false/>
+
+	<!--
+	============================================
+	PRIVACY COLLECTED DATA TYPES
+	============================================
+	Declares what data is collected and how it's used.
+	Required for App Privacy Details in App Store listing.
+	-->
+	<key>NSPrivacyCollectedDataTypes</key>
+	<array>
+		<!--
+		Location Data:
+		- Collected: YES (core functionality)
+		- Linked to User: NO (stays on device)
+		- Used for Tracking: NO
+		- Purpose: App functionality only
+		-->
+		<dict>
+			<key>NSPrivacyCollectedDataType</key>
+			<string>NSPrivacyCollectedDataTypeLocation</string>
+			<key>NSPrivacyCollectedDataTypeLinked</key>
+			<false/>
+			<key>NSPrivacyCollectedDataTypeTracking</key>
+			<false/>
+			<key>NSPrivacyCollectedDataTypePurposes</key>
+			<array>
+				<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+			</array>
+		</dict>
+
+		<!--
+		Device ID (for local database):
+		- Collected: YES (device identifier for local storage)
+		- Linked to User: NO
+		- Used for Tracking: NO
+		- Purpose: App functionality only
+		-->
+		<dict>
+			<key>NSPrivacyCollectedDataType</key>
+			<string>NSPrivacyCollectedDataTypeDeviceID</string>
+			<key>NSPrivacyCollectedDataTypeLinked</key>
+			<false/>
+			<key>NSPrivacyCollectedDataTypeTracking</key>
+			<false/>
+			<key>NSPrivacyCollectedDataTypePurposes</key>
+			<array>
+				<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+			</array>
+		</dict>
+	</array>
+
+	<!--
+	============================================
+	PRIVACY ACCESSED API TYPES
+	============================================
+	Required APIs that need privacy declaration (iOS 17+).
+	Must declare WHY we use each API category.
+	-->
+	<key>NSPrivacyAccessedAPITypes</key>
+	<array>
+		<!--
+		File Timestamp APIs:
+		Used for SQLite database (trip storage)
+		Reason: 0A2A.1 - Accessing files in app container
+		-->
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryFileTimestamp</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>0A2A.1</string>
+			</array>
+		</dict>
+
+		<!--
+		User Defaults APIs:
+		Used for app settings (SharedPreferences)
+		Reason: 1C8F.1 - Accessing user defaults in app group
+		-->
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>1C8F.1</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>
