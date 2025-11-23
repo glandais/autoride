@@ -5,8 +5,14 @@ import 'core/theme/app_theme.dart';
 import 'core/theme/theme_provider.dart';
 import 'features/onboarding/data/services/onboarding_service.dart';
 import 'features/onboarding/presentation/screens/onboarding_screen.dart';
+import 'features/trip_detection/data/services/trip_state_machine.dart';
+import 'features/trip_detection/domain/models/trip_state.dart';
+import 'features/trip_detection/presentation/screens/trip_tracking_screen.dart';
 import 'shared/providers/app_state_provider.dart';
 import 'shared/providers/example_provider.dart';
+
+// Global navigator key for auto-navigation
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 void main() {
   runApp(
@@ -16,21 +22,60 @@ void main() {
   );
 }
 
-class AutoRideApp extends ConsumerWidget {
+class AutoRideApp extends ConsumerStatefulWidget {
   const AutoRideApp({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<AutoRideApp> createState() => _AutoRideAppState();
+}
+
+class _AutoRideAppState extends ConsumerState<AutoRideApp> {
+  @override
+  void initState() {
+    super.initState();
+
+    // Listen for trip state changes and auto-navigate to tracking screen
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.listenManual(tripStateMachineProvider, (previous, next) {
+        // Auto-navigate when trip becomes Active (from Idle or Detecting)
+        final wasNotActive = previous?.map(
+          idle: (_) => true,
+          detecting: (_) => true,
+          active: (_) => false,
+          paused: (_) => false,
+        ) ?? true;
+
+        final isNowActive = next.map(
+          idle: (_) => false,
+          detecting: (_) => false,
+          active: (_) => true,
+          paused: (_) => false,
+        );
+
+        if (wasNotActive && isNowActive) {
+          // Navigate to trip tracking screen
+          navigatorKey.currentState?.pushNamed('/trip-tracking');
+        }
+      });
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     // Watch theme mode provider for dynamic theme switching
     final themeMode = ref.watch(themeModeProvider);
 
     return MaterialApp(
       title: 'AutoRide',
       debugShowCheckedModeBanner: false,
+      navigatorKey: navigatorKey,
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.darkTheme,
       themeMode: themeMode,
       home: const InitialRouteScreen(),
+      routes: {
+        '/trip-tracking': (context) => const TripTrackingScreen(),
+      },
     );
   }
 }
@@ -75,6 +120,7 @@ class HomePage extends ConsumerWidget {
     final counter = ref.watch(counterProvider);
     final welcomeMsg = ref.watch(welcomeMessageProvider);
     final appState = ref.watch(appStateProvider);
+    final tripState = ref.watch(tripStateMachineProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -135,6 +181,17 @@ class HomePage extends ConsumerWidget {
           ],
         ),
       ),
+      // Show FAB when there's an active trip for manual access to tracking screen
+      floatingActionButton: tripState.hasActiveTrip
+          ? FloatingActionButton.extended(
+              onPressed: () {
+                Navigator.of(context).pushNamed('/trip-tracking');
+              },
+              icon: const Icon(Icons.directions_bike),
+              label: const Text('View Trip'),
+              backgroundColor: Theme.of(context).colorScheme.primary,
+            )
+          : null,
     );
   }
 }

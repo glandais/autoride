@@ -183,11 +183,12 @@
   - *Estimate*: 3-4 hours
   - *Completed*: 2025-11-22
 
-- ☐ **T022**: Trip Tracking Screen (Active Trip)
-  - *Detail*: `tasks/T022-tracking-screen.md` (create on request)
+- ✅ **T022**: Trip Tracking Screen (Active Trip)
+  - *Detail*: `tasks/T022-tracking-screen.md`
   - *Scope*: Real-time stats, map view, start/stop controls
   - *Dependencies*: T015, T020
   - *Estimate*: 4-5 hours
+  - *Completed*: 2025-11-22
 
 - ☐ **T023**: Trip History Screen
   - *Detail*: `tasks/T023-history-screen.md` (create on request)
@@ -325,15 +326,15 @@
 ## Progress Summary
 
 **Total Tasks**: 40
-**Completed**: 17
+**Completed**: 18
 **In Progress**: 0
-**Pending**: 23
+**Pending**: 22
 **Blocked**: 0
 
 **Current Phase**: Phase 6 - User Interface
-**Last Completed**: T021 - Onboarding Flow (2025-11-22)
+**Last Completed**: T022 - Trip Tracking Screen (2025-11-22)
 **Current Task**: None (ready for next task)
-**Next Task**: T022 - Trip Tracking Screen OR T016 - TensorFlow Lite Integration
+**Next Task**: T023 - Trip History Screen OR T016 - TensorFlow Lite Integration
 
 ---
 

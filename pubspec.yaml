@@ -11,10 +11,12 @@ dependencies:
   flutter:
     sdk: flutter
   flutter_background_service: ^5.0.0  # Background task execution
+  flutter_map: ^7.0.2            # Map rendering with OpenStreetMap
   flutter_riverpod: ^3.0.3       # State management with code generation
   freezed_annotation: ^3.0.0     # Immutable models
   geolocator: ^14.0.2            # GPS location tracking
   google_fonts: ^6.1.0           # Typography with Google Fonts (Roboto)
+  latlong2: ^0.9.0               # Coordinate handling for flutter_map
   path: ^1.9.0                   # Path manipulation for database paths
   permission_handler: ^12.0.1    # Runtime permission handling
   riverpod_annotation: ^3.0.3    # Riverpod annotations
