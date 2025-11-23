@@ -197,11 +197,12 @@
   - *Estimate*: 3-4 hours
   - *Completed*: 2025-11-23
 
-- ☐ **T024**: Settings Screen
-  - *Detail*: `tasks/T024-settings-screen.md` (create on request)
+- ✅ **T024**: Settings Screen
+  - *Detail*: `tasks/T024-settings-screen.md`
   - *Scope*: Preferences, permissions, data management
   - *Dependencies*: T011, T020
   - *Estimate*: 2-3 hours
+  - *Completed*: 2025-11-23
 
 ### 6.2 UI Polish
 - ☐ **T025**: Notifications & Foreground Service UI
@@ -327,15 +328,15 @@
 ## Progress Summary
 
 **Total Tasks**: 40
-**Completed**: 19
+**Completed**: 20
 **In Progress**: 0
-**Pending**: 21
+**Pending**: 20
 **Blocked**: 0
 
 **Current Phase**: Phase 6 - User Interface
-**Last Completed**: T023 - Trip History Screen (2025-11-23)
+**Last Completed**: T024 - Settings Screen (2025-11-23)
 **Current Task**: None (ready for next task)
-**Next Task**: T024 - Settings Screen OR T016 - TensorFlow Lite Integration
+**Next Task**: T025 - Notifications & Foreground Service UI OR T016 - TensorFlow Lite Integration
 
 ---
 
