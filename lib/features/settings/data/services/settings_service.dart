@@ -13,8 +13,8 @@ Future<SharedPreferences> sharedPreferences(Ref ref) async {
 
 /// Provider for SettingsRepository
 @riverpod
-SettingsRepository settingsRepository(Ref ref) {
-  final prefs = ref.watch(sharedPreferencesProvider).requireValue;
+Future<SettingsRepository> settingsRepository(Ref ref) async {
+  final prefs = await ref.watch(sharedPreferencesProvider.future);
   return SettingsRepository(prefs);
 }
 
@@ -25,13 +25,13 @@ class SettingsService extends _$SettingsService {
   @override
   Future<UserSettings> build() async {
     // Load settings from repository
-    final repository = ref.watch(settingsRepositoryProvider);
+    final repository = await ref.watch(settingsRepositoryProvider.future);
     return await repository.loadSettings();
   }
 
   /// Update settings with a complete UserSettings object
   Future<void> updateSettings(UserSettings settings) async {
-    final repository = ref.read(settingsRepositoryProvider);
+    final repository = await ref.read(settingsRepositoryProvider.future);
 
     // Save to SharedPreferences
     await repository.saveSettings(settings);
@@ -54,7 +54,7 @@ class SettingsService extends _$SettingsService {
 
   /// Reset settings to defaults
   Future<void> resetToDefaults() async {
-    final repository = ref.read(settingsRepositoryProvider);
+    final repository = await ref.read(settingsRepositoryProvider.future);
     await repository.clearSettings();
 
     // Update state with defaults

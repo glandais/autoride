@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:autoride/features/trip_detection/data/services/trip_stop_detector.dart';
 import 'package:autoride/features/trip_detection/domain/models/motion_data.dart';
 import 'package:autoride/features/trip_detection/domain/models/location_data.dart';
@@ -7,6 +8,17 @@ import 'package:autoride/features/trip_detection/domain/models/trip_stop_state.d
 import 'package:autoride/core/constants/app_constants.dart';
 
 void main() {
+  setUpAll(() {
+    // Mock SharedPreferences for all tests
+    SharedPreferences.setMockInitialValues({
+      'tripNotificationsEnabled': true,
+      'showOngoingNotification': true,
+      'soundOnTripStartStop': false,
+      'autoPauseEnabled': true,
+      'minDistanceMeters': 500.0,
+    });
+  });
+
   group('TripStopDetector', () {
     /// Helper to create a fresh provider container for each test
     ProviderContainer createContainer() {
