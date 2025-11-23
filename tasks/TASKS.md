@@ -190,11 +190,12 @@
   - *Estimate*: 4-5 hours
   - *Completed*: 2025-11-22
 
-- ☐ **T023**: Trip History Screen
-  - *Detail*: `tasks/T023-history-screen.md` (create on request)
+- ✅ **T023**: Trip History Screen
+  - *Detail*: `tasks/T023_trip_history_screen.md`
   - *Scope*: List view, trip details, route map
   - *Dependencies*: T010, T020
   - *Estimate*: 3-4 hours
+  - *Completed*: 2025-11-23
 
 - ☐ **T024**: Settings Screen
   - *Detail*: `tasks/T024-settings-screen.md` (create on request)
@@ -326,15 +327,15 @@
 ## Progress Summary
 
 **Total Tasks**: 40
-**Completed**: 18
+**Completed**: 19
 **In Progress**: 0
-**Pending**: 22
+**Pending**: 21
 **Blocked**: 0
 
 **Current Phase**: Phase 6 - User Interface
-**Last Completed**: T022 - Trip Tracking Screen (2025-11-22)
+**Last Completed**: T023 - Trip History Screen (2025-11-23)
 **Current Task**: None (ready for next task)
-**Next Task**: T023 - Trip History Screen OR T016 - TensorFlow Lite Integration
+**Next Task**: T024 - Settings Screen OR T016 - TensorFlow Lite Integration
 
 ---
 
@@ -378,5 +379,5 @@
 
 ---
 
-**Last Updated**: 2025-11-22
+**Last Updated**: 2025-11-23
 **Version**: 1.0
