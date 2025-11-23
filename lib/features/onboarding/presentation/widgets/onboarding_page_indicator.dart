@@ -2,14 +2,14 @@ import 'package:flutter/material.dart';
 import '../../../../core/theme/app_spacing.dart';
 
 class OnboardingPageIndicator extends StatelessWidget {
-  final int currentPage;
-  final int pageCount;
-
   const OnboardingPageIndicator({
-    super.key,
     required this.currentPage,
     required this.pageCount,
+    super.key,
   });
+
+  final int currentPage;
+  final int pageCount;
 
   @override
   Widget build(BuildContext context) {
@@ -26,7 +26,7 @@ class OnboardingPageIndicator extends StatelessWidget {
           decoration: BoxDecoration(
             color: currentPage == index
                 ? theme.colorScheme.primary
-                : theme.colorScheme.outline.withOpacity(0.3),
+                : theme.colorScheme.outline.withValues(alpha: 0.3),
             borderRadius: BorderRadius.circular(4),
           ),
         ),

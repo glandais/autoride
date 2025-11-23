@@ -84,17 +84,17 @@ class FeaturesScreen extends ConsumerWidget {
 }
 
 class _FeatureCard extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String description;
-  final Color color;
-
   const _FeatureCard({
     required this.icon,
     required this.title,
     required this.description,
     required this.color,
   });
+
+  final IconData icon;
+  final String title;
+  final String description;
+  final Color color;
 
   @override
   Widget build(BuildContext context) {
@@ -108,7 +108,12 @@ class _FeatureCard extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(AppSpacing.md),
               decoration: BoxDecoration(
-                color: Color.fromRGBO(color.red, color.green, color.blue, 0.1),
+                color: Color.fromRGBO(
+                  (color.r * 255).round(),
+                  (color.g * 255).round(),
+                  (color.b * 255).round(),
+                  0.1,
+                ),
                 borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
               ),
               child: Icon(

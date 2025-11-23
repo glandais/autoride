@@ -2,18 +2,18 @@ import 'package:flutter/material.dart';
 import '../../../../core/theme/app_spacing.dart';
 
 class OnboardingActionButton extends StatelessWidget {
+  const OnboardingActionButton({
+    required this.label,
+    required this.onPressed,
+    super.key,
+    this.icon,
+    this.isSecondary = false,
+  });
+
   final String label;
   final VoidCallback onPressed;
   final IconData? icon;
   final bool isSecondary;
-
-  const OnboardingActionButton({
-    super.key,
-    required this.label,
-    required this.onPressed,
-    this.icon,
-    this.isSecondary = false,
-  });
 
   @override
   Widget build(BuildContext context) {

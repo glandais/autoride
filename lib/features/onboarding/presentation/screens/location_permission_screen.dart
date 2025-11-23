@@ -117,13 +117,13 @@ class LocationPermissionScreen extends ConsumerWidget {
 }
 
 class _ReasonItem extends StatelessWidget {
-  final IconData icon;
-  final String text;
-
   const _ReasonItem({
     required this.icon,
     required this.text,
   });
+
+  final IconData icon;
+  final String text;
 
   @override
   Widget build(BuildContext context) {

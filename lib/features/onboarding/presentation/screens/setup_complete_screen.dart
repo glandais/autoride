@@ -91,15 +91,15 @@ class SetupCompleteScreen extends ConsumerWidget {
 }
 
 class _SetupItem extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final bool enabled;
-
   const _SetupItem({
     required this.icon,
     required this.label,
     required this.enabled,
   });
+
+  final IconData icon;
+  final String label;
+  final bool enabled;
 
   @override
   Widget build(BuildContext context) {
