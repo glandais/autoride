@@ -90,11 +90,8 @@ class GPSController extends _$GPSController {
 
     _gpsState = GPSState.activating;
 
-    // Note: Actual GPS start will be handled by LocationService
-    // This controller just manages the state and triggers based on motion
-    // Integration with BackgroundLocationService happens at higher level
-    // Power mode is accessed via currentPowerModeProvider when needed
-
+    // FIXME(T006): Wire up to BackgroundLocationService.startTracking() and
+    // pass adaptive location settings based on current power mode.
     _gpsState = GPSState.active;
   }
 
@@ -104,9 +101,7 @@ class GPSController extends _$GPSController {
 
     _gpsState = GPSState.stopping;
 
-    // Note: Actual GPS stop will be handled by LocationService
-    // This controller just manages the state
-
+    // FIXME(T006): Wire up to BackgroundLocationService.stopTracking().
     _gpsState = GPSState.inactive;
   }
 

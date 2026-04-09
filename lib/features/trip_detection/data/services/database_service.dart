@@ -65,6 +65,8 @@ class DatabaseService {
   /// Called when database is created for the first time
   Future<void> _onCreate(Database db, int version) async {
     // Create trips table
+    // FIXME(T009): Add a 'status' column (e.g. active/completed/discarded) for
+    // trip lifecycle tracking. Currently only user_confirmed boolean exists.
     await db.execute('''
       CREATE TABLE trips (
         id INTEGER PRIMARY KEY AUTOINCREMENT,

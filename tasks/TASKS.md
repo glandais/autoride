@@ -386,5 +386,5 @@
 
 ---
 
-**Last Updated**: 2025-11-23
-**Version**: 1.0
+**Last Updated**: 2026-04-10
+**Version**: 1.1

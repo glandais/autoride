@@ -37,10 +37,13 @@ void onStart(ServiceInstance service) async {
       if (await service.isForegroundService()) {
         try {
           // Get current location with optimized settings
+          // FIXME(T006): Use AdaptiveLocationSettings instead of hardcoded values.
+          // Should read from adaptiveLocationSettingsProvider to respect
+          // battery level and motion state.
           final position = await Geolocator.getCurrentPosition(
             locationSettings: const LocationSettings(
-              accuracy: LocationAccuracy.medium, // Balance accuracy and battery
-              distanceFilter: 15, // Update every 15 meters (cycling distance)
+              accuracy: LocationAccuracy.medium,
+              distanceFilter: 15,
               timeLimit: Duration(seconds: 30),
             ),
           );
