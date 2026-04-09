@@ -21,22 +21,19 @@ class NotificationService extends _$NotificationService {
     const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
 
     // iOS initialization
-    final iosSettings = DarwinInitializationSettings(
+    const iosSettings = DarwinInitializationSettings(
       requestAlertPermission: true,
       requestBadgePermission: true,
       requestSoundPermission: true,
-      onDidReceiveLocalNotification: (id, title, body, payload) async {
-        // Handle iOS foreground notification
-      },
     );
 
-    final settings = InitializationSettings(
+    const settings = InitializationSettings(
       android: androidSettings,
       iOS: iosSettings,
     );
 
     await _notifications.initialize(
-      settings,
+      settings: settings,
       onDidReceiveNotificationResponse: _onNotificationTap,
     );
 
@@ -162,10 +159,10 @@ class NotificationService extends _$NotificationService {
     );
 
     await _notifications.show(
-      AppConstants.foregroundNotificationId,
-      'AutoRide - Trip in Progress',
-      'Distance: $distanceKm km • Duration: $durationStr • Speed: $speedKmh km/h',
-      NotificationDetails(android: androidDetails, iOS: iosDetails),
+      id: AppConstants.foregroundNotificationId,
+      title: 'AutoRide - Trip in Progress',
+      body: 'Distance: $distanceKm km • Duration: $durationStr • Speed: $speedKmh km/h',
+      notificationDetails: NotificationDetails(android: androidDetails, iOS: iosDetails),
     );
   }
 
@@ -197,15 +194,15 @@ class NotificationService extends _$NotificationService {
     );
 
     await _notifications.show(
-      AppConstants.tripStartNotificationId,
-      'Trip Started',
-      'Your cycling trip is now being tracked',
-      NotificationDetails(android: androidDetails, iOS: iosDetails),
+      id: AppConstants.tripStartNotificationId,
+      title: 'Trip Started',
+      body: 'Your cycling trip is now being tracked',
+      notificationDetails: NotificationDetails(android: androidDetails, iOS: iosDetails),
     );
 
     // Auto-dismiss after 5 seconds
     Future.delayed(const Duration(seconds: 5), () {
-      _notifications.cancel(AppConstants.tripStartNotificationId);
+      _notifications.cancel(id: AppConstants.tripStartNotificationId);
     });
   }
 
@@ -257,16 +254,16 @@ class NotificationService extends _$NotificationService {
     );
 
     await _notifications.show(
-      AppConstants.tripStopNotificationId,
-      'Trip Completed',
-      'Distance: $distanceKm km • Duration: $durationStr • Avg Speed: $avgSpeedKmh km/h',
-      NotificationDetails(android: androidDetails, iOS: iosDetails),
+      id: AppConstants.tripStopNotificationId,
+      title: 'Trip Completed',
+      body: 'Distance: $distanceKm km • Duration: $durationStr • Avg Speed: $avgSpeedKmh km/h',
+      notificationDetails: NotificationDetails(android: androidDetails, iOS: iosDetails),
     );
   }
 
   // Cancel foreground notification
   Future<void> cancelForegroundNotification() async {
-    await _notifications.cancel(AppConstants.foregroundNotificationId);
+    await _notifications.cancel(id: AppConstants.foregroundNotificationId);
   }
 
   // Request notification permissions (Android 13+, iOS)
