@@ -13,14 +13,16 @@ class Onboarding extends _$Onboarding {
   @override
   OnboardingState build() {
     _pageController = PageController();
+
+    // Clean up PageController when provider is disposed
+    ref.onDispose(() {
+      _pageController?.dispose();
+    });
+
     return OnboardingState.initial();
   }
 
   PageController get pageController => _pageController!;
-
-  void dispose() {
-    _pageController?.dispose();
-  }
 
   /// Navigate to next page
   Future<void> nextPage() async {
@@ -66,6 +68,9 @@ class Onboarding extends _$Onboarding {
     final service = ref.read(locationPermissionServiceProvider.notifier);
     final status = await service.requestPermission();
 
+    // Check if still mounted after async operation
+    if (!ref.mounted) return;
+
     final granted = status == LocationPermissionStatus.granted;
     state = state.copyWith(locationPermissionGranted: granted);
 
@@ -79,6 +84,9 @@ class Onboarding extends _$Onboarding {
     final service = ref.read(locationPermissionServiceProvider.notifier);
     final status = await service.requestBackgroundPermission();
 
+    // Check if still mounted after async operation
+    if (!ref.mounted) return;
+
     final granted = status == LocationPermissionStatus.granted;
     state = state.copyWith(backgroundPermissionGranted: granted);
 
@@ -88,6 +96,7 @@ class Onboarding extends _$Onboarding {
 
   /// Complete onboarding flow
   Future<void> completeOnboarding() async {
+    if (!ref.mounted) return;
     state = state.copyWith(isComplete: true);
     await ref.read(onboardingServiceProvider.notifier).completeOnboarding();
   }

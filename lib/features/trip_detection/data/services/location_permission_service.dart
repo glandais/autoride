@@ -60,8 +60,10 @@ class LocationPermissionService extends _$LocationPermissionService {
       _ => LocationPermissionStatus.notDetermined,
     };
 
-    // Update state
-    state = AsyncValue.data(status);
+    // Update state only if still mounted
+    if (ref.mounted) {
+      state = AsyncValue.data(status);
+    }
     return status;
   }
 
@@ -96,7 +98,10 @@ class LocationPermissionService extends _$LocationPermissionService {
       _ => LocationPermissionStatus.notDetermined,
     };
 
-    state = AsyncValue.data(status);
+    // Update state only if still mounted
+    if (ref.mounted) {
+      state = AsyncValue.data(status);
+    }
     return status;
   }
 
