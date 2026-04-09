@@ -133,6 +133,7 @@ class AppTheme {
   static ThemeData darkTheme = ThemeData(
     useMaterial3: true,
     brightness: Brightness.dark,
+    scaffoldBackgroundColor: AppColors.backgroundDark,
 
     // Color Scheme
     colorScheme: const ColorScheme.dark(
@@ -152,7 +153,7 @@ class AppTheme {
       foregroundColor: AppColors.textPrimaryDark,
       elevation: 0,
       centerTitle: true,
-      systemOverlayStyle: SystemUiOverlayStyle.dark,
+      systemOverlayStyle: SystemUiOverlayStyle.light, // Light icons on dark background
       titleTextStyle: AppTextStyles.titleLarge.copyWith(
         color: AppColors.textPrimaryDark,
       ),

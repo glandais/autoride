@@ -39,15 +39,10 @@ class TripHistoryScreen extends ConsumerWidget {
         data: (trips) {
           // Show empty state if no trips
           if (trips.isEmpty) {
-            return EmptyState(
-              icon: Icons.history,
+            return const EmptyState(
+              icon: Icons.directions_bike,
               title: 'No Trips Yet',
-              subtitle: 'Start tracking your first bike trip!',
-              action: ElevatedButton.icon(
-                onPressed: () => Navigator.pop(context),
-                icon: const Icon(Icons.directions_bike),
-                label: const Text('Start Tracking'),
-              ),
+              subtitle: 'Your bike trips will appear here once you start riding. AutoRide will automatically detect when you cycle!',
             );
           }
 

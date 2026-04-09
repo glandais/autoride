@@ -12,27 +12,27 @@ class BackgroundPermissionScreen extends ConsumerWidget {
     final theme = Theme.of(context);
     final state = ref.watch(onboardingProvider);
 
-    return Padding(
+    return SingleChildScrollView(
       padding: const EdgeInsets.all(AppSpacing.xl),
       child: Column(
         children: [
-          const SizedBox(height: AppSpacing.xxl),
+          const SizedBox(height: AppSpacing.lg),
 
           // Icon
           Icon(
             Icons.auto_awesome,
-            size: 100,
+            size: 80,
             color: theme.colorScheme.secondary,
           ),
-          const SizedBox(height: AppSpacing.xl),
+          const SizedBox(height: AppSpacing.lg),
 
           // Title
           Text(
             'Automatic Tracking',
-            style: theme.textTheme.displaySmall,
+            style: theme.textTheme.headlineMedium,
             textAlign: TextAlign.center,
           ),
-          const SizedBox(height: AppSpacing.lg),
+          const SizedBox(height: AppSpacing.md),
 
           // Rationale
           Text(
@@ -40,7 +40,7 @@ class BackgroundPermissionScreen extends ConsumerWidget {
             style: theme.textTheme.bodyLarge,
             textAlign: TextAlign.center,
           ),
-          const SizedBox(height: AppSpacing.xl),
+          const SizedBox(height: AppSpacing.lg),
 
           // Benefits Card
           Card(
@@ -72,8 +72,7 @@ class BackgroundPermissionScreen extends ConsumerWidget {
               ),
             ),
           ),
-
-          const Spacer(),
+          const SizedBox(height: AppSpacing.lg),
 
           // Optional Note
           Container(
