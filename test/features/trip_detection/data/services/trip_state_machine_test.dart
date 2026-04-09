@@ -2,8 +2,43 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:autoride/features/trip_detection/data/services/trip_state_machine.dart';
+import 'package:autoride/features/trip_detection/data/services/notification_service.dart';
+import 'package:autoride/features/trip_detection/data/services/trip_recorder_service.dart';
 import 'package:autoride/features/trip_detection/domain/models/trip_state.dart';
 import 'package:autoride/features/settings/data/services/settings_service.dart';
+
+/// Mock NotificationService that skips all plugin calls
+class _MockNotificationService extends NotificationService {
+  @override
+  Future<void> build() async {
+    // No-op: skip plugin initialization
+  }
+
+  @override
+  Future<void> showTripStartNotification() async {}
+
+  @override
+  Future<void> showTripStopNotification({
+    required double distance,
+    required Duration duration,
+    required double avgSpeed,
+  }) async {}
+
+  @override
+  Future<void> cancelForegroundNotification() async {}
+}
+
+/// Mock TripRecorderService that returns empty metrics
+class _MockTripRecorderService extends TripRecorderService {
+  @override
+  Future<TripMetrics> build() async {
+    return const TripMetrics(
+      distanceMeters: 0,
+      durationSeconds: 0,
+      routePointCount: 0,
+    );
+  }
+}
 
 // NOTE: Some tests that trigger notifications may fail in unit test environment
 // due to flutter_local_notifications plugin not being available.
@@ -29,7 +64,14 @@ void main() {
   });
 
   setUp(() async {
-    container = ProviderContainer();
+    container = ProviderContainer(
+      overrides: [
+        // Mock NotificationService to avoid flutter_local_notifications plugin
+        notificationServiceProvider.overrideWith(_MockNotificationService.new),
+        // Mock TripRecorderService to avoid database dependency
+        tripRecorderServiceProvider.overrideWith(_MockTripRecorderService.new),
+      ],
+    );
 
     // Wait for async providers to initialize
     await container.read(settingsServiceProvider.future);
