@@ -36,6 +36,32 @@ Quality gates after the pass: `flutter analyze` clean, **157 tests pass**.
 
 ---
 
+## ✅ Completed in follow-up (parallel worktree subagents)
+
+Done after the first pass, each in an isolated git worktree, verified by
+`flutter analyze` + `flutter test`. Integrated tree: **190 tests pass**.
+
+| # | Severity | Area | Fix |
+|---|----------|------|-----|
+| 27 | Low | trip_repository | `getTripsByDateRange` route-point loading batched into one `WHERE trip_id IN (?, …)` query (was N+1), grouped in Dart, order preserved; added association/order test |
+| 14 | Medium | trip_stop_detector | Movement hysteresis: pause is only reset after `tripStopMovementHysteresisSamples` (=3) consecutive non-stationary readings, so a single noisy GPS speed spike no longer starves the 300 s auto-stop; added tests |
+| 12 | High | tests | Added `TripRecorderService` tests (lifecycle, double-start/stop StateErrors, pause/resume bookkeeping, final persistence). Location-driven paths could not be covered — see note below |
+| 13 | High | tests | Added `TripDetectionCoordinator` tests (init/idle, safe stop). Decision-routing could not be covered — see note below |
+| 29 | Low | tests | Renamed mislabeled `location_service_test` → `location_data_test` and added a real `LocationService` permission-gating test; added `MotionDetectionService` and `GPSController` behavior tests |
+
+**Testability limitation surfaced by #12/#13/#29 (feeds the deferred cluster):**
+`TripRecorderService`, `TripDetectionCoordinator`, `MotionDetectionService`, and
+`GPSController` consume sensor/location data by calling the generated provider
+*functions* directly (`locationStream(ref)`, `motionDataStream(ref)`,
+`motionDetectionServiceProvider.notifier.build()`) rather than via
+`ref.watch(...Provider)`. That bypasses provider overrides, so fake streams
+cannot be injected in unit tests — the distance/filtering/flush logic and the
+coordinator's routing logic remain untestable until those call sites are
+refactored to use overridable providers. This is the same anti-pattern as
+finding #5 and is captured in the deferred-cluster doc below.
+
+---
+
 ## ⏳ Deferred — larger refactors needing device validation
 
 These are real and confirmed, but each changes the live tracking pipeline and
@@ -74,16 +100,16 @@ should be sequenced roughly in this order.
   connected and nothing starts/stops the background service with recording. The
   isolate also polls GPS on a fixed 30 s timer with no motion/battery adaptation.
 
-### Tier 2/3 — robustness & polish
+### Tier 2/3 — remaining polish
 
-- **#14** Stop detection has no hysteresis — one noisy GPS speed reading resets
-  the whole pause timer (fix alongside #1).
-- **#27** N+1 route-point query in `trip_repository` (latent; test-only caller).
-- **#12/#13** No tests for `TripRecorderService` or `TripDetectionCoordinator`
-  (the metric-computation and orchestration brains).
-- **#29** Test hygiene: `background_location_service_test` only asserts
-  "is defined"; `location_service_test` tests the model, not the service;
-  `MotionDetectionService` buffer/eviction and `GPSController` transitions
-  untested.
+- **#29 (partial)** `background_location_service_test` still only asserts
+  "is defined"; the isolate handlers (`onStart`/`onIosBackground`) require
+  platform channels / a device, so this is blocked with the cluster below.
+- **#12/#13 (partial)** The location- and motion-driven paths of the recorder
+  and coordinator remain untested — blocked by the same direct-function-call
+  anti-pattern as #5 (see the testability note above and the cluster doc).
+
+Why the rest of this cluster is NOT auto-implemented, the decisions it needs
+from you, and a proposed sequencing: **see `tasks/BLOCKED-pipeline-refactor.md`**.
 
 Full per-finding detail with verification reasoning is in the audit transcript.
