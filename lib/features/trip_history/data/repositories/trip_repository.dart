@@ -146,25 +146,32 @@ class TripRepository {
         orderBy: 'start_time DESC',
       );
 
-      if (!includeRoutePoints) {
+      if (!includeRoutePoints || tripMaps.isEmpty) {
         return tripMaps.map((map) => Trip.fromMap(map, [])).toList();
       }
 
-      // Load route points for each trip
-      final trips = <Trip>[];
-      for (final tripMap in tripMaps) {
-        final tripId = tripMap['id'] as int;
-        final pointMaps = await _db.query(
-          'route_points',
-          where: 'trip_id = ?',
-          whereArgs: [tripId],
-          orderBy: 'timestamp ASC',
-        );
-        final points = pointMaps.map((map) => RoutePoint.fromMap(map)).toList();
-        trips.add(Trip.fromMap(tripMap, points));
+      // Load route points for all trips in a single query to avoid N+1 queries.
+      final tripIds = tripMaps.map((map) => map['id'] as int).toList();
+      final placeholders = List.filled(tripIds.length, '?').join(', ');
+      final pointMaps = await _db.query(
+        'route_points',
+        where: 'trip_id IN ($placeholders)',
+        whereArgs: tripIds,
+        orderBy: 'trip_id ASC, timestamp ASC',
+      );
+
+      // Group route points by trip_id, preserving per-trip timestamp ordering.
+      final pointsByTripId = <int, List<RoutePoint>>{};
+      for (final map in pointMaps) {
+        final point = RoutePoint.fromMap(map);
+        (pointsByTripId[point.tripId] ??= <RoutePoint>[]).add(point);
       }
 
-      return trips;
+      return tripMaps.map((tripMap) {
+        final tripId = tripMap['id'] as int;
+        final points = pointsByTripId[tripId] ?? const <RoutePoint>[];
+        return Trip.fromMap(tripMap, points);
+      }).toList();
     } catch (e) {
       throw TripRepositoryException('Failed to get trips by date range: $e');
     }

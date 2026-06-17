@@ -199,6 +199,90 @@ void main() {
       expect(trips, hasLength(2)); // Yesterday and today
     });
 
+    test(
+        'should load route points for each trip in date range '
+        'with correct association and order', () async {
+      final base = DateTime(2026, 1, 1, 12);
+
+      // Trip A: 3 route points (latitudes 1, 2, 3).
+      final tripA = await repository.saveTrip(
+        createTestTrip(startTime: base),
+      );
+      // Trip B: 2 route points (latitudes 10, 11).
+      final tripB = await repository.saveTrip(
+        createTestTrip(startTime: base.add(const Duration(hours: 1))),
+      );
+
+      // Insert points out of timestamp order to verify ordering is applied.
+      await repository.saveRoutePoints([
+        RoutePoint(
+          tripId: tripA.id!,
+          latitude: 3.0,
+          longitude: 0,
+          timestamp: base.add(const Duration(minutes: 30)),
+        ),
+        RoutePoint(
+          tripId: tripA.id!,
+          latitude: 1.0,
+          longitude: 0,
+          timestamp: base.add(const Duration(minutes: 10)),
+        ),
+        RoutePoint(
+          tripId: tripA.id!,
+          latitude: 2.0,
+          longitude: 0,
+          timestamp: base.add(const Duration(minutes: 20)),
+        ),
+        RoutePoint(
+          tripId: tripB.id!,
+          latitude: 11.0,
+          longitude: 0,
+          timestamp: base.add(const Duration(minutes: 50)),
+        ),
+        RoutePoint(
+          tripId: tripB.id!,
+          latitude: 10.0,
+          longitude: 0,
+          timestamp: base.add(const Duration(minutes: 40)),
+        ),
+      ]);
+
+      final trips = await repository.getTripsByDateRange(
+        startDate: base.subtract(const Duration(days: 1)),
+        endDate: base.add(const Duration(days: 1)),
+        includeRoutePoints: true,
+      );
+
+      expect(trips, hasLength(2));
+
+      final loadedA = trips.firstWhere((t) => t.id == tripA.id);
+      final loadedB = trips.firstWhere((t) => t.id == tripB.id);
+
+      // Correct count per trip.
+      expect(loadedA.routePoints, hasLength(3));
+      expect(loadedB.routePoints, hasLength(2));
+
+      // Correct association: every point belongs to its own trip.
+      expect(
+        loadedA.routePoints.every((p) => p.tripId == tripA.id),
+        isTrue,
+      );
+      expect(
+        loadedB.routePoints.every((p) => p.tripId == tripB.id),
+        isTrue,
+      );
+
+      // Correct order: points ordered by timestamp ASC within each trip.
+      expect(
+        loadedA.routePoints.map((p) => p.latitude).toList(),
+        equals([1.0, 2.0, 3.0]),
+      );
+      expect(
+        loadedB.routePoints.map((p) => p.latitude).toList(),
+        equals([10.0, 11.0]),
+      );
+    });
+
     test('should get trips by activity type', () async {
       // Save trips with different activities
       await repository.saveTrip(createTestTrip());
