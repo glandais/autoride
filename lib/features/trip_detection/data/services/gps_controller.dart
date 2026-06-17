@@ -23,6 +23,9 @@ class GPSController extends _$GPSController {
 
   @override
   Stream<GPSState> build() async* {
+    // Ensure the inactivity timer never outlives the provider.
+    ref.onDispose(() => _inactivityTimer?.cancel());
+
     // Initialize with inactive state
     yield _gpsState;
 

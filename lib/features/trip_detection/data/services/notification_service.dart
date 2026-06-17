@@ -3,8 +3,11 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:autoride/core/constants/app_constants.dart';
 import 'package:autoride/features/settings/data/services/settings_service.dart';
 import 'package:autoride/features/trip_detection/data/services/trip_recorder_service.dart';
+import 'package:autoride/core/utils/logger.dart';
 
 part 'notification_service.g.dart';
+
+const _logger = Logger('NotificationService');
 
 @riverpod
 class NotificationService extends _$NotificationService {
@@ -79,14 +82,23 @@ class NotificationService extends _$NotificationService {
 
     if (action == 'pause') {
       // Trigger pause action
-      ref.read(tripRecorderServiceProvider.notifier).pauseRecording();
+      _runAction(
+        'pause',
+        () => ref.read(tripRecorderServiceProvider.notifier).pauseRecording(),
+      );
     } else if (action == 'resume') {
       // Trigger resume action
-      ref.read(tripRecorderServiceProvider.notifier).resumeRecording();
+      _runAction(
+        'resume',
+        () => ref.read(tripRecorderServiceProvider.notifier).resumeRecording(),
+      );
     } else if (action == 'stop') {
       // Trigger stop action - this will trigger state machine stopTrip()
       // which shows the trip completion notification
-      ref.read(tripRecorderServiceProvider.notifier).stopRecording();
+      _runAction(
+        'stop',
+        () => ref.read(tripRecorderServiceProvider.notifier).stopRecording(),
+      );
     } else if (action == 'view_details') {
       // User tapped "View Details" on trip completion notification
       // TODO: Navigate to trip history/details screen
@@ -99,6 +111,21 @@ class NotificationService extends _$NotificationService {
       // Note: Navigation from notification requires app-level navigation service
       // or deep linking, which is beyond scope of T025
     }
+  }
+
+  /// Run a notification action, swallowing the result but never the error.
+  ///
+  /// `_onNotificationTap` is a synchronous platform callback, so these actions
+  /// are fire-and-forget. Without this guard a thrown StateError (e.g. stop with
+  /// no active trip) or a repository exception becomes an unhandled async error.
+  void _runAction(String name, Future<void> Function() action) {
+    Future(() async {
+      try {
+        await action();
+      } catch (e, stackTrace) {
+        _logger.error('Notification action "$name" failed', e, stackTrace);
+      }
+    });
   }
 
   // Show foreground notification (active trip)

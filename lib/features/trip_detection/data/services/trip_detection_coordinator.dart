@@ -11,8 +11,11 @@ import 'trip_start_detector.dart';
 import 'trip_stop_detector.dart';
 import 'trip_state_machine.dart';
 import 'trip_recorder_service.dart';
+import '../../../../core/utils/logger.dart';
 
 part 'trip_detection_coordinator.g.dart';
+
+const _logger = Logger('TripDetectionCoordinator');
 
 /// Coordinates trip detection by combining motion and location data
 ///
@@ -26,11 +29,13 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
 
   LocationData? _lastLocation;
   bool _isAnalyzing = false;
+  bool _disposed = false;
 
   @override
   Future<TripState> build() async {
     // Initialize with idle state
     ref.onDispose(() {
+      _disposed = true;
       _cleanup();
     });
 
@@ -46,9 +51,16 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
     final motionStream = motionDataStream(ref);
     _motionSubscription = motionStream.listen(
       _onMotionData,
-      onError: (error) {
-        // Handle stream errors
+      onError: (Object error, StackTrace stackTrace) {
+        // The motion stream is the heartbeat of detection. If it errors, tear
+        // down consistently and surface the failure rather than leaving a
+        // half-running coordinator with no visible error.
+        _logger.error('Motion stream error', error, stackTrace);
+        _cleanup();
         _isAnalyzing = false;
+        if (!_disposed) {
+          state = AsyncValue.error(error, stackTrace);
+        }
       },
     );
 
@@ -124,12 +136,26 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
       final detector = ref.read(tripStartDetectorProvider);
       final confidence = detector.confidence;
 
-      // Trigger trip recording (T015)
-      // This will create trip in database and update state machine
-      await ref.read(tripRecorderServiceProvider.notifier).startRecording(
-            confidenceScore: confidence,
-            activity: ActivityType.cycling,
-          );
+      try {
+        // Trigger trip recording (T015)
+        // This will create trip in database and update state machine
+        await ref.read(tripRecorderServiceProvider.notifier).startRecording(
+              confidenceScore: confidence,
+              activity: ActivityType.cycling,
+            );
+      } catch (e, stackTrace) {
+        // startRecording writes to the DB and can throw. Without this guard the
+        // exception escapes the stream callback unhandled, the trip silently
+        // fails to start, and the UI never learns about it. Reset to idle so the
+        // detector can retry on the next motion sample.
+        _logger.error('Failed to start trip recording', e, stackTrace);
+        ref.read(tripStateMachineProvider.notifier).stopTrip();
+        ref.read(tripStartDetectorProvider.notifier).reset();
+        if (!_disposed) {
+          state = AsyncValue.error(e, stackTrace);
+        }
+        return;
+      }
 
       // Update coordinator state
       final stateMachineState = ref.read(tripStateMachineProvider);
@@ -208,6 +234,7 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
     // Return to listening for next trip
     stopListening();
     await Future.delayed(const Duration(milliseconds: 100));
+    if (_disposed) return; // Provider torn down during the delay
     await startListening();
   }
 
@@ -225,7 +252,7 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
       // Reset and restart listening
       stopListening();
       Future.delayed(const Duration(milliseconds: 100), () {
-        if (_isAnalyzing) {
+        if (!_disposed) {
           startListening();
         }
       });

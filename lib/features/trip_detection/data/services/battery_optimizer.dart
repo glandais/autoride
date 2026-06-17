@@ -96,6 +96,7 @@ class PowerModeConfig {
 class BatteryOptimizer extends _$BatteryOptimizer {
   final Battery _battery = Battery();
   Timer? _batteryCheckTimer;
+  StreamSubscription<BatteryState>? _batterySubscription;
   int _currentBatteryLevel = 100;
 
   @override
@@ -113,7 +114,8 @@ class BatteryOptimizer extends _$BatteryOptimizer {
     _currentBatteryLevel = await _battery.batteryLevel;
 
     // Monitor battery level changes
-    _battery.onBatteryStateChanged.listen((BatteryState batteryState) async {
+    _batterySubscription =
+        _battery.onBatteryStateChanged.listen((BatteryState batteryState) async {
       _currentBatteryLevel = await _battery.batteryLevel;
       await _updatePowerMode();
     });
@@ -129,6 +131,7 @@ class BatteryOptimizer extends _$BatteryOptimizer {
 
     ref.onDispose(() {
       _batteryCheckTimer?.cancel();
+      _batterySubscription?.cancel();
     });
   }
 

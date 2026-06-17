@@ -26,12 +26,13 @@ void main() {
     }
 
     // Helper: Create stationary motion data
+    // Accelerometer includes gravity, so a resting device reads ~9.8 m/s².
     MotionData createStationaryMotion() {
       return MotionData(
         accelerometer: AccelerometerData(
-          x: 0.2,
-          y: 0.2,
-          z: 0.2, // Very low motion (magnitude ≈ 0.35 < 1.0)
+          x: 0.1,
+          y: 0.1,
+          z: 9.8, // Resting on gravity (magnitude ≈ 9.801, deviation ≈ 0.001 < 1.0)
           timestamp: DateTime.now(),
         ),
         gyroscope: GyroscopeData(
@@ -99,6 +100,41 @@ void main() {
       expect(state.pauseStartTime, isNull);
       expect(state.pauseDuration, equals(Duration.zero));
       expect(state.consecutiveStationaryDetections, equals(0));
+    });
+
+    test('regression: gravity-inclusive resting data is detected as stationary',
+        () async {
+      // Guards against the bug where stationary detection compared raw
+      // gravity-inclusive magnitude (~9.8) against a gravity-removed threshold
+      // (1.0), so auto-pause/stop never triggered on real devices.
+      final container = createContainer();
+      addTearDown(container.dispose);
+
+      final detector = container.read(tripStopDetectorProvider.notifier);
+
+      // Phone resting flat: ~9.8 m/s² on one axis, zero GPS speed.
+      final resting = MotionData(
+        accelerometer: AccelerometerData(
+          x: 0.0,
+          y: 0.0,
+          z: 9.81,
+          timestamp: DateTime.now(),
+        ),
+        gyroscope: GyroscopeData(
+          x: 0.0,
+          y: 0.0,
+          z: 0.0,
+          timestamp: DateTime.now(),
+        ),
+        timestamp: DateTime.now(),
+      );
+
+      await detector.analyzeForTripStop(resting, createStationaryLocation());
+      expect(container.read(tripStopDetectorProvider).isStationary, isTrue);
+
+      // A clearly-moving device (magnitude far from gravity) is NOT stationary.
+      final moving = createCyclingMotion();
+      expect(detector.shouldResumeTrip(moving, createCyclingLocation()), isTrue);
     });
 
     test('should detect stationary state with low motion and GPS speed', () async {

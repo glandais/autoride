@@ -6,10 +6,13 @@ import '../../domain/models/trip.dart';
 import '../../domain/models/trip_state.dart';
 import '../../../trip_history/data/repositories/trip_repository.dart';
 import '../../../../core/constants/app_constants.dart';
+import '../../../../core/utils/logger.dart';
 import 'trip_state_machine.dart';
 import 'location_service.dart';
 
 part 'trip_recorder_service.g.dart';
+
+const _logger = Logger('TripRecorderService');
 
 /// Real-time trip metrics exposed to UI
 class TripMetrics {
@@ -78,6 +81,7 @@ class TripRecorderService extends _$TripRecorderService {
   StreamSubscription<LocationData>? _locationSubscription;
   LocationData? _lastLocation;
   Timer? _flushTimer;
+  Timer? _metricsTimer;
 
   // Pause tracking
   DateTime? _pauseStartTime;
@@ -102,6 +106,7 @@ class TripRecorderService extends _$TripRecorderService {
     ref.onDispose(() {
       _stopLocationStream();
       _stopFlushTimer();
+      _stopMetricsTimer();
     });
 
     return const TripMetrics(
@@ -154,6 +159,10 @@ class TripRecorderService extends _$TripRecorderService {
     // Start flush timer (backup for distance filter)
     _startFlushTimer();
 
+    // Start metrics ticker so elapsed time keeps advancing even when no new
+    // GPS point arrives (red lights, sparse fixes, distance-filtered updates).
+    _startMetricsTimer();
+
     // Update UI state
     _updateMetrics();
   }
@@ -195,8 +204,16 @@ class TripRecorderService extends _$TripRecorderService {
       _pauseStartTime = null;
     }
 
-    // Flush remaining route points
-    await _flushRoutePointBuffer();
+    // Flush remaining route points before finalizing. If this fails we must
+    // not silently drop the tail of the route — log it loudly with a count so
+    // the loss is observable rather than invisible.
+    final flushed = await _flushRoutePointBuffer();
+    if (!flushed) {
+      _logger.error(
+        'Final route-point flush failed: ${_routePointBuffer.length} points '
+        'could not be saved for trip ${_activeTrip!.id}',
+      );
+    }
 
     // Calculate final metrics
     final endTime = DateTime.now();
@@ -220,6 +237,7 @@ class TripRecorderService extends _$TripRecorderService {
     // Cleanup
     _stopLocationStream();
     _stopFlushTimer();
+    _stopMetricsTimer();
     _activeTrip = null;
     _routePointBuffer.clear();
     _lastLocation = null;
@@ -266,9 +284,14 @@ class TripRecorderService extends _$TripRecorderService {
 
     _locationSubscription = stream.listen(
       _handleLocationUpdate,
-      onError: (error) {
-        // Log error but continue recording
-        // TODO: Add proper error logging
+      onError: (Object error, StackTrace stackTrace) {
+        // Surface GPS errors instead of dropping them silently. Recording
+        // continues; the metrics ticker keeps elapsed time advancing.
+        _logger.error(
+          'Location stream error during recording',
+          error,
+          stackTrace,
+        );
       },
     );
   }
@@ -334,16 +357,26 @@ class TripRecorderService extends _$TripRecorderService {
     }
   }
 
-  /// Flush route point buffer to database
-  Future<void> _flushRoutePointBuffer() async {
-    if (_routePointBuffer.isEmpty) return;
+  /// Flush route point buffer to database.
+  ///
+  /// Returns true if the buffer was persisted (or was already empty), false if
+  /// the write failed. On failure the points are kept in the buffer to be
+  /// retried on the next flush rather than dropped silently.
+  Future<bool> _flushRoutePointBuffer() async {
+    if (_routePointBuffer.isEmpty) return true;
 
     try {
       await _repository!.saveRoutePoints(_routePointBuffer);
       _routePointBuffer.clear();
-    } catch (e) {
-      // TODO: Add proper error handling
-      // For now, keep points in buffer and retry on next flush
+      return true;
+    } catch (e, stackTrace) {
+      _logger.error(
+        'Failed to flush ${_routePointBuffer.length} route points; '
+        'keeping them buffered for retry',
+        e,
+        stackTrace,
+      );
+      return false;
     }
   }
 
@@ -359,6 +392,24 @@ class TripRecorderService extends _$TripRecorderService {
   void _stopFlushTimer() {
     _flushTimer?.cancel();
     _flushTimer = null;
+  }
+
+  /// Start periodic metrics ticker.
+  ///
+  /// Route points are distance-filtered, so without this the live duration and
+  /// average speed freeze whenever the rider is slow/stopped or GPS is sparse.
+  void _startMetricsTimer() {
+    _metricsTimer?.cancel();
+    _metricsTimer = Timer.periodic(
+      const Duration(seconds: 1),
+      (_) => _updateMetrics(),
+    );
+  }
+
+  /// Stop metrics ticker
+  void _stopMetricsTimer() {
+    _metricsTimer?.cancel();
+    _metricsTimer = null;
   }
 
   /// Update UI metrics

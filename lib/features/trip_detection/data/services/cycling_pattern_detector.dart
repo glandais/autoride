@@ -109,9 +109,18 @@ class CyclingPatternDetector extends _$CyclingPatternDetector {
       return 0.0; // Not enough peaks to determine frequency
     }
 
-    // Calculate average time between peaks (pedaling frequency)
-    final avgTimeBetweenPeaks = window.duration.inMilliseconds /
-        (peaks.length - 1);
+    // Calculate frequency over the actual time span between the first and last
+    // detected peak. Using the whole window duration (which grows as the
+    // sliding buffer fills toward 60s) would systematically undercount cadence
+    // and make the result depend on buffer fill level rather than pedaling.
+    final firstPeakTime = window.samples[peaks.first].timestamp;
+    final lastPeakTime = window.samples[peaks.last].timestamp;
+    final peakSpanMs =
+        lastPeakTime.difference(firstPeakTime).inMilliseconds;
+    if (peakSpanMs <= 0) {
+      return 0.0; // Degenerate span (e.g. identical timestamps)
+    }
+    final avgTimeBetweenPeaks = peakSpanMs / (peaks.length - 1);
     final frequency = 1000.0 / avgTimeBetweenPeaks; // Hz
 
     // Check if frequency matches cycling range

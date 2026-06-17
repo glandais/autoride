@@ -69,12 +69,15 @@ class TripStopDetector extends _$TripStopDetector {
 
   /// Check if motion and GPS indicate stationary state
   bool _isStationary(MotionData motion, LocationData? location) {
-    // Check motion thresholds
-    final accelMagnitude = motion.accelerometer.magnitude;
+    // Check motion thresholds.
+    // Accelerometer magnitude includes gravity, so a stationary device reads
+    // ~standardGravity. Compare the deviation from gravity, not the raw value.
+    final accelDeviation =
+        (motion.accelerometer.magnitude - AppConstants.standardGravity).abs();
     final gyroMagnitude = motion.gyroscope.magnitude;
 
     final isMotionStationary =
-        accelMagnitude <= AppConstants.stationaryAccelerationMax &&
+        accelDeviation <= AppConstants.stationaryAccelerationMax &&
             gyroMagnitude <= AppConstants.stationaryRotationMax;
 
     // If GPS available, validate with speed

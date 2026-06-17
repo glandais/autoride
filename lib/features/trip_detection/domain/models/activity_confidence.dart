@@ -1,4 +1,5 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
+import 'package:autoride/core/constants/app_constants.dart';
 
 part 'activity_confidence.freezed.dart';
 
@@ -53,8 +54,13 @@ sealed class ActivityConfidence with _$ActivityConfidence {
       }
     });
 
-    // Calculate combined confidence
-    final combinedConfidence = (motionScore + speedScore + frequencyScore) / 3;
+    // Calculate combined confidence using the documented weights
+    // (motion 40%, speed 35%, frequency 25%) for consistency with the
+    // per-activity cycling score in CyclingPatternDetector.
+    final combinedConfidence =
+        (motionScore * AppConstants.motionScoreWeight) +
+            (speedScore * AppConstants.speedScoreWeight) +
+            (frequencyScore * AppConstants.frequencyScoreWeight);
 
     return ActivityConfidence(
       activity: bestActivity,

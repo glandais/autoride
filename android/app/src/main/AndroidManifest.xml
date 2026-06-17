@@ -91,15 +91,24 @@
 
     <!--
     INTERNET:
-    - Future use: Trip sync, map tiles, etc.
-    - Currently: Not actively used
+    - Used to fetch OpenStreetMap map tiles (flutter_map) in the trip map views.
+    - May also be used for future trip sync.
     - No runtime permission required
     -->
     <uses-permission android:name="android.permission.INTERNET"/>
 
+    <!--
+    allowBackup="false":
+    - The trip history SQLite database stores precise route/location history.
+    - Disabling backup keeps that sensitive data on-device, matching the app's
+      "your data stays on device" privacy promise (prevents Google Auto Backup
+      and `adb backup` from copying the unencrypted DB off the device).
+    -->
     <application
         android:label="autoride"
         android:name="${applicationName}"
+        android:allowBackup="false"
+        android:fullBackupContent="false"
         android:icon="@mipmap/ic_launcher">
 
         <!--

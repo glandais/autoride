@@ -6,11 +6,18 @@ import 'package:autoride/core/constants/app_constants.dart';
 part 'database_service.g.dart';
 
 /// Database service provider
-/// Provides initialized database instance
-@riverpod
+///
+/// Single owner of the app-wide database connection. Kept alive for the app
+/// lifetime (opening SQLite is expensive and the handle is shared) and closed
+/// when the provider is disposed. Going through [DatabaseService.database]
+/// populates the singleton cache so [DatabaseService.close] actually has a
+/// handle to close.
+@Riverpod(keepAlive: true)
 Future<Database> database(Ref ref) async {
   final dbService = DatabaseService();
-  return await dbService.initDatabase();
+  final db = await dbService.database;
+  ref.onDispose(dbService.close);
+  return db;
 }
 
 /// Database service for AutoRide

@@ -8,6 +8,12 @@ class AppConstants {
   static const double cyclingSpeedMax = 40.0; // km/h
   static const double movementThreshold = 1.5; // m/s² acceleration
 
+  // Acceleration convention
+  // Accelerometer data from sensors_plus includes gravity, so a stationary
+  // device reads a magnitude of ~`standardGravity`. All raw-magnitude
+  // thresholds in this file assume gravity is INCLUDED.
+  static const double standardGravity = 9.8; // m/s²
+
   // Location settings
   static const double distanceFilter = 15.0; // meters
   static const int locationTimeLimit = 30; // seconds
@@ -56,7 +62,10 @@ class AppConstants {
   static const double cyclingRotationMax = 3.0;   // Maximum typical rotation
 
   // Stationary thresholds (T007, used in T014)
-  static const double stationaryAccelerationMax = 1.0;  // m/s² - max for stationary
+  // Max deviation of raw accelerometer magnitude from gravity while stationary.
+  // A resting device reads ~`standardGravity`; |magnitude - gravity| must stay
+  // within this tolerance to be considered stationary.
+  static const double stationaryAccelerationMax = 1.0;  // m/s² - max deviation from gravity
   static const double stationaryRotationMax = 0.2;      // rad/s - max for stationary
 
   // Pedaling frequency (Hz)

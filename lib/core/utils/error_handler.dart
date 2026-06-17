@@ -32,14 +32,16 @@ class ErrorHandler {
       return AppErrorType.database;
     }
 
+    // Check concrete type before string matching: TimeoutException.toString()
+    // is just its message, which would otherwise be miscategorised as network.
+    if (error is TimeoutException) {
+      return AppErrorType.timeout;
+    }
+
     if (error.toString().contains('network') ||
         error.toString().contains('connection') ||
         error.toString().contains('timeout')) {
       return AppErrorType.network;
-    }
-
-    if (error is TimeoutException) {
-      return AppErrorType.timeout;
     }
 
     return AppErrorType.unknown;

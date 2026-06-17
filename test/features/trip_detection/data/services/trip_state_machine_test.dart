@@ -6,6 +6,7 @@ import 'package:autoride/features/trip_detection/data/services/notification_serv
 import 'package:autoride/features/trip_detection/data/services/trip_recorder_service.dart';
 import 'package:autoride/features/trip_detection/domain/models/trip_state.dart';
 import 'package:autoride/features/settings/data/services/settings_service.dart';
+import 'package:autoride/core/constants/app_constants.dart';
 
 /// Mock NotificationService that skips all plugin calls
 class _MockNotificationService extends NotificationService {
@@ -217,8 +218,44 @@ void main() {
       // Immediately should not be timed out
       expect(stateMachine.hasDetectionTimedOut(), isFalse);
 
-      // Would need to wait 30+ seconds for real timeout
-      // In actual usage, a timer will check this periodically
+      // Back-date the detection start past the timeout to exercise the
+      // expired branch (a clock can't be injected, so set state directly).
+      stateMachine.state = TripState.detecting(
+        detectionStartTime: DateTime.now().subtract(
+          const Duration(seconds: AppConstants.detectionTimeoutSeconds + 5),
+        ),
+      );
+      expect(stateMachine.hasDetectionTimedOut(), isTrue);
+
+      // Not in a detecting state -> never timed out.
+      stateMachine.state = const TripState.idle();
+      expect(stateMachine.hasDetectionTimedOut(), isFalse);
+    });
+
+    test('should detect pause timeout', () async {
+      final stateMachine = container.read(tripStateMachineProvider.notifier);
+
+      // Freshly paused -> not timed out.
+      stateMachine.state = TripState.paused(
+        tripId: 1,
+        startTime: DateTime.now(),
+        pauseStartTime: DateTime.now(),
+      );
+      expect(stateMachine.hasPauseTimedOut(), isFalse);
+
+      // Paused longer than the max pause duration -> timed out (auto-stop).
+      stateMachine.state = TripState.paused(
+        tripId: 1,
+        startTime: DateTime.now(),
+        pauseStartTime: DateTime.now().subtract(
+          const Duration(seconds: AppConstants.maxPauseDurationSeconds + 5),
+        ),
+      );
+      expect(stateMachine.hasPauseTimedOut(), isTrue);
+
+      // Not in a paused state -> never timed out.
+      stateMachine.state = const TripState.idle();
+      expect(stateMachine.hasPauseTimedOut(), isFalse);
     });
 
     test('should preserve trip ID across state transitions', () async {
