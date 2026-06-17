@@ -265,8 +265,12 @@ void main() {
       expect(state.isStationary, isTrue);
       expect(state.consecutiveStationaryDetections, greaterThan(0));
 
-      // Detect movement
-      await detector.analyzeForTripStop(cyclingMotion, location);
+      // Detect SUSTAINED movement. Hysteresis requires
+      // tripStopMovementHysteresisSamples consecutive non-stationary readings
+      // before the pause is reset, so feed that many.
+      for (var i = 0; i < AppConstants.tripStopMovementHysteresisSamples; i++) {
+        await detector.analyzeForTripStop(cyclingMotion, location);
+      }
 
       // State should be reset
       state = container.read(tripStopDetectorProvider);
@@ -364,6 +368,106 @@ void main() {
 
       // Should stop trip
       expect(decision, equals(StopDecision.stopTrip));
+    });
+
+    // Helper: stationary motion paired with a noisy GPS speed (3 km/h) that a
+    // standstill commonly reports. With stationary motion this reading is
+    // classified as non-stationary because speedKmh >= 2.0.
+    LocationData createNoisyStandstillLocation() {
+      return LocationData(
+        latitude: 48.8566,
+        longitude: 2.3522,
+        accuracy: 10.0,
+        altitude: 35.0,
+        speed: 3.0 / 3.6, // 3 km/h in m/s - transient GPS noise at standstill
+        heading: 90.0,
+        timestamp: DateTime.now(),
+      );
+    }
+
+    test(
+        'hysteresis: single transient GPS speed spike does NOT reset accumulated pause',
+        () async {
+      final container = createContainer();
+      addTearDown(container.dispose);
+
+      final detector = container.read(tripStopDetectorProvider.notifier);
+      final stationaryMotion = createStationaryMotion();
+
+      // Start a pause and pretend we've already been stationary long enough to
+      // be near the auto-stop threshold (6 minutes ago > maxPauseDurationSeconds).
+      await detector.analyzeForTripStop(stationaryMotion, createStationaryLocation());
+      final pauseStart = DateTime.now().subtract(const Duration(minutes: 6));
+      detector.state = detector.state.copyWith(
+        pauseStartTime: pauseStart,
+        consecutiveStationaryDetections:
+            AppConstants.minConsecutiveStationaryDetections,
+      );
+
+      // One noisy reading (3 km/h while motion is stationary) is non-stationary,
+      // but a SINGLE spike must not reset the pause.
+      final decision = await detector.analyzeForTripStop(
+        stationaryMotion,
+        createNoisyStandstillLocation(),
+      );
+
+      final state = container.read(tripStopDetectorProvider);
+      // Pause timer is preserved (not zeroed) and the auto-stop is still reached.
+      expect(state.isStationary, isTrue,
+          reason: 'transient spike should not flip out of paused state');
+      expect(state.pauseStartTime, isNotNull,
+          reason: 'pause timer must not be reset by a single noisy sample');
+      expect(state.consecutiveStationaryDetections,
+          greaterThanOrEqualTo(AppConstants.minConsecutiveStationaryDetections));
+      expect(decision, equals(StopDecision.stopTrip),
+          reason: 'auto-stop must still trigger despite the noisy reading');
+    });
+
+    test(
+        'hysteresis: sustained movement (N consecutive samples) DOES reset the pause',
+        () async {
+      final container = createContainer();
+      addTearDown(container.dispose);
+
+      final detector = container.read(tripStopDetectorProvider.notifier);
+      final stationaryMotion = createStationaryMotion();
+      final cyclingMotion = createCyclingMotion();
+      final cyclingLocation = createCyclingLocation();
+
+      // Accumulate a pause near the auto-stop threshold.
+      await detector.analyzeForTripStop(stationaryMotion, createStationaryLocation());
+      final pauseStart = DateTime.now().subtract(const Duration(minutes: 6));
+      detector.state = detector.state.copyWith(
+        pauseStartTime: pauseStart,
+        consecutiveStationaryDetections:
+            AppConstants.minConsecutiveStationaryDetections,
+      );
+
+      // Feed N-1 movement readings: not yet enough to confirm movement, so the
+      // pause must still be accumulating (auto-stop still reachable).
+      StopDecision decision = StopDecision.continueTrip;
+      for (var i = 0;
+          i < AppConstants.tripStopMovementHysteresisSamples - 1;
+          i++) {
+        decision = await detector.analyzeForTripStop(cyclingMotion, cyclingLocation);
+      }
+      expect(container.read(tripStopDetectorProvider).pauseStartTime, isNotNull,
+          reason: 'pause should still be accumulating before hysteresis is met');
+      expect(decision, equals(StopDecision.stopTrip),
+          reason: 'auto-stop still applies while movement is unconfirmed');
+
+      // The Nth consecutive movement reading confirms sustained movement and
+      // resets the pause.
+      final resetDecision =
+          await detector.analyzeForTripStop(cyclingMotion, cyclingLocation);
+
+      final state = container.read(tripStopDetectorProvider);
+      expect(state.isStationary, isFalse);
+      expect(state.pauseStartTime, isNull,
+          reason: 'sustained movement must reset the pause timer');
+      expect(state.consecutiveStationaryDetections, equals(0));
+      expect(state.consecutiveMovementDetections, equals(0));
+      expect(resetDecision, equals(StopDecision.continueTrip));
     });
 
     test('reset should clear all state', () async {

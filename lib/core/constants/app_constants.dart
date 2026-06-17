@@ -133,6 +133,13 @@ class AppConstants {
   // Minimum consecutive stationary detections before pause
   static const int minConsecutiveStationaryDetections = 3;
 
+  // Movement hysteresis / debouncing for stop detection.
+  // GPS speed at a true standstill is noisy (often reads 1-4 km/h), so a single
+  // transient non-stationary reading must NOT reset the accumulated pause timer.
+  // Require this many consecutive non-stationary readings before treating the
+  // rider as moving again and resetting the pause accumulation.
+  static const int tripStopMovementHysteresisSamples = 3;
+
   // Minimum movement duration to resume trip (seconds)
   // Note: resumeMovementThresholdSeconds already defined above = 5
 

@@ -22,6 +22,11 @@ sealed class TripStopState with _$TripStopState {
 
     /// Number of consecutive stationary detections
     required int consecutiveStationaryDetections,
+
+    /// Number of consecutive non-stationary (movement) detections.
+    /// Used for hysteresis: the pause is only reset once sustained movement is
+    /// observed, so a single noisy GPS speed spike doesn't clear the timer.
+    @Default(0) int consecutiveMovementDetections,
   }) = _TripStopState;
 
   /// Create initial state
@@ -31,6 +36,7 @@ sealed class TripStopState with _$TripStopState {
       pauseStartTime: null,
       pauseDuration: Duration.zero,
       consecutiveStationaryDetections: 0,
+      consecutiveMovementDetections: 0,
     );
   }
 }
@@ -66,23 +72,36 @@ extension TripStopStateExtensions on TripStopState {
       pauseStartTime: now,
       pauseDuration: Duration.zero,
       consecutiveStationaryDetections: consecutiveStationaryDetections + 1,
+      consecutiveMovementDetections: 0,
     );
   }
 
-  /// Reset pause (movement detected)
+  /// Reset pause (sustained movement detected)
   TripStopState resetPause() {
     return copyWith(
       isStationary: false,
       pauseStartTime: null,
       pauseDuration: Duration.zero,
       consecutiveStationaryDetections: 0,
+      consecutiveMovementDetections: 0,
     );
   }
 
-  /// Increment consecutive stationary detections
+  /// Increment consecutive stationary detections.
+  /// Any stationary reading clears the movement (hysteresis) counter.
   TripStopState incrementStationary() {
     return copyWith(
       consecutiveStationaryDetections: consecutiveStationaryDetections + 1,
+      consecutiveMovementDetections: 0,
+    );
+  }
+
+  /// Increment consecutive movement detections (hysteresis counter).
+  /// Used while paused to debounce noisy non-stationary readings before the
+  /// pause is reset.
+  TripStopState incrementMovement() {
+    return copyWith(
+      consecutiveMovementDetections: consecutiveMovementDetections + 1,
     );
   }
 

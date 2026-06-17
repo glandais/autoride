@@ -32,7 +32,9 @@ class TripStopDetector extends _$TripStopDetector {
     final isStationary = _isStationary(motion, location);
 
     if (isStationary) {
-      // Increment consecutive stationary detections
+      // Increment consecutive stationary detections.
+      // A stationary reading also clears the movement hysteresis counter so a
+      // single transient spike between two stationary readings is forgiven.
       if (state.consecutiveStationaryDetections == 0) {
         // First stationary detection - start pause timer
         state = state.startPause(now);
@@ -47,9 +49,24 @@ class TripStopDetector extends _$TripStopDetector {
       // Determine decision based on pause duration
       return _evaluatePauseDuration();
     } else {
-      // Movement detected - reset pause state
+      // Movement detected. GPS speed at a true standstill is noisy, so we
+      // debounce: only reset the accumulated pause once movement is sustained
+      // across `tripStopMovementHysteresisSamples` consecutive readings. A
+      // single transient reading must not zero the pause timer.
       if (state.isStationary) {
-        state = state.resetPause();
+        state = state.incrementMovement();
+
+        if (state.consecutiveMovementDetections >=
+            AppConstants.tripStopMovementHysteresisSamples) {
+          // Sustained movement confirmed - reset the pause.
+          state = state.resetPause();
+          return StopDecision.continueTrip;
+        }
+
+        // Not yet confirmed as movement: keep the pause accumulating so the
+        // auto-stop / auto-pause logic still applies despite the noisy sample.
+        state = state.updatePauseDuration(now);
+        return _evaluatePauseDuration();
       }
       return StopDecision.continueTrip;
     }
