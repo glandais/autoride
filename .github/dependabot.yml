@@ -1,49 +1,64 @@
-# Dependabot configuration
-# https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
 version: 2
 updates:
-  # Dart / Flutter packages (pubspec.yaml)
   - package-ecosystem: "pub"
     directory: "/"
     schedule:
       interval: "weekly"
       day: "monday"
-    open-pull-requests-limit: 10
+      time: "09:00"
+      timezone: "Europe/Paris"
+    open-pull-requests-limit: 5
+    assignees:
+      - "glandais"
     commit-message:
-      prefix: "⬆️ chore(deps)"
+      prefix: "deps(pub)"
+      include: "scope"
+    labels:
+      - "dependencies"
     groups:
-      # Batch low-risk minor/patch bumps into a single PR to cut noise.
-      pub-minor-patch:
+      minor-and-patch:
         update-types:
           - "minor"
           - "patch"
 
-  # Android native build (Gradle, Kotlin DSL)
   - package-ecosystem: "gradle"
     directory: "/android"
     schedule:
       interval: "weekly"
       day: "monday"
+      time: "09:00"
+      timezone: "Europe/Paris"
     open-pull-requests-limit: 5
+    assignees:
+      - "glandais"
     commit-message:
-      prefix: "⬆️ chore(deps)"
+      prefix: "deps(gradle)"
+      include: "scope"
+    labels:
+      - "dependencies"
     groups:
-      gradle-minor-patch:
+      minor-and-patch:
         update-types:
           - "minor"
           - "patch"
 
-  # GitHub Actions used in workflows (.github/workflows)
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
       day: "monday"
+      time: "10:00"
+      timezone: "Europe/Paris"
     open-pull-requests-limit: 5
+    assignees:
+      - "glandais"
     commit-message:
-      prefix: "⬆️ chore(deps)"
+      prefix: "deps(github-actions)"
+      include: "scope"
+    labels:
+      - "dependencies"
     groups:
-      actions-all:
+      minor-and-patch:
         update-types:
           - "minor"
           - "patch"
