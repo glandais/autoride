@@ -1,0 +1,38 @@
+{%- comment -%}
+Override of jekyll-theme-primer's default layout.
+
+Copied verbatim from pages-themes/primer `_layouts/default.html`, with one block removed: the
+footer that rendered "This site is open source. Improve this page." with a link to
+github.com/.../edit/develop/docs/legal/<file>.md
+
+That footer is gated on `site.github.license`, so it appeared the moment a LICENSE file was added
+to the repository. Harmless — the link only opens GitHub's editor, which requires authentication
+and write access — but an "edit this page" button on a privacy policy or terms-of-use page reads
+badly to anyone who lands there from a store listing.
+
+Keep this file in sync if the upstream theme changes:
+https://github.com/pages-themes/primer/blob/master/_layouts/default.html
+{%- endcomment -%}
+<!DOCTYPE html>
+<html lang="{{ page.lang | default: site.lang | default: "en-US" }}">
+  <head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+{% seo %}
+    <link rel="stylesheet" href="{{ "/assets/css/style.css?v=" | append: site.github.build_revision | relative_url }}">
+    {% include head-custom.html %}
+  </head>
+  <body>
+    <div class="container-lg px-3 my-5 markdown-body">
+      {% if site.title and site.title != page.title %}
+      <h1><a href="{{ "/" | absolute_url }}">{{ site.title }}</a></h1>
+      {% endif %}
+
+      {{ content }}
+    </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/anchor-js/4.1.0/anchor.min.js" integrity="sha256-lZaRhKri35AyJSypXXs4o6OPFTbTmUoltBbDCbdzegg=" crossorigin="anonymous"></script>
+    <script>anchors.add();</script>
+  </body>
+</html>

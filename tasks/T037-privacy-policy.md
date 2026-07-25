@@ -323,7 +323,9 @@ Then, before submission:
 - [x] `README.md` privacy claims corrected to match the audit (§2.4 item 4)
 - [x] GitHub Pages configured — `docs/_config.yml`, `docs/index.md`, front matter, absolute
       `LICENSE` link (§4)
-- [ ] Pages **activated** after these files reach `develop`, and the policy URL returns 200 (§4)
+- [x] Pages **activated** and verified live 2026-07-25 — `status=built`, all three pages HTTP 200,
+      `content-type: text/html`, theme CSS loads, relative `.md` links rewritten to
+      `/autoride/legal/*.html` (§4)
 - [ ] §5.1 — misleading Settings toggles removed
 - [ ] §5.2 — privacy policy reachable from Settings
 - [ ] §5.3 — Play prominent disclosure on the background permission screen
