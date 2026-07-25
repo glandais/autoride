@@ -31,7 +31,7 @@ AutoRide is a privacy-focused mobile app that uses advanced motion detection and
 
 ### Privacy First
 - **Local storage** - All trip data stored on your device
-- **Optional sharing** - Choose what (if anything) to share for improving detection
+- **No cloud** - No account, no server, no sync; the app works fully offline except for map tiles
 - **No tracking** - We don't track you or sell your data
 - **Full control** - Delete your data anytime
 
@@ -298,28 +298,37 @@ Be respectful, inclusive, and constructive. We're all here to build something us
 
 ## Privacy & Data Collection
 
-### What We Collect
+📄 **[Privacy Policy](https://glandais.github.io/autoride/legal/privacy-policy.html)** ·
+**[Terms of Use](https://glandais.github.io/autoride/legal/terms-of-service.html)**
 
-**Locally on Your Device:**
-- Trip routes (GPS coordinates)
-- Trip metadata (distance, duration, speed)
-- Sensor data during trips (accelerometer, gyroscope)
-- User preferences and settings
+### Stored on your device
 
-**Optional Cloud Collection** (with your consent):
-- Anonymized sensor data to improve activity detection
-- Trip statistics (no personal identifiers)
+- Trip routes (GPS coordinates, altitude, timestamps, accuracy, speed)
+- Trip metadata (distance, duration, average and maximum speed, detected activity, confidence)
+- Your preferences and settings
 
-### What We DON'T Collect
-- Personal identity information
-- Location data when not cycling
-- Any data without explicit consent
+Nothing else is stored. Accelerometer and gyroscope readings are processed in memory to recognise
+pedalling and are **never written to disk** — that is how GPS stays switched off until you
+actually start riding.
 
-### Your Rights
-- **Access** - Export all your data anytime
-- **Delete** - Permanently delete all data from your device
-- **Opt-out** - Disable data sharing at any time
-- **Transparency** - View our full privacy policy (Coming soon)
+### What leaves your device
+
+Exactly one thing: when you open a map, your device requests map images from the OpenStreetMap
+Foundation's tile servers, which reveals your IP address and the map area you are viewing to that
+third party. If you never open a map, the app makes **no network requests at all**.
+
+There is no AutoRide account, no AutoRide server, and no analytics, crash-reporting or advertising
+SDK. Your trips are never uploaded — not to us, not to anyone.
+
+### Your control
+
+- **Delete** — Settings → Data Management → Clear all trips removes every trip and route point
+- **Uninstall** — removes the database and all settings; nothing survives elsewhere
+- **Revoke** — background location can be withdrawn in system settings, or turned off in the app,
+  and manual recording keeps working
+
+For the full detail, including the Android/iOS backup difference and the exact database contents,
+see the [Privacy Policy](https://glandais.github.io/autoride/legal/privacy-policy.html).
 
 ---
 
@@ -402,7 +411,10 @@ A: Currently optimized for cycling. Other activities (running, walking) may be a
 A: Minimal. ~1 MB per 100 km of tracked routes.
 
 **Q: Is my data secure?**
-A: Yes. All data is stored locally on your device. Optional cloud sync is encrypted.
+A: All trip data stays in the app's private storage on your device — there is no cloud sync, so
+there is nothing to intercept in transit. It is protected by your device's own screen lock and
+encryption; the database itself is not separately encrypted, so use a passcode. Details in the
+[Privacy Policy](https://glandais.github.io/autoride/legal/privacy-policy.html).
 
 ---
 

@@ -1,0 +1,39 @@
+# GitHub Pages configuration for the AutoRide legal documents site.
+#
+# Published at https://glandais.github.io/autoride/ from this directory (branch `develop`,
+# folder `/docs`). The only reason this site exists is to give the App Store and Google Play a
+# stable, public URL for the privacy policy — a `github.com/.../blob/develop/...` URL encodes
+# the branch name and file path, so renaming either would silently 404 a URL that is filed with
+# both stores.
+#
+# The markdown files here are the source of truth, not a copy: they render on GitHub *and* on
+# this site. Do not duplicate them into HTML.
+
+title: AutoRide
+description: >-
+  Legal documents for AutoRide, an app that automatically detects and records bike trips.
+  All trip data stays on the user's device.
+
+url: https://glandais.github.io
+baseurl: /autoride
+
+theme: jekyll-theme-primer
+lang: en
+
+# jekyll-relative-links (enabled by default on GitHub Pages) rewrites relative links to .md
+# files so they resolve to the generated pages. Listed explicitly so a local `bundle exec
+# jekyll serve` behaves like production instead of emitting dead links.
+plugins:
+  - jekyll-relative-links
+  - jekyll-optional-front-matter
+  - jekyll-titles-from-headings
+
+relative_links:
+  enabled: true
+  collections: false
+
+# Keep the site to what it is: three pages. Nothing else in the repository is published.
+exclude:
+  - Gemfile
+  - Gemfile.lock
+  - vendor
