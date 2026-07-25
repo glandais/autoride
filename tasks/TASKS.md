@@ -304,24 +304,25 @@
   - *Dependencies*: T020
   - *Estimate*: 2-3 hours
 
-- ☐ **T037**: Privacy Policy & Terms
-  - *Detail*: `tasks/T037-privacy-policy.md` (create on request)
-  - *Scope*: Write privacy policy, terms of service
-  - *Dependencies*: T034
-  - *Estimate*: 2-3 hours
+- ⏳ **T037**: Privacy Policy & Terms
+  - *Detail*: `tasks/T037-privacy-policy.md`
+  - *Scope*: Privacy policy, terms of use, LICENSE, `store-metadata/data-safety.md` (source of truth for both stores' privacy declarations)
+  - *Dependencies*: None — the former T034 dependency is resolved in `T037-privacy-policy.md` §1 (the policy documents today's behaviour; `data-safety.md` §7 lists what T034 will force to be re-declared)
+  - *Estimate*: 2-3 hours (documents ✅ done) + ~2 hours for the 6 code changes in §5
+  - *Blocks*: T038 (Play needs the policy URL + background-location declaration), T039 (ASC App Privacy answers)
 
 ### 10.2 Release Build
 - ☐ **T038**: Android Release Configuration
-  - *Detail*: `tasks/T038-android-release.md` (create on request)
-  - *Scope*: Signing, ProGuard, release build
+  - *Detail*: `tasks/T038-android-release.md`
+  - *Scope*: `X.Y.Z+N` version scheme, keystore signing, ProGuard/R8, fastlane + Play internal track, `publish_beta.sh`
   - *Dependencies*: T033, T036
-  - *Estimate*: 2 hours
+  - *Estimate*: 3-4 hours
 
 - ☐ **T039**: iOS Release Configuration
-  - *Detail*: `tasks/T039-ios-release.md` (create on request)
-  - *Scope*: Signing, capabilities, release build
-  - *Dependencies*: T033, T036
-  - *Estimate*: 2-3 hours
+  - *Detail*: `tasks/T039-ios-release.md`
+  - *Scope*: Signing, capabilities, export compliance, privacy manifest reconciliation, fastlane + TestFlight
+  - *Dependencies*: **T038** (owns the version scheme and `publish_beta.sh`), T033, T036
+  - *Estimate*: 3-4 hours
 
 - ☐ **T040**: Beta Testing & Feedback
   - *Detail*: `tasks/T040-beta-testing.md` (create on request)
@@ -335,14 +336,14 @@
 
 **Total Tasks**: 40
 **Completed**: 24
-**In Progress**: 0
-**Pending**: 16
+**In Progress**: 1
+**Pending**: 15
 **Blocked**: 0
 
-**Current Phase**: Phase 7 - Permissions & Platform (Complete!)
+**Current Phase**: Phase 10 - Release Preparation (started, in parallel with Phase 7 follow-ups)
 **Last Completed**: T028 - Platform-Specific Configuration (2025-11-23)
-**Current Task**: None (ready for next task)
-**Next Task**: T029 - Unit Tests (Business Logic) OR T016 - TensorFlow Lite Integration
+**Current Task**: T037 - Privacy Policy & Terms (documents done; 6 code changes outstanding, see §5)
+**Next Task**: T038 - Android Release Configuration (detailed guide ready) OR T029 - Unit Tests
 
 ---
 
