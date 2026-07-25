@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import '../../domain/models/onboarding_state.dart';
 import '../../data/services/onboarding_service.dart';
-import '../../../trip_detection/data/services/location_permission_service.dart';
+import '../../../../core/permissions/services/permission_handler_service.dart';
+import '../../../../core/permissions/exceptions/permission_exceptions.dart';
+import '../../../../core/utils/logger.dart';
 
 part 'onboarding_provider.g.dart';
 
@@ -65,30 +67,89 @@ class Onboarding extends _$Onboarding {
 
   /// Request foreground location permission
   Future<void> requestLocationPermission() async {
-    final service = ref.read(locationPermissionServiceProvider.notifier);
-    final status = await service.requestPermission();
+    _log.info('Requesting foreground location permission (locationWhenInUse)');
+    try {
+      final permissionHandler = ref.read(permissionHandlerServiceProvider.notifier);
+      final status = await permissionHandler.requestPermission(
+        AppPermission.locationWhenInUse,
+      );
 
-    // Check if still mounted after async operation
-    if (!ref.mounted) return;
+      // Check if still mounted after async operation
+      if (!ref.mounted) return;
 
-    final granted = status == LocationPermissionStatus.granted;
-    state = state.copyWith(locationPermissionGranted: granted);
+      _log.info('Foreground permission result: granted=${status.isGranted}');
+      state = state.copyWith(locationPermissionGranted: status.isGranted);
 
-    if (granted) {
-      await nextPage();
+      if (status.isGranted) {
+        await nextPage();
+      }
+    } on PermissionPermanentlyDeniedException {
+      _log.warning('Foreground permission permanently denied, opening settings');
+      if (!ref.mounted) return;
+      await ref.read(permissionHandlerServiceProvider.notifier).openAppSettings();
+      state = state.copyWith(locationPermissionGranted: false);
+    } catch (e) {
+      _log.error('Foreground permission request failed', e);
+      if (!ref.mounted) return;
+      state = state.copyWith(locationPermissionGranted: false);
     }
   }
 
+  static const _log = Logger('Onboarding');
+
   /// Request background location permission
   Future<void> requestBackgroundPermission() async {
-    final service = ref.read(locationPermissionServiceProvider.notifier);
-    final status = await service.requestBackgroundPermission();
+    _log.info('Requesting background location permission (locationAlways)');
+    try {
+      final permissionHandler = ref.read(permissionHandlerServiceProvider.notifier);
 
-    // Check if still mounted after async operation
-    if (!ref.mounted) return;
+      // Ensure foreground permission is granted first (required for background)
+      final foregroundStatus = await permissionHandler.checkPermission(
+        AppPermission.locationWhenInUse,
+      );
+      if (!foregroundStatus.isGranted) {
+        _log.info('Foreground permission not granted, requesting it first');
+        try {
+          final requested = await permissionHandler.requestPermission(
+            AppPermission.locationWhenInUse,
+          );
+          if (!ref.mounted) return;
+          if (!requested.isGranted) {
+            _log.warning('Foreground permission denied, skipping background request');
+            state = state.copyWith(backgroundPermissionGranted: false);
+            await nextPage();
+            return;
+          }
+        } on PermissionPermanentlyDeniedException {
+          _log.warning('Foreground permission permanently denied, opening settings');
+          if (!ref.mounted) return;
+          await permissionHandler.openAppSettings();
+          state = state.copyWith(backgroundPermissionGranted: false);
+          await nextPage();
+          return;
+        }
+      }
 
-    final granted = status == LocationPermissionStatus.granted;
-    state = state.copyWith(backgroundPermissionGranted: granted);
+      final status = await permissionHandler.requestPermission(
+        AppPermission.locationAlways,
+      );
+
+      // Check if still mounted after async operation
+      if (!ref.mounted) return;
+
+      _log.info('Background permission result: granted=${status.isGranted}');
+      state = state.copyWith(backgroundPermissionGranted: status.isGranted);
+    } on PermissionPermanentlyDeniedException {
+      _log.warning('Background permission permanently denied, opening settings');
+      if (!ref.mounted) return;
+      await ref.read(permissionHandlerServiceProvider.notifier).openAppSettings();
+      state = state.copyWith(backgroundPermissionGranted: false);
+    } catch (e) {
+      _log.error('Background permission request failed', e);
+      // Permission denied or other error - continue anyway
+      if (!ref.mounted) return;
+      state = state.copyWith(backgroundPermissionGranted: false);
+    }
 
     // Can proceed even if denied (background is optional for manual trips)
     await nextPage();

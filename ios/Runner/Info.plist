@@ -26,6 +26,8 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSMotionUsageDescription</key>
+	<string>AutoRide uses your device's accelerometer and gyroscope to detect cycling motion patterns, enabling automatic trip detection without relying solely on GPS. Sensor data is processed on-device and never shared.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>AutoRide needs background location access to automatically detect when you start cycling, even when the app is closed. This enables hands-free trip tracking without needing to manually start or stop recording. Your location data stays private on your device and is never shared.</string>
 	<key>NSLocationAlwaysUsageDescription</key>
@@ -59,7 +61,6 @@
 	<array>
 		<string>location</string>
 		<string>fetch</string>
-		<string>processing</string>
 	</array>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
