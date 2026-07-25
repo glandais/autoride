@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../../core/constants/app_constants.dart';
 import '../../../../core/theme/app_spacing.dart';
+import '../../../../core/utils/legal_links.dart';
 import '../providers/onboarding_provider.dart';
 import '../widgets/onboarding_action_button.dart';
 
@@ -97,6 +99,17 @@ class BackgroundPermissionScreen extends ConsumerWidget {
               ],
             ),
           ),
+          const SizedBox(height: AppSpacing.lg),
+
+          // Prominent disclosure (Play policy requirement).
+          //
+          // Google Play requires a disclosure that names the app, states that location is
+          // collected in the background, and states the purpose — shown BEFORE the permission
+          // request and not only in the privacy policy. Keep it immediately above the button
+          // that triggers the request, and keep the wording in sync with
+          // store-metadata/data-safety.md §6.2 (the screencast filed with the declaration
+          // shows this block).
+          const _BackgroundLocationDisclosure(),
           const SizedBox(height: AppSpacing.xl),
 
           // Allow Background Button
@@ -119,6 +132,72 @@ class BackgroundPermissionScreen extends ConsumerWidget {
               },
               child: const Text('Skip for Now'),
             ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Google Play's required prominent disclosure for background location access.
+///
+/// Wording is mandated by policy, not chosen for tone: it must name the app, say that location
+/// is collected in the background, and say what for. See `store-metadata/data-safety.md` §6.2.
+class _BackgroundLocationDisclosure extends StatelessWidget {
+  const _BackgroundLocationDisclosure();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+        border: Border.all(color: theme.colorScheme.outlineVariant),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.my_location,
+                size: AppSpacing.iconMd,
+                color: theme.colorScheme.primary,
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: Text(
+                  'AutoRide collects location data to detect and record your bike trips, '
+                  'even when the app is closed or not in use.',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Text(
+            'Your trips are stored only on this device. AutoRide has no account and no '
+            'server — your routes are never uploaded.',
+            style: theme.textTheme.bodySmall,
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: () => openLegalUrl(context, AppConstants.privacyPolicyUrl),
+              icon: const Icon(Icons.open_in_new, size: 16),
+              label: const Text('Privacy Policy'),
+              style: TextButton.styleFrom(
+                padding: EdgeInsets.zero,
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+            ),
+          ),
         ],
       ),
     );

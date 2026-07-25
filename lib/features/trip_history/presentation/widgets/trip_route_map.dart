@@ -132,7 +132,7 @@ class _TripRouteMapState extends State<TripRouteMap> {
           // OpenStreetMap tile layer
           TileLayer(
             urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-            userAgentPackageName: 'com.autoride.app',
+            userAgentPackageName: 'io.github.glandais.autoride',
             maxNativeZoom: 19,
             maxZoom: 19,
             errorTileCallback: (tile, error, stackTrace) {

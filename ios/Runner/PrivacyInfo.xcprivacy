@@ -53,24 +53,13 @@
 		</dict>
 
 		<!--
-		Device ID (for local database):
-		- Collected: YES (device identifier for local storage)
-		- Linked to User: NO
-		- Used for Tracking: NO
-		- Purpose: App functionality only
+		Device ID is deliberately NOT declared (T037).
+		Nothing in the app reads a device identifier: PlatformInfoService uses device_info_plus
+		for the OS version, API level and isPhysicalDevice only — never identifierForVendor, an
+		Android ID, or an advertising ID. Declaring it would force a matching, and false, answer
+		in the App Store Connect App Privacy form.
+		See store-metadata/data-safety.md §2 for the evidence.
 		-->
-		<dict>
-			<key>NSPrivacyCollectedDataType</key>
-			<string>NSPrivacyCollectedDataTypeDeviceID</string>
-			<key>NSPrivacyCollectedDataTypeLinked</key>
-			<false/>
-			<key>NSPrivacyCollectedDataTypeTracking</key>
-			<false/>
-			<key>NSPrivacyCollectedDataTypePurposes</key>
-			<array>
-				<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
-			</array>
-		</dict>
 	</array>
 
 	<!--

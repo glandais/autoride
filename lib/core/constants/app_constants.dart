@@ -195,4 +195,15 @@ class AppConstants {
 
   // Notification Update Intervals
   static const Duration notificationUpdateInterval = Duration(seconds: 5);
+
+  // Legal Documents (T037)
+  //
+  // Served by GitHub Pages from docs/ on branch develop. privacyPolicyUrl is filed with Google
+  // Play (store listing, Data safety form, background-location declaration) and App Store
+  // Connect (App Privacy), so changing it means updating those consoles too — see
+  // store-metadata/data-safety.md §9 for the full list of places it appears.
+  static const String privacyPolicyUrl =
+      'https://glandais.github.io/autoride/legal/privacy-policy.html';
+  static const String termsOfUseUrl =
+      'https://glandais.github.io/autoride/legal/terms-of-service.html';
 }

@@ -176,10 +176,19 @@ Only once that returns 200 should the URL be entered in the store consoles. Fili
 
 ---
 
-## 5. Outstanding code changes
+## 5. Code changes
 
-None of these are in T037's original "write the documents" scope, but the documents are not
-truthful without the first, and Play rejects without the second and third. Each is small.
+None of these were in T037's original "write the documents" scope, but the documents are not
+truthful without the first, and Play rejects without the second and third.
+
+**Status: §5.1 – §5.5 implemented 2026-07-25.** `flutter analyze` clean, 190 tests pass,
+`plutil -lint` OK on the privacy manifest. §5.6 (product decision) and §5.7 (two cleanups) remain.
+
+Not yet verified on a device: the two new links call `launchUrl` with
+`LaunchMode.externalApplication`. No `<queries>` entry was added to `AndroidManifest.xml` because
+Android's package-visibility rules constrain `canLaunchUrl` (which the code does not use), not
+launching itself — but this should be confirmed on a physical Android 11+ device and on iOS
+before submission.
 
 ### 5.1 Remove the two toggles that promise transmission (REQUIRED)
 
@@ -326,11 +335,16 @@ Then, before submission:
 - [x] Pages **activated** and verified live 2026-07-25 — `status=built`, all three pages HTTP 200,
       `content-type: text/html`, theme CSS loads, relative `.md` links rewritten to
       `/autoride/legal/*.html` (§4)
-- [ ] §5.1 — misleading Settings toggles removed
-- [ ] §5.2 — privacy policy reachable from Settings
-- [ ] §5.3 — Play prominent disclosure on the background permission screen
-- [ ] §5.4 — OSM User-Agent corrected
-- [ ] §5.5 — `DeviceID` removed from the iOS privacy manifest
+- [x] §5.1 — misleading Settings toggles removed; section rewritten as information + links,
+      `PrivacySettingsSection` no longer needs `UserSettings` (now a `StatelessWidget`)
+- [x] §5.2 — privacy policy and terms open in the browser from Settings, via
+      `core/utils/legal_links.dart` and `AppConstants.privacyPolicyUrl` / `.termsOfUseUrl`.
+      Decision: external browser over a bundled copy, so the published document is always current
+- [x] §5.3 — Play prominent disclosure added to `background_permission_screen.dart`, immediately
+      above the button that requests the permission, with a link to the policy
+- [x] §5.4 — OSM User-Agent corrected to `io.github.glandais.autoride` in both map widgets
+- [x] §5.5 — `DeviceID` removed from `PrivacyInfo.xcprivacy`, with the evidence in a comment
+- [ ] Links verified on a physical Android 11+ device and on iOS
 - [ ] §5.6 — README "Export data" feature claim resolved (product decision)
 - [ ] §5.7 — iOS backup exclusion decided; version string de-hardcoded
 - [ ] `TASKS.md` dependency for T037 changed from T034 to none

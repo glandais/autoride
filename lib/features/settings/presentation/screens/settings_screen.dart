@@ -68,7 +68,7 @@ class SettingsScreen extends ConsumerWidget {
               const SizedBox(height: AppSpacing.md),
 
               // Privacy Settings
-              PrivacySettingsSection(settings: settings),
+              const PrivacySettingsSection(),
               const SizedBox(height: AppSpacing.md),
 
               // Display Settings

@@ -104,7 +104,7 @@ class _TripMapViewState extends State<TripMapView> {
         // OpenStreetMap tile layer
         TileLayer(
           urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-          userAgentPackageName: 'com.autoride.app',
+          userAgentPackageName: 'io.github.glandais.autoride',
           maxNativeZoom: 19,
           maxZoom: 19,
           // Handle tile loading errors gracefully
