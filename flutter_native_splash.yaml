@@ -1,0 +1,23 @@
+# Launch screen generation (T036). Run via ./scripts/generate-icons.sh, which derives the two
+# logo images below from assets/icon/source-1024.png — do not edit them by hand.
+#
+# A solid background rather than the icon's gradient: Android 12+ draws the system splash from
+# `windowSplashScreenBackground`, which only accepts a single colour. Using one colour on both
+# platforms and both Android generations keeps the launch experience identical everywhere.
+# #1E98DD is the gradient's centre pixel, so it reads as the same blue as the launcher icon.
+flutter_native_splash:
+  color: "#1E98DD"
+  image: assets/icon/splash-logo.png
+
+  android: true
+  ios: true
+  web: false
+
+  android_gravity: center
+  ios_content_mode: center
+
+  # Android 12+ replaces the legacy splash with the SplashScreen API, which masks the image to a
+  # circle and ignores launch_background.xml. It needs its own, more padded asset.
+  android_12:
+    color: "#1E98DD"
+    image: assets/icon/splash-logo-android12.png

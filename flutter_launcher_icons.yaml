@@ -1,0 +1,30 @@
+# Launcher icon generation (T036). Run via ./scripts/generate-icons.sh, which first derives the
+# three source images below from assets/icon/source-1024.png — do not edit them by hand.
+#
+#   icon-1024.png       full-bleed square, no alpha  -> iOS, legacy Android mipmaps
+#   icon-background.png gradient only                -> Android adaptive background layer
+#   icon-foreground.png artwork on transparency      -> Android adaptive foreground layer
+flutter_launcher_icons:
+  image_path: "assets/icon/icon-1024.png"
+
+  android: "ic_launcher"
+  # Adaptive icons need the artwork and backdrop as separate layers so the launcher can mask,
+  # parallax and animate them independently.
+  adaptive_icon_background: "assets/icon/icon-background.png"
+  adaptive_icon_foreground: "assets/icon/icon-foreground.png"
+  # minSdk is pinned to 26 in T038; adaptive icons are supported from 26, so no legacy fallback
+  # generation is strictly needed — kept at 21 so the legacy mipmaps are emitted anyway for
+  # launchers that ignore adaptive icons.
+  min_sdk_android: 21
+
+  ios: true
+  # The App Store rejects icons containing an alpha channel. icon-1024.png is already flattened;
+  # this is belt and braces.
+  remove_alpha_ios: true
+
+  web:
+    generate: false
+  windows:
+    generate: false
+  macos:
+    generate: false

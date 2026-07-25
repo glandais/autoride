@@ -298,11 +298,11 @@
 ## Phase 10: Release Preparation
 
 ### 10.1 Documentation & Assets
-- ☐ **T036**: App Icons & Splash Screen
-  - *Detail*: `tasks/T036-app-assets.md` (create on request)
-  - *Scope*: Design and configure app icons, splash screen
+- ✅ **T036**: App Icons & Splash Screen
+  - *Detail*: `tasks/T036-app-assets.md`
+  - *Scope*: Master artwork + reproducible generation script, iOS icon set, Android legacy + adaptive icons, branded launch screen (incl. Android 12+ SplashScreen API)
   - *Dependencies*: T020
-  - *Estimate*: 2-3 hours
+  - *Estimate*: 2-3 hours (actual ~2h)
 
 - ⏳ **T037**: Privacy Policy & Terms
   - *Detail*: `tasks/T037-privacy-policy.md`
@@ -335,15 +335,15 @@
 ## Progress Summary
 
 **Total Tasks**: 40
-**Completed**: 24
+**Completed**: 25
 **In Progress**: 1
-**Pending**: 15
+**Pending**: 14
 **Blocked**: 0
 
 **Current Phase**: Phase 10 - Release Preparation (started, in parallel with Phase 7 follow-ups)
-**Last Completed**: T028 - Platform-Specific Configuration (2025-11-23)
-**Current Task**: T037 - Privacy Policy & Terms (documents done; 6 code changes outstanding, see §5)
-**Next Task**: T038 - Android Release Configuration (detailed guide ready) OR T029 - Unit Tests
+**Last Completed**: T036 - App Icons & Splash Screen (2026-07-25)
+**Current Task**: T037 - Privacy Policy & Terms (documents + §5.1-§5.5 done; §5.6/§5.7 outstanding)
+**Next Task**: T038 - Android Release Configuration (detailed guide ready; both its dependencies, T033 and T036, are now satisfied)
 
 ---
 
