@@ -44,7 +44,7 @@ dev_dependencies:
     sdk: flutter
 
   freezed: ^3.2.6-dev.1                # Freezed code generation
-  json_serializable: ^6.14.0     # JSON serialization code generation
+  json_serializable: ^6.14.1     # JSON serialization code generation
 
   # Code Generation - Riverpod
   riverpod_generator: ^4.0.4     # Riverpod code generation
