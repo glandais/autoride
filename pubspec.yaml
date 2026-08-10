@@ -20,7 +20,7 @@ dependencies:
   google_fonts: ^8.2.0           # Typography with Google Fonts (Roboto)
   latlong2: ^0.10.1               # Coordinate handling for flutter_map
   path: ^1.9.0                   # Path manipulation for database paths
-  permission_handler: ^12.0.1    # Runtime permission handling
+  permission_handler: ^13.0.0    # Runtime permission handling
   riverpod_annotation: ^4.0.3    # Riverpod annotations
   sensors_plus: ^7.1.0           # Accelerometer & gyroscope
   shared_preferences: ^2.2.0     # User settings storage
