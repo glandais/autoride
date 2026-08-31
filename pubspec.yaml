@@ -21,6 +21,7 @@ dependencies:
   freezed_annotation: ^3.0.0     # Immutable models
   geolocator: ^14.0.2            # GPS location tracking
   google_fonts: ^8.2.1           # Typography with Google Fonts (Roboto)
+  json_annotation: ^4.12.0       # Annotations for JSON serialization codegen
   latlong2: ^0.10.1               # Coordinate handling for flutter_map
   path: ^1.9.0                   # Path manipulation for database paths
   permission_handler: ^13.0.1    # Runtime permission handling
