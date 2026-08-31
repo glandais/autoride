@@ -1,6 +1,10 @@
 # T038 - Android Release Configuration
 
-**Status**: ☐ Pending
+**Status**: ⏳ In Progress — all in-repo work shipped in `a945fa3`; only the manual Play Console
+items remain (see "Remaining" in `TASKS.md`). The **Overview** and **Current Implementation
+Status** sections below describe the tree *before* `a945fa3` and are kept as the task's rationale:
+debug-keystore signing, the missing build number and the absent distribution mechanism are all
+fixed as of that commit.
 **Estimated Time**: 3-4 hours (revised up from 2h in TASKS.md — versioning + publish script were not in the original scope estimate)
 **Dependencies**: T033 (Code Quality), T036 (App Icons & Splash Screen)
 **Phase**: 10 - Release Preparation

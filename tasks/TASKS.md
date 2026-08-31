@@ -61,11 +61,13 @@
   - *Dependencies*: T004
   - *Estimate*: 3-4 hours
 
-- ✅ **T006**: Battery-Optimized Location Strategy
+- ⚠️ **T006**: Battery-Optimized Location Strategy
   - *Detail*: `tasks/T006-battery-optimization.md`
   - *Scope*: Adaptive accuracy, distance filtering, motion-gated GPS
   - *Dependencies*: T005, T007
   - *Estimate*: 2-3 hours
+  - *Status*: partially complete — `BatteryOptimizer` and `AdaptiveLocationSettings` exist and are tested, but nothing consumes them: `gpsControllerProvider` is unreferenced and `_startGPS`/`_stopGPS` only flip an enum behind `FIXME(T006)`, so motion-gated GPS and the adaptive settings are inert (audit #3/#4, ledger L-004/L-006)
+  - *Blocked on*: **T041** — the unfinished half (real GPS gating + applying the per-mode settings) is delegated there
 
 ### 2.2 Motion Detection
 - ✅ **T007**: Sensor Integration (Accelerometer/Gyroscope)
@@ -114,12 +116,14 @@
   - *Dependencies*: T007, T008
   - *Estimate*: 2-3 hours
 
-- ✅ **T013**: Automatic Trip Start Detection
+- ⚠️ **T013**: Automatic Trip Start Detection
   - *Detail*: `tasks/T013-trip-start-detection.md`
   - *Scope*: Combine motion + GPS for automatic trip start
   - *Dependencies*: T004, T008, T012
   - *Estimate*: 3-4 hours
-  - *Completed*: 2025-11-22
+  - *Completed*: 2025-11-22 (detector logic only)
+  - *Status*: partially complete — `TripStartDetector` works and is tested, but `TripDetectionCoordinator` has no live entry point: nothing in `lib/` constructs `tripDetectionCoordinatorProvider` and `startListening()` is called only by the coordinator's own restart, so no `Idle → Detecting → Active` path exists in the shipped app (audit #11, ledger L-001)
+  - *Blocked on*: **T041** — wiring the coordinator to a real lifecycle owner is delegated there
 
 - ✅ **T014**: Automatic Trip Stop Detection
   - *Detail*: `tasks/T014-trip-stop-detection.md`
@@ -250,6 +254,7 @@
   - *Scope*: Repository, state machine, calculations
   - *Dependencies*: T010, T012
   - *Estimate*: 3-4 hours
+  - *Status note*: 190 unit tests already cover this stated scope (repository, state machine, detectors). Kept ☐ because the suite needs a recut, not more of the same: four test files never import the unit they are named for and `database_service_test` validates a duplicated schema (ledger L-011, L-014, L-026). The genuinely missing layer is T030's UI coverage.
 
 - ☐ **T030**: Widget Tests (UI Components)
   - *Detail*: `tasks/T030-widget-tests.md` (create on request)
@@ -275,6 +280,8 @@
   - *Scope*: flutter analyze, code formatting, linting rules
   - *Dependencies*: All implementation tasks
   - *Estimate*: 2 hours
+  - *Status note*: `flutter analyze` is clean against the curated 20-rule lint set and CI enforces it, so the stated scope is effectively met; ☐ remains only because `analysis_options.yaml`'s `strong-mode` keys are dead config on Dart 3 (ledger L-042) and no formatting gate exists in CI (L-050).
+  - *Dependency caveat*: T038 (shipped) and T039 both list T033 as a dependency while it is still ☐ — the dependency is nominal, not a real gate. Resolve by closing T033 or dropping it from T038/T039 (ledger L-053).
 
 ---
 
@@ -340,18 +347,34 @@
 
 ---
 
+## Phase 11: Audit Backlog
+
+### 11.1 Core Pipeline
+- ⚠️ **T041**: Core Tracking-Pipeline Refactor
+  - *Detail*: `tasks/BLOCKED-pipeline-refactor.md`
+  - *Scope*: The deferred audit cluster — #5 providerize the six direct stream call sites → #2 session ownership for the recorder/state machine/coordinator → #3 real motion-gated GPS → #4 apply adaptive settings → #11 a live entry point for auto-detection (plus a manual start control) → #7/#8 one source of truth between the background isolate and the foreground stream. Maps to ledger L-001…L-011.
+  - *Dependencies*: T006, T013, T015 — and the three maintainer decisions below
+  - *Estimate*: multi-session; land one dependency-chain step at a time, validating each on-device
+  - *Blocked on (maintainer decisions)*: (a) what owns a trip session's lifetime — `keepAlive` on the three providers, a scoped `ref.keepAlive()` opened in `startRecording`, or a single session-owner provider; (b) whether `GPSController` owns `Geolocator.getPositionStream` for all consumers or is deleted in favour of gating inside the coordinator; (c) when auto-detection should start — app launch after permissions, a background-tracking setting, or tied to the foreground service.
+  - *Validation*: **physical device required** — GPS demonstrably stops when stationary, a trip survives backgrounding and a tab switch, background recording continues under OS suspension, drain ≤ ~5 %/hr. None of this is observable from `flutter analyze`/`flutter test` or on an emulator.
+  - *References*: `tasks/BLOCKED-pipeline-refactor.md` (decisions + dependency order), `tasks/AUDIT-FINDINGS.md` (2026-06-17, deferred cluster), `tasks/LEDGER.md` (2026-08-31, §3 findings and §5 step 4)
+  - *Retires*: the blocked halves of T006 and T013; unblocks T032 and the recorder/coordinator tests under T029/T031
+
+---
+
 ## Progress Summary
 
-**Total Tasks**: 40
-**Completed**: 25
+**Total Tasks**: 41
+**Completed**: 23
 **In Progress**: 2
 **Pending**: 13
-**Blocked**: 0
+**Blocked**: 3 (T006, T013, T041)
 
-**Current Phase**: Phase 10 - Release Preparation (started, in parallel with Phase 7 follow-ups)
+**Current Phase**: Phase 10 - Release Preparation, alongside the Phase 11 audit backlog
 **Last Completed**: T036 - App Icons & Splash Screen (2026-07-25)
 **Current Task**: T038 - Android Release Configuration (all in-repo work done; blocked only on the manual Play Console setup). T037 also open (§5.6/§5.7 outstanding).
 **Next Task**: T039 - iOS Release Configuration (T038 now owns the version scheme and `publish_beta.sh`, so T039 can extend both)
+**Audit backlog**: `tasks/AUDIT-FINDINGS.md` (2026-06-17) and `tasks/LEDGER.md` (2026-08-31) record open defects that are not otherwise tracked here; the blocked core-pipeline cluster is T041.
 
 ---
 
@@ -395,5 +418,5 @@
 
 ---
 
-**Last Updated**: 2026-04-10
-**Version**: 1.1
+**Last Updated**: 2026-08-31
+**Version**: 1.2

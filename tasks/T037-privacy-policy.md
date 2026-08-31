@@ -268,7 +268,7 @@ it in the other.
 
 `README.md:30` lists "**Export data** - Download your trip data for analysis" as a feature under
 Trip Management. It is not implemented (T035). The surrounding context — "App is currently in
-development", "Version: 0.1.0 (Early Development)" — makes the features list read as partly
+development" — makes the features list read as partly
 aspirational, so this was left alone rather than silently rewritten: which features to advertise
 before they ship is a product decision, not a privacy one. The privacy-relevant claims were the
 ones corrected (§2.4 item 4).
@@ -347,7 +347,7 @@ Then, before submission:
 - [ ] Links verified on a physical Android 11+ device and on iOS
 - [ ] §5.6 — README "Export data" feature claim resolved (product decision)
 - [ ] §5.7 — iOS backup exclusion decided; version string de-hardcoded
-- [ ] `TASKS.md` dependency for T037 changed from T034 to none
+- [x] `TASKS.md` dependency for T037 changed from T034 to none
 - [ ] Legal review before the **public** release (not required for TestFlight/internal)
 - [ ] `TASKS.md` updated (⏳ → ✅) once §5 is complete
 
