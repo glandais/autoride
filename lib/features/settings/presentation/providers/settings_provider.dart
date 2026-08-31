@@ -14,6 +14,20 @@ class DetectionSettingsNotifier extends _$DetectionSettingsNotifier {
     return ref.watch(currentSettingsProvider).detection;
   }
 
+  /// Enable or disable automatic detection.
+  ///
+  /// This is the setting the app root watches: turning it on starts the
+  /// detection coordinator (permissions permitting), turning it off stops it.
+  Future<void> updateAutomaticDetection(bool enabled) async {
+    await ref.read(settingsServiceProvider.notifier).updatePartial(
+          (settings) => settings.copyWith(
+            detection: settings.detection.copyWith(
+              automaticDetectionEnabled: enabled,
+            ),
+          ),
+        );
+  }
+
   /// Update auto-start detection enabled state
   Future<void> updateAutoStart(bool enabled) async {
     await ref.read(settingsServiceProvider.notifier).updatePartial(

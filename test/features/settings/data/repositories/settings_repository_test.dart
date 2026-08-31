@@ -68,9 +68,28 @@ void main() {
       expect(secondTimestamp.isAfter(firstTimestamp), isTrue);
     });
 
+    test('should round-trip the automatic-detection toggle', () async {
+      // Default is on; turning it off must survive a restart, otherwise the
+      // app root would start detection again on the next launch.
+      expect(
+        (await repository.loadSettings()).detection.automaticDetectionEnabled,
+        isTrue,
+      );
+
+      await repository.saveSettings(
+        const UserSettings(
+          detection: DetectionSettings(automaticDetectionEnabled: false),
+        ),
+      );
+
+      final reloaded = await repository.loadSettings();
+      expect(reloaded.detection.automaticDetectionEnabled, isFalse);
+    });
+
     test('should save nested detection settings correctly', () async {
       const testSettings = UserSettings(
         detection: DetectionSettings(
+          automaticDetectionEnabled: false,
           autoStartEnabled: false,
           sensitivity: CyclingSensitivity.high,
           minimumTripDurationSeconds: 180,
@@ -81,6 +100,7 @@ void main() {
       await repository.saveSettings(testSettings);
       final loadedSettings = await repository.loadSettings();
 
+      expect(loadedSettings.detection.automaticDetectionEnabled, isFalse);
       expect(loadedSettings.detection.autoStartEnabled, isFalse);
       expect(loadedSettings.detection.sensitivity, equals(CyclingSensitivity.high));
       expect(loadedSettings.detection.minimumTripDurationSeconds, equals(180));

@@ -16,6 +16,14 @@ sealed class DetectionSettings with _$DetectionSettings {
   const DetectionSettings._();
 
   const factory DetectionSettings({
+    /// Master switch for automatic detection.
+    ///
+    /// When true (and the required permissions are granted) the app root starts
+    /// [TripDetectionCoordinator] at launch, so motion is watched and trips
+    /// start on their own. Turning it off stops the coordinator; a trip that is
+    /// already recording is left alone and finishes normally.
+    @Default(true) bool automaticDetectionEnabled,
+
     /// Enable automatic trip start detection
     @Default(true) bool autoStartEnabled,
 

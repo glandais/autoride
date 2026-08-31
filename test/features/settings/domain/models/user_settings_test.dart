@@ -8,7 +8,9 @@ void main() {
     test('should create default settings', () {
       const settings = UserSettings();
 
-      // Detection defaults
+      // Detection defaults. Automatic detection ships ON: the app root starts
+      // the coordinator as soon as permissions allow (audit #11).
+      expect(settings.detection.automaticDetectionEnabled, isTrue);
       expect(settings.detection.autoStartEnabled, isTrue);
       expect(settings.detection.sensitivity, equals(CyclingSensitivity.medium));
       expect(settings.detection.minimumTripDurationSeconds, equals(120));

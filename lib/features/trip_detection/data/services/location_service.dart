@@ -24,16 +24,12 @@ const LocationSettings kSingleFixLocationSettings = LocationSettings(
 class LocationService extends _$LocationService {
   @override
   Future<LocationData?> build() async {
-    // Keep the exposed "current location" fed by the live position stream so
-    // consumers (the tracking screen's map marker and re-center button) have a
-    // value without every caller having to poll `getCurrentLocation()`.
-    ref.listen(locationStreamProvider(), (previous, next) {
-      next.whenData((location) {
-        state = AsyncValue.data(location);
-      });
-    });
-
-    // Return null initially; the stream (or an explicit request) populates it.
+    // Deliberately does NOT subscribe to `locationStreamProvider`: doing so
+    // (L-025's first fix) kept the GPS receiver on for as long as the tracking
+    // screen was mounted, defeating the motion gate this provider is supposed
+    // to live behind (audit #3). The marker is fed from the stream that the
+    // recorder already holds during a trip; this state only carries on-demand
+    // fixes (the re-center button, `getLastKnownLocation`).
     return null;
   }
 

@@ -9,6 +9,7 @@ import 'features/onboarding/presentation/screens/onboarding_screen.dart';
 import 'features/settings/presentation/screens/settings_screen.dart';
 import 'features/trip_detection/data/services/trip_state_machine.dart';
 import 'features/trip_detection/domain/models/trip_state.dart';
+import 'features/trip_detection/presentation/providers/auto_detection_controller.dart';
 import 'features/trip_detection/presentation/screens/trip_tracking_screen.dart';
 import 'features/trip_history/presentation/screens/trip_detail_screen.dart';
 import 'features/trip_history/presentation/screens/trip_history_screen.dart';
@@ -36,13 +37,39 @@ class AutoRideApp extends ConsumerStatefulWidget {
   ConsumerState<AutoRideApp> createState() => _AutoRideAppState();
 }
 
-class _AutoRideAppState extends ConsumerState<AutoRideApp> {
+class _AutoRideAppState extends ConsumerState<AutoRideApp>
+    with WidgetsBindingObserver {
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // The user may have granted location in system settings while the app was
+    // backgrounded; without a re-read, automatic detection would stay off until
+    // the next cold start.
+    if (state == AppLifecycleState.resumed &&
+        !ref.read(autoDetectionControllerProvider).permissionGranted) {
+      ref.read(autoDetectionControllerProvider.notifier).refreshPermission();
+    }
+  }
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
 
     // Listen for trip state changes and auto-navigate to tracking screen
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Lifecycle owner for automatic detection (audit #11): instantiating it
+      // here — above every screen — is what makes detection run at all. The
+      // listener is what keeps it reactive: a keepAlive provider with no
+      // listener would not recompute when the setting or the permission
+      // changes, it would merely be invalidated.
+      ref.listenManual(autoDetectionControllerProvider, (_, _) {});
+
       ref.listenManual(tripStateMachineProvider, (previous, next) {
         // Auto-navigate when trip becomes Active (from Idle or Detecting)
         final wasNotActive = previous?.map(
@@ -156,10 +183,8 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   ];
 
   void _onTabTapped(int index) {
-    // The Active Trip tab is only reachable while a trip is running.
-    final hasActiveTrip = ref.read(tripStateMachineProvider).hasActiveTrip;
     setState(() {
-      _currentIndex = (index == 1 && !hasActiveTrip) ? 0 : index;
+      _currentIndex = index;
     });
   }
 
@@ -168,27 +193,13 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     final tripState = ref.watch(tripStateMachineProvider);
     final hasActiveTrip = tripState.hasActiveTrip;
 
-    // If the trip ends while the Active Trip tab is selected, fall back to
-    // History. This is a state mutation, so it belongs in a listener rather
-    // than in build() — assigning _currentIndex during build makes build
-    // non-idempotent and can desync the NavigationBar from the rendered body.
-    ref.listen(tripStateMachineProvider, (previous, next) {
-      if (_currentIndex == 1 && !next.hasActiveTrip) {
-        setState(() {
-          _currentIndex = 0;
-        });
-      }
-    });
-
-    // Render defensively without mutating state, in case this build runs
-    // before the listener above has fired.
-    final selectedIndex =
-        (_currentIndex == 1 && !hasActiveTrip) ? 0 : _currentIndex;
-
+    // The Trip tab is always reachable: with no trip running it is where the
+    // manual start button lives (audit #11 — the app previously had no way to
+    // start a trip at all, and this tab was permanently disabled).
     return Scaffold(
-      body: _screens[selectedIndex],
+      body: _screens[_currentIndex],
       bottomNavigationBar: NavigationBar(
-        selectedIndex: selectedIndex,
+        selectedIndex: _currentIndex,
         onDestinationSelected: _onTabTapped,
         destinations: [
           const NavigationDestination(
@@ -197,13 +208,9 @@ class _HomeShellState extends ConsumerState<HomeShell> {
             label: 'History',
           ),
           NavigationDestination(
-            icon: Icon(
-              Icons.directions_bike,
-              color: hasActiveTrip ? null : Colors.grey.shade400,
-            ),
+            icon: const Icon(Icons.directions_bike),
             selectedIcon: const Icon(Icons.directions_bike),
-            label: 'Active Trip',
-            enabled: hasActiveTrip,
+            label: hasActiveTrip ? 'Active Trip' : 'Trip',
           ),
           const NavigationDestination(
             icon: Icon(Icons.settings),

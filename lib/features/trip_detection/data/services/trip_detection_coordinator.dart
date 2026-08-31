@@ -23,9 +23,11 @@ const _logger = Logger('TripDetectionCoordinator');
 ///
 /// Listens to sensor and GPS streams, analyzes data for trip start/stop,
 /// and manages state machine transitions.
-// TODO(T041): nothing in lib/ constructs `tripDetectionCoordinatorProvider`, so
-// automatic detection has no entry point and `startListening()` is only reached
-// by the coordinator restarting itself. See BLOCKED-pipeline-refactor.md #11.
+///
+/// Its lifetime is owned by `AutoDetectionController` (audit #11): that
+/// keepAlive provider — instantiated by the app root — calls [startListening]
+/// when the "Automatic detection" setting is on and the required permissions
+/// are granted, and [stopListening] when either stops being true.
 @riverpod
 class TripDetectionCoordinator extends _$TripDetectionCoordinator {
   Timer? _detectionTimer;
@@ -67,6 +69,11 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
   bool _isAnalyzing = false;
   bool _disposed = false;
 
+  /// Set when [stopListening] is called while a trip is being recorded. The
+  /// session is kept running so auto-pause/auto-stop still work, and the actual
+  /// teardown happens once that trip finishes.
+  bool _stopRequestedAfterTrip = false;
+
   /// How long the rider may stay stationary before the GPS gate closes.
   /// Overridden in tests so the timeout is observable without waiting 30 s.
   @visibleForTesting
@@ -86,6 +93,7 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
 
   /// Start listening for trip start conditions
   Future<void> startListening() async {
+    _stopRequestedAfterTrip = false;
     if (_isAnalyzing) return;
     _isAnalyzing = true;
 
@@ -95,7 +103,9 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
     // Keep the session collaborators alive for as long as we are listening.
     if (_sessionSubscriptionClosers.isEmpty) {
       _sessionSubscriptionClosers.addAll([
-        ref.container.listen(tripStateMachineProvider, (_, _) {}).close,
+        ref.container
+            .listen(tripStateMachineProvider, _onTripStateChanged)
+            .close,
         ref.container.listen(tripStartDetectorProvider, (_, _) {}).close,
         ref.container.listen(tripStopDetectorProvider, (_, _) {}).close,
       ]);
@@ -223,7 +233,22 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
   }
 
   /// Stop listening and release the detection session.
+  ///
+  /// If a trip is currently being recorded the teardown is DEFERRED until that
+  /// trip finishes: auto-pause and auto-stop are driven by this very motion
+  /// subscription, so cutting it mid-ride would strand the trip (the user
+  /// turning "Automatic detection" off must not break the ride in progress).
   void stopListening() {
+    if (_isAnalyzing && ref.read(tripStateMachineProvider).hasActiveTrip) {
+      _stopRequestedAfterTrip = true;
+      return;
+    }
+
+    _stopNow();
+  }
+
+  void _stopNow() {
+    _stopRequestedAfterTrip = false;
     _suspendListening();
     _closeSession();
   }
@@ -234,7 +259,9 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
   /// so the keepAlive link is released too.
   void _onMotionStreamError(Object error, StackTrace stackTrace) {
     _logger.error('Motion stream error', error, stackTrace);
-    stopListening();
+    // Unconditional: with no motion samples there is nothing left to defer to,
+    // so this tears down even if a trip is in progress.
+    _stopNow();
     if (!_disposed) {
       state = AsyncValue.error(error, stackTrace);
     }
@@ -246,6 +273,22 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
   void _suspendListening() {
     _cleanup();
     _isAnalyzing = false;
+  }
+
+  /// Honour a deferred [stopListening] as soon as the trip it was waiting on
+  /// ends — including when the trip is stopped from the UI or a notification
+  /// action, which never reaches [_finalizeAndStopTrip].
+  void _onTripStateChanged(TripState? previous, TripState next) {
+    if (!_stopRequestedAfterTrip) return;
+    if (next.hasActiveTrip) return;
+
+    // Deferred: `_stopNow` closes the very subscription this callback is
+    // running inside.
+    Future.microtask(() {
+      if (_disposed) return;
+      if (!_stopRequestedAfterTrip) return;
+      _stopNow();
+    });
   }
 
   /// Release the session keepAlive link and the collaborator subscriptions.
@@ -332,9 +375,11 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
       final stateMachineState = ref.read(tripStateMachineProvider);
       state = AsyncValue.data(stateMachineState);
 
-      // Stop analyzing (trip has started). The session link stays open: the
-      // trip this coordinator just started must not be torn down with it.
-      _suspendListening();
+      // Keep listening. Motion (and, through the gate, location) must keep
+      // flowing for the whole ride: `_analyzeForTripStop` / `_analyzeForResume`
+      // are driven by the same motion subscription, so suspending here — as an
+      // earlier version did — meant auto-pause and auto-stop could never fire
+      // and a started trip could only be ended by hand.
     }
   }
 
@@ -390,6 +435,11 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
 
   /// Finalize trip data and stop trip
   Future<void> _finalizeAndStopTrip() async {
+    // Captured up front: stopping the recording flips the state machine to
+    // idle, which lets `_onTripStateChanged` clear the flag before the check
+    // below is reached — and the session would then be restarted anyway.
+    final stopRequested = _stopRequestedAfterTrip;
+
     // Stop recording and save trip (T015)
     // This calculates final metrics and saves to database
     // Note: stopRecording() calls TripStateMachine.stopTrip() which triggers
@@ -403,8 +453,17 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
     final stateMachineState = ref.read(tripStateMachineProvider);
     state = AsyncValue.data(stateMachineState);
 
-    // Return to listening for next trip (same session, so the keepAlive link
-    // is deliberately kept open across the restart).
+    // A stop requested while the trip was running (the user turned automatic
+    // detection off mid-ride) is honoured now that the ride is over.
+    if (stopRequested) {
+      _stopNow();
+      return;
+    }
+
+    // Return to detecting for the next trip. The streams are restarted rather
+    // than merely left running so the detectors and the GPS gate start from a
+    // clean slate; the session (and its keepAlive link) is deliberately kept
+    // open across the restart.
     _suspendListening();
     await Future.delayed(const Duration(milliseconds: 100));
     if (_disposed) return; // Provider torn down during the delay

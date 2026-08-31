@@ -250,8 +250,10 @@ class AppConstants {
   static const String tripEventsChannelName = 'Trip Events';
 
   // Notification Update Intervals
-  // TODO(T041): no consumer — nothing drives the foreground notification on a
-  // timer yet; `showForegroundNotification` is only called on demand.
+  //
+  // Throttles the trip status pushed into the foreground-service notification
+  // by `AutoDetectionController`: the recorder's metrics tick once a second,
+  // which is far more often than the notification needs to change.
   static const Duration notificationUpdateInterval = Duration(seconds: 5);
 
   // Legal Documents (T037)

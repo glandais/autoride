@@ -517,13 +517,7 @@ void main() {
       await pushMotion(1); // starts the trip -> active
       expect(_stateName(container.read(tripStateMachineProvider)), 'active');
 
-      // The coordinator suspends its streams once a trip starts; resume the
-      // session to drive the active-state branch.
-      final coordinator =
-          container.read(tripDetectionCoordinatorProvider.notifier);
-      await coordinator.startListening();
-      await pumpEventQueue();
-
+      // No restart needed: the session keeps running across the trip start.
       stopDetector.decision = StopDecision.pauseTrip;
       await pushMotion(2);
 
@@ -534,11 +528,6 @@ void main() {
       startDetector.verdict = true;
       await startedCoordinator();
       await pushMotion(1);
-
-      final coordinator =
-          container.read(tripDetectionCoordinatorProvider.notifier);
-      await coordinator.startListening();
-      await pumpEventQueue();
 
       stopDetector.decision = StopDecision.stopTrip;
       await pushMotion(2);
@@ -557,11 +546,6 @@ void main() {
       container.read(tripStateMachineProvider.notifier).pauseTrip();
       expect(_stateName(container.read(tripStateMachineProvider)), 'paused');
 
-      final coordinator =
-          container.read(tripDetectionCoordinatorProvider.notifier);
-      await coordinator.startListening();
-      await pumpEventQueue();
-
       stopDetector.resumeVerdict = true;
       await pushMotion(2);
 
@@ -576,11 +560,6 @@ void main() {
 
       container.read(tripStateMachineProvider.notifier).pauseTrip();
 
-      final coordinator =
-          container.read(tripDetectionCoordinatorProvider.notifier);
-      await coordinator.startListening();
-      await pumpEventQueue();
-
       stopDetector
         ..resumeVerdict = false
         ..decision = StopDecision.stopTrip;
@@ -588,6 +567,44 @@ void main() {
 
       expect(recorder.stopCalls, 1);
       expect(_stateName(container.read(tripStateMachineProvider)), 'idle');
+    });
+
+    // L-001: the coordinator used to suspend its streams the moment a trip
+    // started, so nothing ever drove `_analyzeForTripStop` again — auto-pause
+    // and auto-stop were unreachable in the shipped app.
+    test('motion keeps flowing after a trip starts, so auto-pause fires',
+        () async {
+      startDetector.verdict = true;
+      await startedCoordinator();
+      await pushMotion(1); // starts the trip
+      expect(_stateName(container.read(tripStateMachineProvider)), 'active');
+
+      // No restart, no manual intervention: a stationary run during the trip
+      // reaches the stop detector and pauses it.
+      stopDetector.decision = StopDecision.pauseTrip;
+      motionController.add(_stationarySample(2));
+      await pumpEventQueue();
+
+      expect(_stateName(container.read(tripStateMachineProvider)), 'paused');
+    });
+
+    test('a trip that auto-stops returns the coordinator to detecting',
+        () async {
+      startDetector.verdict = true;
+      await startedCoordinator();
+      await pushMotion(1);
+
+      stopDetector.decision = StopDecision.stopTrip;
+      await pushMotion(2);
+      expect(_stateName(container.read(tripStateMachineProvider)), 'idle');
+
+      // The restart is scheduled 100 ms out.
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+      await pumpEventQueue();
+
+      startDetector.verdict = false;
+      await pushMotion(3);
+      expect(_stateName(container.read(tripStateMachineProvider)), 'detecting');
     });
 
     test('a motion stream error tears the session down and is surfaced',
@@ -622,6 +639,56 @@ void main() {
       // And it is still processing samples.
       await pushMotion(1);
       expect(_stateName(container.read(tripStateMachineProvider)), 'detecting');
+    });
+
+    // The user turning "Automatic detection" off mid-ride must not strand the
+    // ride: the teardown waits for the trip to finish.
+    test('stopListening during a trip is deferred until the trip ends',
+        () async {
+      startDetector.verdict = true;
+      final coordinator = await startedCoordinator();
+      await pushMotion(1);
+      expect(_stateName(container.read(tripStateMachineProvider)), 'active');
+
+      coordinator.stopListening();
+      await pumpEventQueue();
+
+      // Still analyzing: auto-pause/auto-stop keep working.
+      stopDetector.decision = StopDecision.pauseTrip;
+      await pushMotion(2);
+      expect(_stateName(container.read(tripStateMachineProvider)), 'paused');
+
+      // The trip ends -> the deferred stop is honoured.
+      stopDetector
+        ..resumeVerdict = false
+        ..decision = StopDecision.stopTrip;
+      await pushMotion(3);
+      expect(recorder.stopCalls, 1);
+
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+      await pumpEventQueue();
+
+      final before = startDetector.seenLocations.length;
+      await pushMotion(4);
+      expect(startDetector.seenLocations.length, before);
+      expect(gpsSubscribed, isFalse);
+    });
+
+    test('a manual stop also honours a deferred stopListening', () async {
+      startDetector.verdict = true;
+      final coordinator = await startedCoordinator();
+      await pushMotion(1);
+
+      coordinator.stopListening();
+      await pumpEventQueue();
+
+      // Stopped from the UI, not by the stop detector.
+      await container.read(tripRecorderServiceProvider.notifier).stopRecording();
+      await pumpEventQueue();
+
+      final before = startDetector.seenLocations.length;
+      await pushMotion(2);
+      expect(startDetector.seenLocations.length, before);
     });
 
     test('stopListening releases the session so the provider can dispose',
@@ -752,12 +819,7 @@ void main() {
       await pushMotion(1); // starts the trip
       expect(_stateName(container.read(tripStateMachineProvider)), 'active');
 
-      // Resume listening (as the stop-detection path does) and go stationary:
-      // auto-pause/stop needs speed, so the gate must not close.
-      final coordinator =
-          container.read(tripDetectionCoordinatorProvider.notifier);
-      await coordinator.startListening();
-      await pumpEventQueue();
+      // Go stationary: auto-pause/stop needs speed, so the gate must not close.
       expect(gpsSubscribed, isTrue);
 
       motionController.add(_stationarySample(2));

@@ -23,16 +23,19 @@ class DetectionSettingsSection extends ConsumerWidget {
       title: 'Trip Detection',
       subtitle: 'Configure automatic trip detection behavior',
       children: [
-        // Auto-start toggle
+        // Master switch: drives the detection coordinator's lifecycle.
+        // (It replaces the old "Auto-start trips" tile, which toggled a field
+        // no code ever read.)
         SettingTile(
-          title: 'Auto-start trips',
-          subtitle: 'Automatically detect and start tracking cycling trips',
+          title: 'Automatic detection',
+          subtitle: 'Watch for motion and start tracking cycling trips on '
+              'their own',
           trailing: Switch(
-            value: settings.detection.autoStartEnabled,
+            value: settings.detection.automaticDetectionEnabled,
             onChanged: (value) {
               ref
                   .read(detectionSettingsProvider.notifier)
-                  .updateAutoStart(value);
+                  .updateAutomaticDetection(value);
             },
           ),
         ),

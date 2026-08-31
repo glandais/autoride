@@ -1,15 +1,22 @@
-import 'dart:async';
 import 'dart:ui';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
-import 'package:geolocator/geolocator.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import '../../../core/constants/app_constants.dart';
 
 part 'background_location_service.g.dart';
 
-/// Background service entry point
-/// This function runs in a separate isolate
+/// Background service entry point. Runs in a separate isolate.
+///
+/// It deliberately does **no** location work (audit #7/#8 / L-007). The
+/// foreground stream (`locationStreamProvider`, consumed by the recorder and
+/// the detection coordinator) is the single source of truth for a trip; the
+/// isolate's only job is to hold the Android foreground-service notification
+/// so the OS keeps the process — and with it that stream — alive for the
+/// duration of a recording.
+///
+/// Riverpod is unavailable here, so the main isolate pushes notification text
+/// across with `service.invoke('updateNotification', …)`.
 @pragma('vm:entry-point')
 void onStart(ServiceInstance service) async {
   // Initialize DartPluginRegistrant for background isolate
@@ -24,53 +31,22 @@ void onStart(ServiceInstance service) async {
     service.on('setAsBackground').listen((event) {
       service.setAsBackgroundService();
     });
+
+    // Live trip status pushed by the main isolate.
+    service.on('updateNotification').listen((event) async {
+      if (event == null) return;
+      if (!await service.isForegroundService()) return;
+
+      service.setForegroundNotificationInfo(
+        title: (event['title'] as String?) ?? 'AutoRide',
+        content: (event['content'] as String?) ?? '',
+      );
+    });
   }
 
   // Stop service when requested
   service.on('stopService').listen((event) {
     service.stopSelf();
-  });
-
-  // Location tracking with battery-optimized settings
-  Timer.periodic(const Duration(seconds: 30), (timer) async {
-    if (service is AndroidServiceInstance) {
-      if (await service.isForegroundService()) {
-        try {
-          // Get current location with optimized settings
-          // FIXME(T006): Use AdaptiveLocationSettings instead of hardcoded values.
-          // Should read from adaptiveLocationSettingsProvider to respect
-          // battery level and motion state.
-          final position = await Geolocator.getCurrentPosition(
-            locationSettings: const LocationSettings(
-              accuracy: LocationAccuracy.medium,
-              distanceFilter: 15,
-              timeLimit: Duration(seconds: 30),
-            ),
-          );
-
-          // Update foreground notification with live data
-          service.setForegroundNotificationInfo(
-            title: "AutoRide - Tracking Trip",
-            content: "Speed: ${(position.speed * 3.6).toStringAsFixed(1)} km/h",
-          );
-
-          // Send location data to main isolate
-          service.invoke(
-            'update',
-            {
-              "latitude": position.latitude,
-              "longitude": position.longitude,
-              "speed": position.speed,
-              "accuracy": position.accuracy,
-              "timestamp": position.timestamp.millisecondsSinceEpoch,
-            },
-          );
-        } catch (e) {
-          // Handle location errors gracefully
-          service.invoke('error', {"message": e.toString()});
-        }
-      }
-    }
   });
 }
 
@@ -92,7 +68,7 @@ class BackgroundLocationService extends _$BackgroundLocationService {
         isForegroundMode: true, // Critical: keeps service alive
         notificationChannelId: AppConstants.tripTrackingChannelId,
         initialNotificationTitle: 'AutoRide',
-        initialNotificationContent: 'Initializing trip tracking...',
+        initialNotificationContent: 'Trip in progress',
         foregroundServiceNotificationId: AppConstants.foregroundNotificationId,
         foregroundServiceTypes: [AndroidForegroundType.location],
       ),
@@ -104,7 +80,7 @@ class BackgroundLocationService extends _$BackgroundLocationService {
     );
   }
 
-  /// Start background location tracking
+  /// Start the foreground service that keeps the app alive while recording.
   Future<void> startTracking() async {
     final isRunning = await service.isRunning();
     if (!isRunning) {
@@ -113,23 +89,28 @@ class BackgroundLocationService extends _$BackgroundLocationService {
     }
   }
 
-  /// Stop background location tracking
+  /// Stop the foreground service.
   Future<void> stopTracking() async {
     final isRunning = await service.isRunning();
     if (isRunning) {
-      service.invoke("stopService");
+      service.invoke('stopService');
       state = const AsyncValue.data(false);
     }
   }
 
-  /// Listen to location updates from background service
-  Stream<Map<String, dynamic>?> get locationUpdates {
-    return service.on('update');
-  }
-
-  /// Listen to errors from background service
-  Stream<Map<String, dynamic>?> get errors {
-    return service.on('error');
+  /// Push live trip status into the foreground-service notification.
+  ///
+  /// The notification belongs to the service (same id and channel as
+  /// `AppConstants.foregroundNotificationId`), so it is updated from the
+  /// isolate rather than through flutter_local_notifications.
+  void updateNotification({
+    required String title,
+    required String content,
+  }) {
+    service.invoke('updateNotification', {
+      'title': title,
+      'content': content,
+    });
   }
 
   Future<bool> _isServiceRunning() async {
