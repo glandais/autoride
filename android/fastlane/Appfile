@@ -1,0 +1,7 @@
+package_name("io.github.glandais.autoride")
+
+# The Play service-account JSON lives outside the repository — it is a credential, and the
+# repo is public. Override the location with AUTORIDE_PLAY_JSON_KEY (useful in CI).
+json_key_file(
+  ENV["AUTORIDE_PLAY_JSON_KEY"] || File.expand_path("~/.secrets/autoride-play.json")
+)

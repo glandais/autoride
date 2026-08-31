@@ -2,6 +2,9 @@
 
 **Last verified against the code:** 2026-07-25
 **Verified at commit:** `cc1c088` (branch `wip`)
+**Play Console answers filed:** 2026-07-25 (T038) — app `io.github.glandais.autoride`, ID
+`4975962567441094743`. §5 reflects what is actually filed, including the approximate-location
+decision recorded there.
 
 This file is the single source of truth for what AutoRide collects. Five artefacts describe the
 same facts and must agree:
@@ -85,10 +88,14 @@ sync. Confirmed by §8's egress grep: the two tile URLs above are the only outbo
 |---|---|---|---|---|
 | `NSPrivacyCollectedDataTypeLocation` | Yes | No | No | App Functionality |
 
-Location is declared as collected — the conservative reading, defensible because §3.1 transmits
-tile coordinates to a third party. Under a strict reading of Apple's definition (data retained
-beyond servicing the request) the app arguably collects nothing; over-declaring here is safe and
-consistent with the Play answer in §5.
+Location is declared as collected — the conservative reading, and it matches the Play answer for
+precise location in §5. Under a strict reading of Apple's definition (data retained beyond
+servicing the request) the app arguably collects nothing, since routes never leave the device;
+over-declaring here is safe.
+
+Do **not** justify this entry by the map tile requests in §3.1. That argument was considered and
+rejected on 2026-07-25 — see §5 — and an iOS declaration resting on a premise the Play
+declaration denies is exactly the kind of drift this file exists to prevent.
 
 `NSPrivacyTracking` = `false`. `NSPrivacyTrackingDomains` = empty.
 
@@ -118,16 +125,35 @@ responsible. See T039 D4.
 | Data type | Collected | Shared | Processed ephemerally | Required or optional | Purpose |
 |---|---|---|---|---|---|
 | Location → **Precise location** | Yes | No | No | Required | App functionality |
-| Location → **Approximate location** | No | **Yes** | Yes | Required | App functionality |
+| Location → **Approximate location** | No | No | — | — | — |
 
 **Precise location — collected, not shared:** GPS routes are stored on the device
 (§1). Not transmitted to the developer or anyone else.
 
-**Approximate location — shared:** the tile requests in §3.1 send tile coordinates and an IP
-address to the OpenStreetMap Foundation, a third party. Play's definition of "shared" is
-transfer to a third party, so this is declared even though it is transient and unattributed. Play
-treats under-declaration as a policy violation and over-declaration as merely conservative — when
-in doubt, declare.
+**Approximate location — declared as neither collected nor shared.** Decided by the product
+owner on 2026-07-25, and this is the answer filed in the Play Console. The reasoning:
+
+- No coordinate belonging to the user is ever transmitted. The map tile requests in §3.1 carry
+  *tile* coordinates for the viewport plus the IP address that any HTTP request carries. Play's
+  data types cover user data the app sends; a viewport identifier and a transport-level IP are
+  not the user's position as a declared data type.
+- Play's "shared" definition carries an exception for data transferred by a specific
+  user-initiated action where the transfer is what the user asked for. Rendering a map the user
+  opened is that: no map view, no request at all (§3.1).
+
+**The counter-argument, recorded so this is not silently re-decided:** §3.1 states that on the
+live-tracking screen the map is centred on the rider, so the requested tile coordinates do reveal
+roughly where they are, at tile granularity. An earlier revision of this file declared approximate
+location as *shared* on that basis, reasoning that Play treats under-declaration as a policy
+violation and over-declaration as merely conservative. Both readings are defensible; the one above
+is the one filed. If Play ever queries the declaration, this paragraph is the argument to weigh
+against, not a loose end to tidy up.
+
+Note this changes nothing about what the app actually does, and nothing in
+`docs/legal/privacy-policy.md` §3.1 — that section discloses the tile requests, the IP, and the
+"approximately where you have been" implication in full, deliberately telling users more than the
+Play taxonomy asks for. Disclosing more to users than a store form requires is not an
+inconsistency; declaring less to users than the store form would be.
 
 Answers for every other section: **No** — no personal info, no financial info, no health or
 fitness data type (trip distance/speed is not declared as "Fitness info": that Play category
@@ -190,7 +216,7 @@ Adding any of these means updating all five artefacts in §0 **in the same commi
 | **7.3 Any analytics or crash-reporting SDK** (Firebase, Sentry, …) | Play "App info and performance → Crash logs / Diagnostics", ASC "Diagnostics", iOS manifest additions plus the SDK's own privacy manifest, and possibly `NSPrivacyTrackingDomains`. |
 | **7.4 Accounts, sync, or a backend** | Rewrites everything. The current policy's central claim ("no server") stops being true. |
 | **7.5 iOS backup exclusion** (setting `NSURLIsExcludedFromBackupKey` on `autoride.db`) | Would let the privacy policy §7.3 claim the same protection on both platforms. Currently the policy discloses the asymmetry honestly instead. Small code change, meaningful privacy improvement — worth doing, but it changes what the policy says. |
-| **7.6 Replacing or adding a map tile provider** | §3.1 and the Play "shared" answer name OSMF specifically. A commercial provider (Mapbox, Google) usually means a third party that *retains* data, likely an API key tied to an account, and a different answer. |
+| **7.6 Replacing or adding a map tile provider** | §3.1 names OSMF specifically, and §5's "not shared" answer rests on OSMF serving a tile and keeping nothing. A commercial provider (Mapbox, Google) usually means a third party that *retains* data, likely an API key tied to an account — which breaks that reasoning and would make approximate location genuinely **shared**. Re-open §5 before switching providers. |
 | **7.7 Health/fitness platform integration** (Apple Health, Google Fit, Strava) | Adds a health data type on both stores and, for HealthKit, its own set of manifest and review requirements. |
 
 ## 8. How to re-verify (run this before any submission)

@@ -1,0 +1,46 @@
+default_platform(:android)
+
+# The AAB path is resolved relative to android/ (fastlane's working directory). The root
+# build.gradle.kts redirects the build directory to <project>/build, so this resolves to
+# <project>/build/app/outputs/bundle/release/app-release.aab.
+AAB_PATH = "../build/app/outputs/bundle/release/app-release.aab".freeze
+
+platform :android do
+  desc "Upload the release bundle to the Play internal testing track. " \
+       "Run `flutter build appbundle --release` from the project root first — " \
+       "or just run ./publish_beta.sh, which does the whole sequence."
+  lane :internal do
+    upload_to_play_store(
+      track: "internal",
+      aab: AAB_PATH,
+      # Play refuses a non-draft upload until the app has been published once. Keep "draft"
+      # for the very first upload, then switch this to "completed".
+      release_status: "draft",
+      skip_upload_apk: true,
+      # The store listing is version-controlled under fastlane/metadata/ and pushed
+      # deliberately, not overwritten on every beta build.
+      skip_upload_metadata: true,
+      skip_upload_changelogs: true,
+      skip_upload_images: true,
+      skip_upload_screenshots: true,
+    )
+  end
+
+  desc "Push the store listing (metadata, images, screenshots) without uploading a build. " \
+       "Run this when fastlane/metadata/ changes."
+  lane :metadata do
+    upload_to_play_store(
+      skip_upload_apk: true,
+      skip_upload_aab: true,
+      skip_upload_changelogs: true,
+    )
+  end
+
+  desc "Promote to the production track. Deliberately not called by any script — " \
+       "promoting is a human decision made in the Play Console."
+  lane :deploy do
+    upload_to_play_store(
+      aab: AAB_PATH,
+    )
+  end
+end

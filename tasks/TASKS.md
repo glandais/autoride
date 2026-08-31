@@ -312,11 +312,19 @@
   - *Blocks*: T038 (Play needs the policy URL + background-location declaration), T039 (ASC App Privacy answers)
 
 ### 10.2 Release Build
-- ☐ **T038**: Android Release Configuration
+- ⏳ **T038**: Android Release Configuration
   - *Detail*: `tasks/T038-android-release.md`
   - *Scope*: `X.Y.Z+N` version scheme, keystore signing, ProGuard/R8, fastlane + Play internal track, `publish_beta.sh`
   - *Dependencies*: T033, T036
   - *Estimate*: 3-4 hours
+  - *Done in-repo*: `version: 1.0.0+1`; `key.properties` read by Gradle with a loud-fallback release signing config; `minSdk` pinned to 26; `android:label="AutoRide"`; `key.properties.example`; `android/Gemfile(.lock)` + `fastlane/{Appfile,Fastfile}` (`internal`/`metadata`/`deploy` lanes); `fastlane/metadata/android/en-US/` listing copy + 512² icon; `publish_beta.sh` with the bump guards; README build/publish sections rewritten
+  - *Also fixed*: the Gradle wrapper was pinned at 8.14 while AGP 9.3.0 requires 9.5.0 — `flutter build appbundle --release` failed at plugin resolution before any of this task's changes. Wrapper bumped; upstream `develop` has since moved it to 9.7.1, which also satisfies the requirement.
+  - *Deferred*: R8/minification stays off (D6) — its failures are runtime-only and gating it on a physical-device smoke test is the point; rationale is in a comment in `android/app/build.gradle.kts`
+  - *Play Console done*: app record `AutoRide: Bike Trip Tracker` created (app ID `4975962567441094743`, package available, en-US, App, Free); internal testing track page reachable; API auth verified (`validate_play_store_json_key` → "Successfully established connection")
+  - *Remaining (manual, Play Console)*: add at least one internal tester, Data safety form, background-location declaration (needs T037's policy URL + a screencast), accept Play App Signing. Then the first `./publish_beta.sh` run produces the release commit + tag.
+  - *Shared credentials with the sibling `tribly` project* (both outside git, by design):
+    - upload keystore — `android/key.properties` (gitignored) → `~/Documents/pedalons/android/tribly-release.keystore`, alias `tribly`. Verified: a release AAB carries SHA-256 `26:24:FF:9B:9E:62:FA:C2:...`, i.e. `CN=Landais Gabriel`, not `CN=Android Debug`.
+    - Play service account — `~/.secrets/autoride-play.json` is a **symlink** to tribly's `pedalons-play-store-b3697e930223.json` (`fastlane-supply@pedalons-play-store.iam.gserviceaccount.com`). It holds account-level Administrator, so it already covers this app. Consequence to accept knowingly: one leaked key can publish both Pedalons and AutoRide.
 
 - ☐ **T039**: iOS Release Configuration
   - *Detail*: `tasks/T039-ios-release.md`
@@ -336,14 +344,14 @@
 
 **Total Tasks**: 40
 **Completed**: 25
-**In Progress**: 1
-**Pending**: 14
+**In Progress**: 2
+**Pending**: 13
 **Blocked**: 0
 
 **Current Phase**: Phase 10 - Release Preparation (started, in parallel with Phase 7 follow-ups)
 **Last Completed**: T036 - App Icons & Splash Screen (2026-07-25)
-**Current Task**: T037 - Privacy Policy & Terms (documents + §5.1-§5.5 done; §5.6/§5.7 outstanding)
-**Next Task**: T038 - Android Release Configuration (detailed guide ready; both its dependencies, T033 and T036, are now satisfied)
+**Current Task**: T038 - Android Release Configuration (all in-repo work done; blocked only on the manual Play Console setup). T037 also open (§5.6/§5.7 outstanding).
+**Next Task**: T039 - iOS Release Configuration (T038 now owns the version scheme and `publish_beta.sh`, so T039 can extend both)
 
 ---
 

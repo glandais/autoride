@@ -1,0 +1,4 @@
+First internal beta of AutoRide.
+
+Automatic bike trip detection from motion sensors, motion-gated GPS recording, a live
+recording notification, trip history and route maps. Everything stays on the device.

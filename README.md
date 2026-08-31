@@ -48,10 +48,15 @@ AutoRide is a privacy-focused mobile app that uses advanced motion detection and
 ### For End Users
 
 #### Android
-1. Download the APK from [Releases](../../releases)
-2. Install the APK (you may need to enable "Install from unknown sources")
+AutoRide is in **closed beta** on the Play Store internal testing track — there is no public
+download yet, and no GitHub release to grab an APK from.
+
+1. Ask to be added as an internal tester (see [Support](#support))
+2. Accept the tester invitation and install from Google Play
 3. Grant location and activity recognition permissions when prompted
 4. Start cycling - AutoRide will detect your trips automatically!
+
+Until then, [build it from source](#building-from-source).
 
 #### iOS
 1. Download from the App Store *(Coming soon)*
@@ -230,29 +235,58 @@ See [CLAUDE.md](CLAUDE.md) for detailed development guidelines and best practice
 
 ### Android
 
-1. **Generate release key** (first time only)
+A release build works out of the box — without signing credentials it falls back to the debug
+keystore so `flutter run --release` works on a fresh clone. That fallback is fine for local
+testing and **rejected by Google Play**, so configure real signing before publishing anything.
+
+1. **Generate an upload keystore** (first time only). Back it up offline: losing it means
+   losing the ability to update the app on Play.
    ```bash
-   keytool -genkey -v -keystore ~/upload-keystore.jks -keyalg RSA \
+   keytool -genkey -v -keystore ~/.secrets/autoride-upload.jks -keyalg RSA \
            -keysize 2048 -validity 10000 -alias upload
    ```
 
-2. **Configure signing** - Create `android/key.properties`:
-   ```properties
-   storePassword=<password>
-   keyPassword=<password>
-   keyAlias=upload
-   storeFile=<path-to-keystore>/upload-keystore.jks
+2. **Configure signing** — copy `android/key.properties.example` to `android/key.properties`
+   and fill it in. `storeFile` must be an absolute path. The real file is gitignored;
+   `android/app/build.gradle.kts` reads it and picks the release signing config when it exists.
+   ```bash
+   cp android/key.properties.example android/key.properties
+   $EDITOR android/key.properties
    ```
 
-3. **Build APK**
+3. **Build**
    ```bash
+   export JAVA_HOME="$(/usr/libexec/java_home -v 21)"   # Gradle/AGP are not validated on JDK 25
    flutter build apk --release
+   flutter build appbundle --release                     # for Play
    ```
 
-4. **Build App Bundle** (for Play Store)
+4. **Confirm the bundle is not debug-signed** — this is the check that catches the failure
+   mode above, because a debug-signed build otherwise looks like it worked.
    ```bash
-   flutter build appbundle --release
+   keytool -printcert -jarfile build/app/outputs/bundle/release/app-release.aab | head -20
+   # Owner must be your keystore's DN, NOT "CN=Android Debug, O=Android, C=US"
    ```
+
+### Publishing to Play (internal testing)
+
+`./publish_beta.sh` is the only supported path. It bumps the build number in `pubspec.yaml`,
+runs the quality gates, builds, uploads to the Play internal track via fastlane, then commits
+and tags the release. It refuses to run on a dirty tree or without `android/key.properties`,
+and rolls the version bump back if anything fails before an upload lands.
+
+```bash
+./publish_beta.sh
+```
+
+Requires a Play service-account JSON at `~/.secrets/autoride-play.json` (override with
+`AUTORIDE_PLAY_JSON_KEY`). Validate it before the first run:
+
+```bash
+cd android && bundle install && bundle exec fastlane run validate_play_store_json_key
+```
+
+Promotion to production is deliberately manual: `fastlane deploy` exists but no script calls it.
 
 ### iOS
 
@@ -443,5 +477,5 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ---
 
-**Version:** 0.1.0 (Early Development)
-**Last Updated:** 2025-11-22
+**Version:** see `version:` in `pubspec.yaml` (single source of truth for both platforms)
+**Last Updated:** 2026-07-25

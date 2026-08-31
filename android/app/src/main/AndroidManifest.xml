@@ -106,7 +106,7 @@
       and `adb backup` from copying the unencrypted DB off the device).
     -->
     <application
-        android:label="autoride"
+        android:label="AutoRide"
         android:name="${applicationName}"
         android:allowBackup="false"
         android:fullBackupContent="false"

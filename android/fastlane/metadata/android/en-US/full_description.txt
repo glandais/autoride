@@ -1,0 +1,26 @@
+AutoRide records your bike rides without you having to remember to start it.
+
+It watches the phone's motion sensors for the rhythm of pedalling. When it recognises cycling, it turns on GPS and starts recording. When you stop, it saves the trip and turns GPS back off. There is no start button to forget and no ride to lose.
+
+WHY IT DOESN'T DRAIN YOUR BATTERY
+
+GPS is the expensive part, so AutoRide keeps it off until the accelerometer says you are actually moving. Sensor rate, location update interval and distance filter all step down as your battery drops, and the app targets under 5% drain per hour of active tracking.
+
+YOUR DATA STAYS ON YOUR PHONE
+
+There is no account, no sign-up and no server. Trips, routes and settings are stored in a local database on the device and are never uploaded. The only thing AutoRide fetches from the internet is map tiles from OpenStreetMap, and only while a map is on screen. Device backup is disabled for the trip database so your route history is not copied off the phone.
+
+WHAT YOU GET
+
+- Automatic start and stop, based on motion patterns and GPS speed
+- A live notification while recording, with distance, duration and speed
+- Trip history with distance, duration, average and maximum speed
+- Your route drawn on an OpenStreetMap map
+- Manual control whenever you want it, including confirming or discarding a detected trip
+- Light and dark themes, metric or imperial units
+
+PERMISSIONS
+
+Location, including background location, is what makes automatic recording possible: AutoRide has to be able to record a ride you started without opening the app. Physical activity is used to recognise cycling. Notifications are used for the recording notification. If you decline background location, AutoRide still works — you just start and stop trips yourself.
+
+Privacy policy: https://glandais.github.io/autoride/legal/privacy-policy.html

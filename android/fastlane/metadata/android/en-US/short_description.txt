@@ -1,0 +1,1 @@
+Automatic bike trip detection. No start button, no account, data stays on device

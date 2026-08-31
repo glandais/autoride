@@ -12,3 +12,9 @@ GeneratedPluginRegistrant.java
 key.properties
 **/*.keystore
 **/*.jks
+
+# Fastlane run artefacts. fastlane/metadata/ is deliberately NOT ignored: it is the source of
+# truth for the Play Store listing.
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/test_output

@@ -1,0 +1,15 @@
+# Copy to android/key.properties and fill in. Never commit the real file — it holds the
+# upload-keystore passwords, and android/.gitignore already excludes key.properties,
+# *.keystore and *.jks.
+#
+# Create the keystore first (once, and back it up offline — losing it means losing the
+# ability to update the app on Play unless key rotation is enabled):
+#
+#   keytool -genkey -v -keystore ~/.secrets/autoride-upload.jks \
+#           -keyalg RSA -keysize 2048 -validity 10000 -alias upload
+#
+# storeFile must be an ABSOLUTE path; it is resolved by android/app/build.gradle.kts.
+storePassword=YOUR_KEYSTORE_PASSWORD
+keyPassword=YOUR_KEY_PASSWORD
+keyAlias=upload
+storeFile=/absolute/path/to/autoride-upload.jks
