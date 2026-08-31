@@ -3,6 +3,7 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 import '../../domain/models/motion_data.dart';
 import 'motion_detection_service.dart';
 import '../../../../core/constants/app_constants.dart';
+import '../../../../core/utils/provider_stream.dart';
 
 part 'gps_controller.g.dart';
 
@@ -29,12 +30,14 @@ class GPSController extends _$GPSController {
     // Ensure the inactivity timer never outlives the provider.
     ref.onDispose(() => _inactivityTimer?.cancel());
 
+    // Listen to motion state changes through the provider (not by calling the
+    // notifier's `build()`, which would start a second loop over the shared
+    // buffer). Established before the first yield so `ref` is used inside the
+    // synchronous part of the build.
+    final motionStream = streamFromProvider(ref, motionDetectionServiceProvider);
+
     // Initialize with inactive state
     yield _gpsState;
-
-    // Listen to motion state changes
-    final motionServiceNotifier = ref.read(motionDetectionServiceProvider.notifier);
-    final motionStream = motionServiceNotifier.build();
 
     await for (final motionState in motionStream) {
       final newGPSState = await _handleMotionState(motionState);

@@ -8,10 +8,6 @@ part 'sensor_service.g.dart';
 
 /// Accelerometer stream provider
 /// Streams raw accelerometer data at configured sampling rate
-// TODO(T041): consumed by calling the generated FUNCTION (`accelerometerStream(ref)`)
-// rather than `ref.watch(accelerometerStreamProvider)`, which defeats overrides
-// and opens an unmanaged sensor subscription per call. Same for the gyroscope
-// and the merged motion stream below. See BLOCKED-pipeline-refactor.md #5.
 @riverpod
 Stream<AccelerometerData> accelerometerStream(
   Ref ref,
@@ -42,57 +38,64 @@ Stream<GyroscopeData> gyroscopeStream(
 
 /// Combined motion data stream provider
 /// Combines accelerometer and gyroscope into single stream
+///
+/// Both sources are consumed through their *providers* (not by calling the
+/// generated functions), so a single shared subscription per sensor is opened
+/// and tests can inject fakes by overriding
+/// [accelerometerStreamProvider] / [gyroscopeStreamProvider].
 @riverpod
-Stream<MotionData> motionDataStream(
-  Ref ref,
-) async* {
-  // Get streams directly by calling the provider functions
-  final accelStream = accelerometerStream(ref);
-  final gyroStream = gyroscopeStream(ref);
+Stream<MotionData> motionDataStream(Ref ref) {
+  final controller = StreamController<MotionData>();
 
-  // Combine the streams
-  // Note: This is a simplified combination - both streams emit at similar rates
   AccelerometerData? lastAccel;
   GyroscopeData? lastGyro;
 
-  await for (final accelOrGyro in _mergeStreams(accelStream, gyroStream)) {
-    if (accelOrGyro is AccelerometerData) {
-      lastAccel = accelOrGyro;
-    } else if (accelOrGyro is GyroscopeData) {
-      lastGyro = accelOrGyro;
-    }
+  void emitIfReady() {
+    final accel = lastAccel;
+    final gyro = lastGyro;
+    if (accel == null || gyro == null || controller.isClosed) return;
 
-    // Yield combined data when both sensors have data
-    if (lastAccel != null && lastGyro != null) {
-      yield MotionData(
-        accelerometer: lastAccel,
-        gyroscope: lastGyro,
+    controller.add(
+      MotionData(
+        accelerometer: accel,
+        gyroscope: gyro,
         timestamp: DateTime.now(),
-      );
-    }
+      ),
+    );
   }
-}
-
-/// Helper to merge two streams
-Stream<dynamic> _mergeStreams(
-  Stream<AccelerometerData> stream1,
-  Stream<GyroscopeData> stream2,
-) async* {
-  final controller = StreamController<dynamic>();
 
   // Forward errors as well as data: an accelerometer/gyroscope failure must
-  // reach the merged stream's consumer (the coordinator's onError) instead of
-  // silently stopping detection with no diagnostic.
-  final sub1 = stream1.listen(controller.add, onError: controller.addError);
-  final sub2 = stream2.listen(controller.add, onError: controller.addError);
-
-  try {
-    yield* controller.stream;
-  } finally {
-    await sub1.cancel();
-    await sub2.cancel();
-    await controller.close();
+  // reach the merged stream's consumer (the coordinator's error handler)
+  // instead of silently stopping detection with no diagnostic.
+  void forwardError(Object error, StackTrace stackTrace) {
+    if (!controller.isClosed) controller.addError(error, stackTrace);
   }
+
+  ref.listen(accelerometerStreamProvider, (previous, next) {
+    next.when(
+      data: (data) {
+        lastAccel = data;
+        emitIfReady();
+      },
+      error: forwardError,
+      loading: () {},
+    );
+  });
+
+  ref.listen(gyroscopeStreamProvider, (previous, next) {
+    next.when(
+      data: (data) {
+        lastGyro = data;
+        emitIfReady();
+      },
+      error: forwardError,
+      loading: () {},
+    );
+  });
+
+  ref.onDispose(controller.close);
+
+  return controller.stream;
 }
 
 // TODO(T041): `sensorServiceProvider` has no consumer in lib/ - no code checks

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -7,43 +9,25 @@ import 'package:autoride/features/trip_detection/data/services/trip_recorder_ser
 import 'package:autoride/features/trip_detection/data/services/trip_state_machine.dart';
 import 'package:autoride/features/trip_detection/data/services/notification_service.dart';
 import 'package:autoride/features/trip_detection/data/services/location_permission_service.dart';
+import 'package:autoride/features/trip_detection/data/services/location_service.dart';
+import 'package:autoride/features/trip_detection/domain/models/location_data.dart';
 import 'package:autoride/features/trip_detection/domain/models/activity_confidence.dart';
 import 'package:autoride/features/trip_detection/domain/models/trip.dart';
 import 'package:autoride/features/trip_detection/domain/models/trip_state.dart';
 import 'package:autoride/features/trip_history/data/repositories/trip_repository.dart';
 import 'package:autoride/features/settings/data/services/settings_service.dart';
+import 'package:autoride/core/constants/app_constants.dart';
 
 import '../../../../helpers/test_database.dart';
 
 // ---------------------------------------------------------------------------
-// COVERAGE NOTE / KNOWN LIMITATION
+// NOTE (T041 / audit #5)
 // ---------------------------------------------------------------------------
-// TripRecorderService._startLocationStream() obtains its location source by
-// calling the *top-level* function `locationStream(ref)` from
-// location_service.dart directly (see trip_recorder_service.dart:265), NOT via
-// `ref.watch(locationStreamProvider)`. Overriding `locationStreamProvider` on
-// the ProviderContainer therefore has NO effect on the recorder: the raw
-// function builds a real Geolocator stream that is unavailable in a unit-test
-// environment.
-//
-// As a result the following behaviors CANNOT be unit-tested here without a
-// production change (injecting the location stream through a provider the test
-// can override):
-//   * distance accumulation across points
-//   * rejection of low-accuracy points (> maxLocationAccuracyMeters)
-//   * speed-outlier rejection (> maxCyclingSpeedKmh)
-//   * distance filter (skip points < minRoutePointDistanceMeters)
-//   * max-speed tracking
-//   * pause-excluded average speed (needs accumulated distance)
-//   * route-point buffer flush at routePointBufferSize
-//
-// Everything reachable WITHOUT location injection is covered below:
-//   * double-start StateError
-//   * stopRecording with no active trip StateError
-//   * pause / resume bookkeeping (no crash, state transitions)
-//   * final trip persisted via repository.updateTrip on stop (zero points)
-//   * buffer flush on stop is a no-op when buffer is empty (no saveRoutePoints)
-//   * metrics reset after stop
+// TripRecorderService now subscribes to `locationStreamProvider` instead of
+// calling the top-level `locationStream(ref)` function, so the whole location
+// handling path — distance accumulation, accuracy/speed/distance filters, max
+// speed, buffer flushing and the L-008 retry — is injectable and covered below
+// via a ProviderContainer override.
 // ---------------------------------------------------------------------------
 
 /// Fake repository that captures persistence calls in memory.
@@ -61,9 +45,13 @@ class _FakeTripRepository extends TripRepository {
 
   int _nextId = 1;
   bool throwOnSaveRoutePoints = false;
+  bool throwOnSaveTrip = false;
 
   @override
   Future<Trip> saveTrip(Trip trip) async {
+    if (throwOnSaveTrip) {
+      throw TripRepositoryException('forced save failure');
+    }
     final withId = trip.copyWith(id: _nextId++);
     savedTrips.add(withId);
     return withId;
@@ -152,23 +140,30 @@ class _TestTripStateMachine extends TripStateMachine {
   }
 }
 
-/// Mock LocationPermissionService that reports "denied" without touching the
-/// Geolocator plugin.
-///
-/// Why this matters: the recorder's `_startLocationStream()` calls the
-/// top-level `locationStream(ref)` which internally does
-/// `ref.watch(locationPermissionServiceProvider.future)`. That provider IS
-/// reachable via override (unlike the location *stream*, which the recorder
-/// bypasses). By forcing a non-granted status, `locationStream` throws a
-/// `LocationServiceException` *inside* its async* body, which the recorder's
-/// stream `onError` handler swallows. No real plugin call ever happens, so the
-/// start/stop lifecycle is exercisable. (See coverage note above for what this
-/// still cannot test: actual location points.)
+/// Mock LocationPermissionService so nothing reaches the Geolocator plugin even
+/// if a code path bypasses the overridden location stream.
 class _MockLocationPermissionService extends LocationPermissionService {
   @override
   Future<LocationPermissionStatus> build() async {
-    return LocationPermissionStatus.denied;
+    return LocationPermissionStatus.granted;
   }
+}
+
+/// A GPS fix `latIndex` * ~11.1 m north of the reference point.
+LocationData _fix(
+  int latIndex, {
+  double speed = 5.0,
+  double accuracy = 5.0,
+}) {
+  return LocationData(
+    latitude: 48.8566 + latIndex * 0.0001,
+    longitude: 2.3522,
+    accuracy: accuracy,
+    altitude: 35.0,
+    speed: speed,
+    heading: 90.0,
+    timestamp: DateTime(2026, 1, 1).add(Duration(seconds: latIndex)),
+  );
 }
 
 /// Mock NotificationService that skips all plugin calls.
@@ -209,13 +204,20 @@ void main() {
   late Database db;
   late _FakeTripRepository fakeRepository;
   late ProviderContainer container;
+  late StreamController<LocationData> locationController;
+  late List<ProviderSubscription<Object?>> externalListeners;
 
   setUp(() async {
     db = await createTestDatabase();
     fakeRepository = _FakeTripRepository(db);
+    locationController = StreamController<LocationData>.broadcast();
+    externalListeners = [];
 
     container = ProviderContainer(
       overrides: [
+        // Inject the location stream the recorder subscribes to.
+        locationStreamProvider
+            .overrideWith((ref, settings) => locationController.stream),
         // Inject the fake repository (provider is async -> return a Future).
         tripRepositoryProvider.overrideWith((ref) async => fakeRepository),
         // Mock NotificationService: the real TripStateMachine (used by the
@@ -237,6 +239,7 @@ void main() {
 
   tearDown(() async {
     container.dispose();
+    await locationController.close();
     await db.close();
   });
 
@@ -246,11 +249,31 @@ void main() {
   /// (they are autoDispose) so transient reads + awaited event-queue pumps do
   /// not tear them down mid-test.
   Future<TripRecorderService> readRecorder() async {
-    container.listen(tripRecorderServiceProvider, (_, _) {});
-    container.listen(tripStateMachineProvider, (_, _) {});
+    externalListeners
+      ..add(container.listen(tripRecorderServiceProvider, (_, _) {}))
+      ..add(container.listen(tripStateMachineProvider, (_, _) {}));
     await container.read(tripRecorderServiceProvider.future);
     return container.read(tripRecorderServiceProvider.notifier);
   }
+
+  /// Simulates the tracking screen unmounting / a tab switch: every listener
+  /// outside the recorder's own session goes away.
+  Future<void> dropExternalListeners() async {
+    for (final subscription in externalListeners) {
+      subscription.close();
+    }
+    externalListeners.clear();
+    await pumpEventQueue();
+  }
+
+  /// Feeds one GPS fix through the overridden location stream.
+  Future<void> pushFix(LocationData fix) async {
+    locationController.add(fix);
+    await pumpEventQueue();
+  }
+
+  double currentDistance() =>
+      container.read(tripRecorderServiceProvider).value!.distanceMeters;
 
   /// Drives the (test) state machine into `detecting` so that the recorder's
   /// internal `startTripWithId` transition (which only fires from `detecting`)
@@ -266,11 +289,6 @@ void main() {
       confidenceScore: confidenceScore,
       activity: activity,
     );
-    // The recorder's location stream (built from the real top-level
-    // locationStream function) emits a permission error asynchronously. Let it
-    // drain so it is delivered to the recorder's still-attached onError handler
-    // BEFORE the test ends and the subscription is cancelled on dispose;
-    // otherwise the error escapes to the test zone as "uncaught".
     await pumpEventQueue();
   }
 
@@ -417,6 +435,220 @@ void main() {
       expect(fakeRepository.updatedTrips, hasLength(1));
       expect(finalTrip.id, 1);
       expect(container.read(tripStateMachineProvider).hasActiveTrip, isFalse);
+    });
+  });
+
+  group('TripRecorderService - location handling', () {
+    test('accumulates distance across accepted fixes', () async {
+      final recorder = await readRecorder();
+      await startTrip(recorder);
+
+      // ~11.1 m per 0.0001 degree of latitude, so 2 steps is ~22.3 m: above
+      // AppConstants.minRoutePointDistanceMeters (15 m).
+      await pushFix(_fix(0));
+      expect(currentDistance(), 0.0, reason: 'first fix has no predecessor');
+
+      await pushFix(_fix(2));
+      expect(currentDistance(), closeTo(22.3, 1.0));
+
+      await pushFix(_fix(4));
+      expect(currentDistance(), closeTo(44.5, 1.5));
+    });
+
+    test('skips fixes closer than minRoutePointDistanceMeters', () async {
+      final recorder = await readRecorder();
+      await startTrip(recorder);
+
+      await pushFix(_fix(0));
+      await pushFix(_fix(1)); // ~11.1 m < 15 m -> GPS drift, ignored
+
+      expect(currentDistance(), 0.0);
+      expect(
+        container.read(tripRecorderServiceProvider).value!.routePointCount,
+        1,
+      );
+    });
+
+    test('rejects fixes worse than maxLocationAccuracyMeters', () async {
+      final recorder = await readRecorder();
+      await startTrip(recorder);
+
+      await pushFix(_fix(0));
+      await pushFix(_fix(4, accuracy: 100.0)); // > 50 m accuracy
+
+      expect(currentDistance(), 0.0);
+      expect(
+        container.read(tripRecorderServiceProvider).value!.routePointCount,
+        1,
+      );
+    });
+
+    test('rejects speed outliers above maxCyclingSpeedKmh', () async {
+      final recorder = await readRecorder();
+      await startTrip(recorder);
+
+      await pushFix(_fix(0));
+      await pushFix(_fix(4, speed: 20.0)); // 72 km/h > 60 km/h
+
+      expect(currentDistance(), 0.0);
+    });
+
+    test('tracks max speed across accepted fixes', () async {
+      final recorder = await readRecorder();
+      await startTrip(recorder);
+
+      await pushFix(_fix(0, speed: 4.0)); // 14.4 km/h
+      await pushFix(_fix(2, speed: 8.0)); // 28.8 km/h
+      await pushFix(_fix(4, speed: 5.0)); // 18.0 km/h
+
+      final metrics = container.read(tripRecorderServiceProvider).value!;
+      expect(metrics.maxSpeedKmh, closeTo(28.8, 0.1));
+
+      final finalTrip = await recorder.stopRecording();
+      expect(finalTrip.maxSpeed, closeTo(28.8, 0.1));
+      expect(finalTrip.distance, closeTo(44.5, 1.5));
+    });
+
+    test('does not record fixes while the trip is paused', () async {
+      final recorder = await readRecorder();
+      await startTrip(recorder);
+
+      await pushFix(_fix(0));
+      await recorder.pauseRecording();
+      await pushFix(_fix(4));
+
+      expect(currentDistance(), 0.0);
+    });
+
+    test('flushes the buffer once it reaches routePointBufferSize', () async {
+      final recorder = await readRecorder();
+      await startTrip(recorder);
+
+      for (var i = 0; i <= AppConstants.routePointBufferSize; i++) {
+        locationController.add(_fix(i * 2));
+      }
+      await pumpEventQueue();
+
+      expect(fakeRepository.savedRoutePointBatches, hasLength(1));
+      expect(
+        fakeRepository.savedRoutePointBatches.first,
+        hasLength(AppConstants.routePointBufferSize),
+      );
+    });
+
+    test('final flush on stop persists the tail of the ride', () async {
+      final recorder = await readRecorder();
+      await startTrip(recorder);
+
+      await pushFix(_fix(0));
+      await pushFix(_fix(2));
+
+      await recorder.stopRecording();
+
+      expect(fakeRepository.savedRoutePointBatches, hasLength(1));
+      expect(fakeRepository.savedRoutePointBatches.first, hasLength(2));
+      expect(
+        fakeRepository.savedRoutePointBatches.first.every((p) => p.tripId == 1),
+        isTrue,
+      );
+    });
+
+    test(
+        'L-008: a failing final flush keeps the tail buffered and the next trip '
+        'retries it', () async {
+      final recorder = await readRecorder();
+      await startTrip(recorder);
+
+      await pushFix(_fix(0));
+      await pushFix(_fix(2));
+
+      fakeRepository.throwOnSaveRoutePoints = true;
+      final finalTrip = await recorder.stopRecording();
+
+      // Nothing persisted, but the trip itself was finalized.
+      expect(fakeRepository.savedRoutePointBatches, isEmpty);
+      expect(finalTrip.distance, closeTo(22.3, 1.0));
+
+      // Next trip retries the buffered points, which carry the OLD trip id.
+      fakeRepository.throwOnSaveRoutePoints = false;
+      await startTrip(recorder);
+
+      expect(fakeRepository.savedRoutePointBatches, hasLength(1));
+      expect(fakeRepository.savedRoutePointBatches.first, hasLength(2));
+      expect(
+        fakeRepository.savedRoutePointBatches.first.every((p) => p.tripId == 1),
+        isTrue,
+      );
+    });
+  });
+
+  group('TripRecorderService - session ownership (audit #2)', () {
+    test('an active recording survives losing its last listener', () async {
+      final recorder = await readRecorder();
+      await startTrip(recorder);
+      await pushFix(_fix(0));
+
+      await dropExternalListeners();
+
+      // Same notifier instance: the session keepAlive link held it.
+      expect(container.read(tripRecorderServiceProvider.notifier),
+          same(recorder));
+
+      // And it is still consuming GPS fixes.
+      await pushFix(_fix(2));
+      expect(currentDistance(), closeTo(22.3, 1.0));
+
+      final finalTrip = await recorder.stopRecording();
+      expect(finalTrip.distance, closeTo(22.3, 1.0));
+    });
+
+    test('L-010: a dependency change does not kill a live recording', () async {
+      final recorder = await readRecorder();
+      await startTrip(recorder);
+      await pushFix(_fix(0));
+
+      // Before the fix the recorder `watch`ed this provider inside a build that
+      // registered its teardown, so invalidating it cancelled the location
+      // subscription and both timers of a still-"active" trip.
+      container.invalidate(tripRepositoryProvider);
+      await pumpEventQueue();
+
+      expect(container.read(tripRecorderServiceProvider.notifier),
+          same(recorder));
+
+      await pushFix(_fix(2));
+      expect(currentDistance(), closeTo(22.3, 1.0));
+    });
+
+    test('stopRecording releases the session so the provider can dispose',
+        () async {
+      final recorder = await readRecorder();
+      await startTrip(recorder);
+      await recorder.stopRecording();
+
+      await dropExternalListeners();
+
+      expect(container.read(tripRecorderServiceProvider.notifier),
+          isNot(same(recorder)));
+    });
+
+    test('a failed startRecording does not pin the session', () async {
+      final recorder = await readRecorder();
+
+      fakeRepository.throwOnSaveTrip = true;
+      container.read(tripStateMachineProvider.notifier).startDetecting();
+      await expectLater(
+        recorder.startRecording(
+          confidenceScore: 0.8,
+          activity: ActivityType.cycling,
+        ),
+        throwsA(isA<TripRepositoryException>()),
+      );
+
+      await dropExternalListeners();
+
+      expect(container.read(tripRecorderServiceProvider.notifier),
+          isNot(same(recorder)));
     });
   });
 }

@@ -27,8 +27,31 @@ const _logger = Logger('TripDetectionCoordinator');
 @riverpod
 class TripDetectionCoordinator extends _$TripDetectionCoordinator {
   Timer? _detectionTimer;
-  StreamSubscription<MotionData>? _motionSubscription;
-  StreamSubscription<LocationData>? _locationSubscription;
+
+  // Session subscriptions are opened on `ref.container`, not on `ref`, and are
+  // held as their `close` tear-offs (neither `ProviderSubscription` nor
+  // `KeepAliveLink` is exported by `riverpod_annotation`).
+  //
+  // Why the container: `ref.keepAlive()` only prevents *disposal*. When the
+  // last listener of this provider goes away (a tab switch, the tracking screen
+  // unmounting) Riverpod 3 deactivates every subscription the element itself
+  // opened with `ref.listen`, so a kept-alive-but-unlistened coordinator would
+  // silently stop receiving motion samples. Container-owned subscriptions stay
+  // active; they must therefore be closed by hand (see `_cleanup` /
+  // `_closeSession`, both wired to `ref.onDispose`).
+  void Function()? _closeMotionSubscription;
+  void Function()? _closeLocationSubscription;
+
+  /// Closers for subscriptions that exist purely to keep the session-scoped
+  /// collaborators (state machine, detectors) alive between two motion samples.
+  /// They are `autoDispose`, and `ref.read` alone would let them be torn down —
+  /// losing the consecutive-detection streaks the detection logic is built on.
+  final List<void Function()> _sessionSubscriptionClosers = [];
+
+  /// Set while a detection session is running, so this provider (and through
+  /// its subscriptions the state machine and detectors) is not disposed when
+  /// the last UI listener goes away — a tab switch must not kill detection.
+  void Function()? _releaseSessionLink;
 
   LocationData? _lastLocation;
   bool _isAnalyzing = false;
@@ -40,6 +63,7 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
     ref.onDispose(() {
       _disposed = true;
       _cleanup();
+      _closeSession();
     });
 
     return const TripState.idle();
@@ -50,37 +74,41 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
     if (_isAnalyzing) return;
     _isAnalyzing = true;
 
-    // Start listening to motion stream
-    final motionStream = motionDataStream(ref);
-    _motionSubscription = motionStream.listen(
-      _onMotionData,
-      onError: (Object error, StackTrace stackTrace) {
-        // The motion stream is the heartbeat of detection. If it errors, tear
-        // down consistently and surface the failure rather than leaving a
-        // half-running coordinator with no visible error.
-        _logger.error('Motion stream error', error, stackTrace);
-        _cleanup();
-        _isAnalyzing = false;
-        if (!_disposed) {
-          state = AsyncValue.error(error, stackTrace);
-        }
-      },
-    );
+    // A detection session owns its own lifetime (audit #2).
+    _releaseSessionLink ??= ref.keepAlive().close;
 
-    // Start listening to location stream (may have permission issues)
-    try {
-      final locStream = locationStream(ref);
-      _locationSubscription = locStream.listen(
-        _onLocationData,
-        onError: (error) {
+    // Keep the session collaborators alive for as long as we are listening.
+    if (_sessionSubscriptionClosers.isEmpty) {
+      _sessionSubscriptionClosers.addAll([
+        ref.container.listen(tripStateMachineProvider, (_, _) {}).close,
+        ref.container.listen(tripStartDetectorProvider, (_, _) {}).close,
+        ref.container.listen(tripStopDetectorProvider, (_, _) {}).close,
+      ]);
+    }
+
+    // Start listening to the motion stream through its provider so overrides
+    // apply and a single shared sensor subscription is used (audit #5).
+    _closeMotionSubscription = ref.container.listen(
+      motionDataStreamProvider,
+      (previous, next) => next.when(
+        data: (motion) => unawaited(_onMotionData(motion)),
+        error: _onMotionStreamError,
+        loading: () {},
+      ),
+    ).close;
+
+    // Start listening to location stream (may have permission issues).
+    _closeLocationSubscription = ref.container.listen(
+      locationStreamProvider(),
+      (previous, next) => next.when(
+        data: _onLocationData,
+        error: (error, stackTrace) {
           // GPS unavailable - continue with motion-only detection
           _lastLocation = null;
         },
-      );
-    } catch (e) {
-      // Location not available - continue with motion-only
-      _lastLocation = null;
-    }
+        loading: () {},
+      ),
+    ).close;
 
     // Set up periodic check for detection timeout
     _detectionTimer = Timer.periodic(
@@ -89,10 +117,41 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
     );
   }
 
-  /// Stop listening
+  /// Stop listening and release the detection session.
   void stopListening() {
+    _suspendListening();
+    _closeSession();
+  }
+
+  /// The motion stream is the heartbeat of detection. If it errors, tear down
+  /// consistently and surface the failure rather than leaving a half-running
+  /// coordinator with no visible error. This is unrecoverable for the session,
+  /// so the keepAlive link is released too.
+  void _onMotionStreamError(Object error, StackTrace stackTrace) {
+    _logger.error('Motion stream error', error, stackTrace);
+    stopListening();
+    if (!_disposed) {
+      state = AsyncValue.error(error, stackTrace);
+    }
+  }
+
+  /// Tear down the streams and the timer but keep the session (and therefore
+  /// this provider) alive — used by the paths that immediately restart, and
+  /// while a trip that this coordinator started is being recorded.
+  void _suspendListening() {
     _cleanup();
     _isAnalyzing = false;
+  }
+
+  /// Release the session keepAlive link and the collaborator subscriptions.
+  void _closeSession() {
+    for (final close in _sessionSubscriptionClosers) {
+      close();
+    }
+    _sessionSubscriptionClosers.clear();
+
+    _releaseSessionLink?.call();
+    _releaseSessionLink = null;
   }
 
   /// Handle incoming motion data
@@ -164,8 +223,9 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
       final stateMachineState = ref.read(tripStateMachineProvider);
       state = AsyncValue.data(stateMachineState);
 
-      // Stop analyzing (trip has started)
-      stopListening();
+      // Stop analyzing (trip has started). The session link stays open: the
+      // trip this coordinator just started must not be torn down with it.
+      _suspendListening();
     }
   }
 
@@ -234,8 +294,9 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
     final stateMachineState = ref.read(tripStateMachineProvider);
     state = AsyncValue.data(stateMachineState);
 
-    // Return to listening for next trip
-    stopListening();
+    // Return to listening for next trip (same session, so the keepAlive link
+    // is deliberately kept open across the restart).
+    _suspendListening();
     await Future.delayed(const Duration(milliseconds: 100));
     if (_disposed) return; // Provider torn down during the delay
     await startListening();
@@ -252,8 +313,8 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
       // Activate cooldown to prevent immediate restart
       ref.read(tripStartDetectorProvider.notifier).activateCooldown();
 
-      // Reset and restart listening
-      stopListening();
+      // Reset and restart listening (same session).
+      _suspendListening();
       Future.delayed(const Duration(milliseconds: 100), () {
         if (!_disposed) {
           startListening();
@@ -267,11 +328,11 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
     _detectionTimer?.cancel();
     _detectionTimer = null;
 
-    _motionSubscription?.cancel();
-    _motionSubscription = null;
+    _closeMotionSubscription?.call();
+    _closeMotionSubscription = null;
 
-    _locationSubscription?.cancel();
-    _locationSubscription = null;
+    _closeLocationSubscription?.call();
+    _closeLocationSubscription = null;
 
     _lastLocation = null;
   }

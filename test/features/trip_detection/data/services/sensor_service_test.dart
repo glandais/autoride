@@ -1,5 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:autoride/features/trip_detection/domain/models/motion_data.dart';
+import 'package:autoride/features/trip_detection/data/services/sensor_service.dart';
 import 'package:autoride/features/trip_detection/data/services/sensor_utils.dart';
 
 void main() {
@@ -239,6 +243,66 @@ void main() {
       expect(downsampled.length, equals(10));
       expect(downsampled.first, equals(0));
       expect(downsampled.last, equals(90));
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // motionDataStream now merges the accelerometer and gyroscope PROVIDERS
+  // (T041 / audit #5), so the merge itself is testable and each sensor is
+  // subscribed to exactly once instead of once per consumer.
+  // ---------------------------------------------------------------------------
+  group('motionDataStream merge', () {
+    late StreamController<AccelerometerData> accelController;
+    late StreamController<GyroscopeData> gyroController;
+    late ProviderContainer container;
+
+    setUp(() {
+      accelController = StreamController<AccelerometerData>.broadcast();
+      gyroController = StreamController<GyroscopeData>.broadcast();
+      container = ProviderContainer(
+        overrides: [
+          accelerometerStreamProvider
+              .overrideWith((ref) => accelController.stream),
+          gyroscopeStreamProvider.overrideWith((ref) => gyroController.stream),
+        ],
+      );
+    });
+
+    tearDown(() async {
+      container.dispose();
+      await accelController.close();
+      await gyroController.close();
+    });
+
+    test('emits nothing until both sensors have produced a sample', () async {
+      final emitted = <MotionData>[];
+      container.listen(motionDataStreamProvider, (previous, next) {
+        next.whenData(emitted.add);
+      });
+      await pumpEventQueue();
+
+      accelController.add(AccelerometerData(
+          x: 3.0, y: 3.0, z: 10.0, timestamp: DateTime(2026)));
+      await pumpEventQueue();
+      expect(emitted, isEmpty);
+
+      gyroController.add(
+          GyroscopeData(x: 1.0, y: 0.5, z: 0.5, timestamp: DateTime(2026)));
+      await pumpEventQueue();
+
+      expect(emitted, hasLength(1));
+      expect(emitted.single.accelerometer.z, 10.0);
+      expect(emitted.single.gyroscope.x, 1.0);
+    });
+
+    test('forwards sensor errors to the merged stream', () async {
+      container.listen(motionDataStreamProvider, (_, _) {});
+      await pumpEventQueue();
+
+      accelController.addError(StateError('accelerometer failure'));
+      await pumpEventQueue();
+
+      expect(container.read(motionDataStreamProvider).hasError, isTrue);
     });
   });
 }

@@ -78,7 +78,17 @@ class TripRecorderService extends _$TripRecorderService {
   // State
   Trip? _activeTrip;
   final List<RoutePoint> _routePointBuffer = [];
-  StreamSubscription<LocationData>? _locationSubscription;
+  /// Held as the subscription's `close` tear-off (`ProviderSubscription` is not
+  /// exported by `riverpod_annotation`).
+  ///
+  /// Opened on `ref.container`, not on `ref`: `ref.keepAlive()` only prevents
+  /// *disposal*, and Riverpod 3 deactivates the subscriptions an element opened
+  /// itself as soon as nothing listens to that element. A recording whose
+  /// screen is unmounted would therefore stop receiving GPS fixes while still
+  /// reporting an active trip. Container-owned subscriptions stay active and
+  /// are closed by hand on stop and on dispose.
+  void Function()? _closeLocationSubscription;
+  void Function()? _closeStateMachineSubscription;
   LocationData? _lastLocation;
   Timer? _flushTimer;
   Timer? _metricsTimer;
@@ -91,22 +101,42 @@ class TripRecorderService extends _$TripRecorderService {
   double _totalDistanceMeters = 0.0;
   double _maxSpeedKmh = 0.0;
 
+  /// Set for the lifetime of a recording, so the in-progress trip held in the
+  /// fields above survives the last listener going away (a tab switch, the
+  /// tracking screen unmounting). Released in [stopRecording], on a failed
+  /// [startRecording], and on dispose (audit #2).
+  void Function()? _releaseSessionLink;
+
   @override
   Future<TripMetrics> build() async {
-    // Initialize repository (async)
-    _repository = await ref.watch(tripRepositoryProvider.future);
+    // Deliberately `read`, not `watch`: this build registers the teardown
+    // below, and Riverpod runs `onDispose` on every recomputation. Watching a
+    // dependency here would silently cancel the location subscription and both
+    // timers of a LIVE recording while `_activeTrip` stayed non-null — the trip
+    // would look active and record nothing (L-010). With no watched
+    // dependencies this provider never recomputes, so teardown means teardown.
+    _repository = await ref.read(tripRepositoryProvider.future);
     _stateMachine = ref.read(tripStateMachineProvider.notifier);
 
-    // Listen to state machine changes
-    ref.listen(tripStateMachineProvider, (previous, next) {
-      _handleStateChange(previous, next);
-    });
+    // Listen to state machine changes. This subscription also keeps the
+    // (autoDispose) state machine alive for as long as the recorder lives, so a
+    // recording session owns its state machine too. It is opened on the
+    // container rather than on `ref` for the reason documented on
+    // [_closeLocationSubscription].
+    _closeStateMachineSubscription?.call();
+    _closeStateMachineSubscription = ref.container.listen(
+      tripStateMachineProvider,
+      (previous, next) => _handleStateChange(previous, next),
+    ).close;
 
     // Cleanup on dispose
     ref.onDispose(() {
       _stopLocationStream();
+      _closeStateMachineSubscription?.call();
+      _closeStateMachineSubscription = null;
       _stopFlushTimer();
       _stopMetricsTimer();
+      _closeSession();
     });
 
     return const TripMetrics(
@@ -127,6 +157,25 @@ class TripRecorderService extends _$TripRecorderService {
       throw StateError('Trip already recording');
     }
 
+    // Own the session for as long as the trip lasts.
+    _releaseSessionLink ??= ref.keepAlive().close;
+
+    try {
+      await _startRecording(
+        confidenceScore: confidenceScore,
+        activity: activity,
+      );
+    } catch (_) {
+      // Nothing is recording, so the session must not stay pinned.
+      _closeSession();
+      rethrow;
+    }
+  }
+
+  Future<void> _startRecording({
+    required double confidenceScore,
+    required ActivityType activity,
+  }) async {
     // Create initial trip in database
     final initialTrip = Trip(
       startTime: DateTime.now(),
@@ -206,6 +255,16 @@ class TripRecorderService extends _$TripRecorderService {
       throw StateError('No active trip to stop');
     }
 
+    try {
+      return await _stopRecording();
+    } finally {
+      // Release the session on every exit path, including failures: nothing is
+      // recording any more, so the provider may be disposed normally again.
+      _closeSession();
+    }
+  }
+
+  Future<Trip> _stopRecording() async {
     // If still paused, calculate final pause duration
     if (_pauseStartTime != null) {
       final pauseDuration = DateTime.now().difference(_pauseStartTime!);
@@ -294,29 +353,41 @@ class TripRecorderService extends _$TripRecorderService {
     }
   }
 
-  /// Start location stream subscription
+  /// Start location stream subscription.
+  ///
+  /// Subscribes through `locationStreamProvider`, not by calling the generated
+  /// `locationStream(ref)` function: that bypassed overrides (making this path
+  /// untestable) and opened a second, unmanaged GPS subscription (audit #5).
   void _startLocationStream() {
-    // Get location stream with appropriate settings
-    final stream = locationStream(ref);
-
-    _locationSubscription = stream.listen(
-      _handleLocationUpdate,
-      onError: (Object error, StackTrace stackTrace) {
-        // Surface GPS errors instead of dropping them silently. Recording
-        // continues; the metrics ticker keeps elapsed time advancing.
-        _logger.error(
-          'Location stream error during recording',
-          error,
-          stackTrace,
-        );
-      },
-    );
+    _closeLocationSubscription?.call();
+    _closeLocationSubscription = ref.container.listen(
+      locationStreamProvider(),
+      (previous, next) => next.when(
+        data: _handleLocationUpdate,
+        error: (error, stackTrace) {
+          // Surface GPS errors instead of dropping them silently. Recording
+          // continues; the metrics ticker keeps elapsed time advancing.
+          _logger.error(
+            'Location stream error during recording',
+            error,
+            stackTrace,
+          );
+        },
+        loading: () {},
+      ),
+    ).close;
   }
 
   /// Stop location stream subscription
   void _stopLocationStream() {
-    _locationSubscription?.cancel();
-    _locationSubscription = null;
+    _closeLocationSubscription?.call();
+    _closeLocationSubscription = null;
+  }
+
+  /// Release the recording session's keepAlive link.
+  void _closeSession() {
+    _releaseSessionLink?.call();
+    _releaseSessionLink = null;
   }
 
   /// Handle new location update

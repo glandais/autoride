@@ -4,6 +4,7 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 import '../../domain/models/motion_data.dart';
 import 'sensor_service.dart';
 import '../../../../core/constants/app_constants.dart';
+import '../../../../core/utils/provider_stream.dart';
 
 part 'motion_detection_service.g.dart';
 
@@ -13,21 +14,33 @@ class MotionDetectionService extends _$MotionDetectionService {
   final Queue<MotionData> _buffer = Queue<MotionData>();
 
   @override
-  Stream<MotionState> build() async* {
-    // Get motion data stream directly
-    final motionStream = motionDataStream(ref);
+  Stream<MotionState> build() {
+    final controller = StreamController<MotionState>();
 
-    // Listen to motion data stream
-    await for (final motionData in motionStream) {
-      // Add to buffer
-      _addToBuffer(motionData);
+    // Consume the motion data through its provider so a single shared sensor
+    // subscription is used and tests can override `motionDataStreamProvider`.
+    ref.listen(motionDataStreamProvider, (previous, next) {
+      if (controller.isClosed) return;
 
-      // Periodically analyze buffer (every 1 second)
-      if (_buffer.length >= AppConstants.pedalingCycleSamples) { // ~1s at 50Hz
-        final state = _analyzeBuffer();
-        yield state;
-      }
-    }
+      next.when(
+        data: (motionData) {
+          // Add to buffer
+          _addToBuffer(motionData);
+
+          // Periodically analyze buffer (every 1 second)
+          if (_buffer.length >= AppConstants.pedalingCycleSamples) {
+            // ~1s at 50Hz
+            controller.add(_analyzeBuffer());
+          }
+        },
+        error: controller.addError,
+        loading: () {},
+      );
+    });
+
+    ref.onDispose(controller.close);
+
+    return controller.stream;
   }
 
   /// Add motion data to sliding window buffer
@@ -94,7 +107,10 @@ class MotionDetectionService extends _$MotionDetectionService {
 class CurrentMotionState extends _$CurrentMotionState {
   @override
   Stream<MotionState> build() {
-    // Directly return the motion detection service stream
-    return ref.watch(motionDetectionServiceProvider.notifier).build();
+    // Re-expose the motion detection service's stream through its provider.
+    // Calling `notifier.build()` here would start a SECOND `await for` loop over
+    // the single shared `_buffer` of the same notifier instance, corrupting the
+    // analysis window (L-003).
+    return streamFromProvider(ref, motionDetectionServiceProvider);
   }
 }
