@@ -2,7 +2,11 @@
 
 **Automatically detect and record your bike trips with intelligent motion sensing.**
 
-AutoRide is a privacy-focused mobile app that uses advanced motion detection and machine learning to automatically recognize when you're cycling and record your trips—no manual start/stop required.
+AutoRide is a privacy-focused mobile app that uses motion sensing to automatically recognize when you're cycling and record your trips—no manual start/stop required.
+
+> ⚠️ **Status: in development.** The automatic detection pipeline is not yet wired to a live
+> entry point, so the shipped build cannot start a trip. See `tasks/LEDGER.md` and task **T041**.
+> Sections below marked *(planned)* describe work that is not implemented yet.
 
 [![Flutter](https://img.shields.io/badge/Flutter-3.47.2+-02569B?logo=flutter)](https://flutter.dev)
 [![Platform](https://img.shields.io/badge/Platform-iOS%20%7C%20Android-lightgrey)](#)
@@ -18,10 +22,13 @@ AutoRide is a privacy-focused mobile app that uses advanced motion detection and
 - **Battery optimized** - Intelligent GPS management for all-day tracking
 - **Background tracking** - Records trips even when your phone is locked
 
-### Activity Recognition
-- **ML-powered detection** - Distinguishes cycling from walking, driving, or standing still
-- **Adaptive learning** - Improves accuracy over time with user feedback
-- **Confidence scoring** - Shows how certain the app is about detected activities
+### Activity Recognition *(planned — T016–T019)*
+- **ML-powered detection** - Distinguish cycling from walking, driving, or standing still
+- **Adaptive learning** - Improve accuracy over time with user feedback
+- **Confidence scoring** - Show how certain the app is about detected activities
+
+None of the above ships today: there is no on-device model and no TensorFlow Lite code path.
+The current build scores cycling from accelerometer/gyroscope thresholds only.
 
 ### Trip Management
 - **Detailed trip history** - View all your past rides with routes, distance, and duration
@@ -48,15 +55,11 @@ AutoRide is a privacy-focused mobile app that uses advanced motion detection and
 ### For End Users
 
 #### Android
-AutoRide is in **closed beta** on the Play Store internal testing track — there is no public
-download yet, and no GitHub release to grab an APK from.
+There is no download yet — no public release, no GitHub release APK, and **no closed beta
+either**: the Play internal-testing track is configured but nothing has been published to it,
+so there is no tester invitation to request today.
 
-1. Ask to be added as an internal tester (see [Support](#support))
-2. Accept the tester invitation and install from Google Play
-3. Grant location and activity recognition permissions when prompted
-4. Start cycling - AutoRide will detect your trips automatically!
-
-Until then, [build it from source](#building-from-source).
+The only way to run AutoRide right now is to [build it from source](#building-from-source).
 
 #### iOS
 1. Download from the App Store *(Coming soon)*
@@ -68,7 +71,7 @@ Until then, [build it from source](#building-from-source).
 
 **Android:**
 - **Location** (Fine & Background) - Required to track your route
-- **Physical Activity** - Helps detect when you're cycling
+- **Notifications** - Required on Android 13+ for the ongoing tracking notification
 - **Foreground Service** - Keeps tracking active while app is in background
 
 **iOS:**
@@ -94,11 +97,12 @@ Until then, [build it from source](#building-from-source).
 ### After a Ride
 - Trip automatically stops when you finish cycling
 - Review trip details, route, and statistics
-- Confirm activity type if detection was incorrect (helps improve accuracy)
+- *(Planned)* Confirm activity type if detection was incorrect
 
 ### Manual Control
-- **Force start** - Tap the play button to manually start tracking
-- **Force stop** - Tap the stop button to end a trip
+- **Pause / resume / stop** - Available on the tracking screen for a trip in progress
+- **Force start** *(planned — T041)* - There is no manual start control yet; the tracking
+  screen can only act on a trip that is already running
 - **Pause tracking** - Disable auto-detection in Settings when not needed
 
 ---
@@ -126,7 +130,7 @@ Until then, [build it from source](#building-from-source).
 
 3. **Run code generation** (for Riverpod)
    ```bash
-   flutter pub run build_runner build --delete-conflicting-outputs
+   dart run build_runner build --delete-conflicting-outputs
    ```
 
 4. **Run the app**
@@ -143,10 +147,10 @@ Until then, [build it from source](#building-from-source).
 **Code Generation (Riverpod)**
 ```bash
 # Watch mode - auto-generates code on file changes
-flutter pub run build_runner watch
+dart run build_runner watch
 
-# One-time generation
-flutter pub run build_runner build --delete-conflicting-outputs
+# One-time generation (this is what CI runs)
+dart run build_runner build --delete-conflicting-outputs
 ```
 
 **Testing**
@@ -158,7 +162,7 @@ flutter test
 flutter test --coverage
 
 # Run specific test file
-flutter test test/features/trip_detection_test.dart
+flutter test test/features/trip_detection/data/services/trip_stop_detector_test.dart
 ```
 
 **Code Quality**
@@ -167,7 +171,7 @@ flutter test test/features/trip_detection_test.dart
 flutter analyze
 
 # Format code
-flutter format .
+dart format .
 
 # Check outdated dependencies
 flutter pub outdated
@@ -207,9 +211,9 @@ See [CLAUDE.md](CLAUDE.md) for detailed development guidelines and best practice
 - **sensors_plus** - Accelerometer and gyroscope access
 - **flutter_background_service** - Reliable background task execution
 
-### Machine Learning
-- **tflite_flutter** - TensorFlow Lite for on-device activity recognition
-- **Custom HAR model** - Human Activity Recognition trained on cycling data
+### Machine Learning *(planned — T016–T019)*
+- **tflite_flutter** - Declared in `pubspec.yaml`, but not imported anywhere in `lib/` yet
+- **Custom HAR model** - Not built; no model asset exists in the repository
 
 ### Data Modeling
 - **freezed** - Immutable model code generation
@@ -368,24 +372,24 @@ see the [Privacy Policy](https://glandais.github.io/autoride/legal/privacy-polic
 
 ## Battery Optimization
 
-AutoRide is designed for all-day battery efficiency:
+AutoRide is *designed* for all-day battery efficiency. This is the target architecture, not the
+current behaviour — motion-gating and adaptive settings are written but not yet applied (T041):
 
-- **Motion-gated GPS** - Only activates GPS when you're moving
-- **Adaptive accuracy** - Uses just enough precision for cycling
-- **Smart sampling** - Reduces sensor polling when stationary
-- **Efficient ML** - Runs activity detection every 5-10 seconds, not continuously
+- **Motion-gated GPS** *(planned)* - Only activate GPS when you're moving
+- **Adaptive accuracy** *(planned)* - Use just enough precision for cycling
+- **Smart sampling** *(planned)* - Reduce sensor polling when stationary
 - **Foreground service** - Only during active trips
 
-**Typical battery usage:** <5% per hour of active tracking
+**Target battery usage:** <5% per hour of active tracking (not yet measured on device)
 
 ---
 
 ## Roadmap
 
-- [x] Automatic trip detection
-- [x] Background location tracking
+- [ ] Automatic trip detection *(detector implemented, no live entry point yet — T041)*
+- [ ] Background location tracking *(isolate implemented, not connected — T041)*
 - [x] Trip history and statistics
-- [ ] Route visualization on maps
+- [x] Route visualization on maps
 - [ ] ML-based activity recognition
 - [ ] Export to GPX/KML
 - [ ] Social features (share routes)
@@ -400,7 +404,7 @@ AutoRide is designed for all-day battery efficiency:
 ### App doesn't detect trips automatically
 - Ensure location permissions are set to "Always" (not just "While Using")
 - Check that battery optimization is disabled for AutoRide
-- Verify motion sensor permissions are granted
+- On iOS, verify Motion & Fitness access is granted
 - Try adjusting detection sensitivity in Settings
 
 ### Battery drains too quickly
@@ -412,7 +416,6 @@ AutoRide is designed for all-day battery efficiency:
 ### Trips are inaccurate
 - Ensure GPS signal is strong (outdoor, clear sky)
 - Check location permission is set to "Precise" (iOS)
-- Provide feedback on detected trips (helps improve ML model)
 - Report consistent inaccuracies with details
 
 ### Background tracking stops
@@ -436,7 +439,8 @@ AutoRide is designed for all-day battery efficiency:
 A: Yes! AutoRide works completely offline. GPS doesn't require internet.
 
 **Q: How accurate is the automatic detection?**
-A: >90% accuracy for cycling vs. other activities. Improves with user feedback.
+A: Unknown — no accuracy has been measured yet. Detection is threshold-based today and has not
+been validated on a physical device; there is no published accuracy figure to quote.
 
 **Q: Can I use this for other activities?**
 A: Currently optimized for cycling. Other activities (running, walking) may be added.

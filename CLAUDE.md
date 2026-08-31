@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **Essential Commands**:
 ```bash
 # Code generation (MUST run during development)
-flutter pub run build_runner watch
+dart run build_runner watch
 
 # Quality gates (run in order)
 flutter analyze                  # MUST pass before testing
@@ -59,11 +59,11 @@ flutter run --release            # Test on physical device (sensors/GPS)
 2. Request detailed guide: "Create detailed task for T009"
 3. Update status: ☐ → ⏳ → ✅
 4. Implement following quality gates below
-5. Commit with task ID: `git commit -m "T009: Brief description"`
+5. Commit with the task ID inside a conventional-commit subject (see **Commit Format** below)
 6. Update progress summary in `tasks/TASKS.md`
 
 **Quality Gates** (run in this order):
-1. Code generation: `flutter pub run build_runner build`
+1. Code generation: `dart run build_runner build`
 2. Static analysis: `flutter analyze` (MUST pass)
 3. Unit tests: `flutter test`
 4. Physical device test (for sensor/location tasks)
@@ -71,14 +71,21 @@ flutter run --release            # Test on physical device (sensors/GPS)
 
 **Task Dependencies**: Never start a task before its dependencies are complete. See `tasks/TASKS.md` for dependency tree.
 
-**Commit Format**:
+**Commit Format**: gitmoji + conventional commit, with the task ID inside the subject. This is
+what the repository's history actually uses (`🚀 feat(release): T038 Android release signing…`),
+and what the README asks contributors for.
+
 ```
-T###: Brief description
+<emoji> <type>(<scope>): T### Brief description
 
 - Detailed change 1
 - Detailed change 2
 - Testing notes
 ```
+
+The emoji is optional for non-feature work; dependency and docs commits in this repo use a bare
+conventional subject (`deps(pub): …`, `docs(tasks): …`). Do not use the bare `T###:` prefix — no
+commit in the repository's history uses it.
 
 ---
 
@@ -101,22 +108,27 @@ T###: Brief description
 lib/
 ├── core/
 │   ├── constants/        # AppConstants - all thresholds
-│   ├── utils/
-│   └── theme/
+│   ├── extensions/
+│   ├── permissions/      # Permission models, rationales, handler service, widgets
+│   ├── platform/         # PlatformInfo model + PlatformInfoService
+│   ├── theme/
+│   └── utils/
 ├── features/
 │   ├── trip_detection/   # Core trip tracking
 │   │   ├── data/         # Services, repositories
 │   │   ├── domain/       # Models (freezed)
-│   │   ├── presentation/ # UI providers
+│   │   ├── presentation/ # Providers, screens, widgets
 │   │   └── services/     # Background service
-│   ├── trip_history/
-│   ├── settings/
-│   └── onboarding/
-└── shared/
-    ├── models/
-    ├── providers/
-    └── widgets/
+│   ├── trip_history/     # data/repositories + presentation
+│   ├── settings/         # data/{repositories,services} + domain + presentation
+│   └── onboarding/       # data/services + domain + presentation
+├── shared/
+│   └── widgets/          # Reusable UI (empty_state, error_view, stat_card, …)
+└── main.dart
 ```
+
+`lib/shared/models/` and `lib/shared/providers/` exist as placeholders and currently hold no
+code — shared models live in their owning feature's `domain/`.
 
 **Key Architecture Decisions**:
 - **Battery-First Design**: Motion-gated GPS (sensors trigger location, not continuous)
@@ -197,14 +209,14 @@ class MyService extends _$MyService {
 **Workflow**:
 ```bash
 # Watch mode (auto-regenerate on file changes)
-flutter pub run build_runner watch
+dart run build_runner watch
 
 # One-time generation
-flutter pub run build_runner build --delete-conflicting-outputs
+dart run build_runner build --delete-conflicting-outputs
 
 # Clean and rebuild
-flutter pub run build_runner clean
-flutter pub run build_runner build --delete-conflicting-outputs
+dart run build_runner clean
+dart run build_runner build --delete-conflicting-outputs
 ```
 
 **Required directives**:
@@ -240,12 +252,17 @@ work on models, providers, or code generation.
 5. **Foreground service**: Required for reliable background tracking
 
 **Battery States** (see `AppConstants`):
-- **Normal** (>50%): 50Hz sensors, 30s location updates, 15m distance filter
-- **Medium** (20-50%): 40Hz sensors, 40s updates, 20m filter
-- **Low** (10-20%): 25Hz sensors, 60s updates, 20m filter
-- **Critical** (<10%): 20Hz sensors, 90s updates, 100m filter
+- **Normal** (>50%): 50Hz sensors, 30s location updates, 15m distance filter (`distanceFilterCycling`)
+- **Medium** (20-50%): 40Hz sensors, 40s updates, 20m filter (`distanceFilterMoving`)
+- **Low** (10-20%): 25Hz sensors, 60s updates, 30m filter (`distanceFilterMoving + 10`)
+- **Critical** (<10%): 20Hz sensors, 90s updates, 50m filter (`distanceFilterStationary ~/ 2`)
 
-**Target**: <5% battery drain per hour of active tracking
+The two derived filters are computed in `PowerModeConfig` (`battery_optimizer.dart:59,68`) and are
+not named constants in `AppConstants` — check the code, not just the constants file.
+
+**Target**: <5% battery drain per hour of active tracking.
+**Reality check**: these power modes are computed but never applied — see `tasks/LEDGER.md` L-006
+and task **T041**. Every GPS subscription currently uses fixed default settings at 50 Hz.
 
 **Key Files**:
 - `lib/features/trip_detection/data/services/battery_optimizer.dart`
@@ -255,6 +272,13 @@ work on models, providers, or code generation.
 ---
 
 ## Cycling Detection Logic
+
+> ⚠️ **This algorithm is implemented but not wired up.** `CyclingPatternDetector` has zero
+> references anywhere in `lib/`, and the test file named after it never imports it. What actually
+> decides a trip start today is `TripStartDetector`: an instantaneous single-sample accel+gyro fit
+> with no frequency analysis and no speed layer. The three-layer design below is the intended
+> target, not current behaviour — see `tasks/LEDGER.md` L-011 and task **T041**. Its layer-3
+> `currentLocation` is never assigned, so `speedScore` is a hardcoded 0.5.
 
 **Multi-Layer Approach**:
 
@@ -319,7 +343,7 @@ scenario checklist are in the **`autoride-testing`** skill.
 
 ```bash
 # Terminal 1: Code generation watcher
-flutter pub run build_runner watch
+dart run build_runner watch
 
 # Terminal 2: Run app on physical device
 flutter run --release  # Test battery in release mode
