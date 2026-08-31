@@ -39,7 +39,8 @@ flutter run --release            # Test on physical device (sensors/GPS)
 | **Freezed Pattern Example** | `lib/features/trip_detection/domain/models/location_data.dart` |
 | **Stream Provider Pattern** | `lib/features/trip_detection/data/services/location_service.dart:85-105` |
 | **Cycling Detection Logic** | `lib/features/trip_detection/data/services/cycling_pattern_detector.dart` |
-| **GPS Motion-Gating** | `lib/features/trip_detection/data/services/gps_controller.dart` |
+| **GPS Motion-Gating** | `lib/features/trip_detection/data/services/trip_detection_coordinator.dart` |
+| **Auto-Detection Lifecycle** | `lib/features/trip_detection/presentation/providers/auto_detection_controller.dart` |
 | **Battery Optimization** | `lib/features/trip_detection/data/services/battery_optimizer.dart` |
 | **Platform Info Service** | `lib/core/platform/services/platform_info_service.dart` |
 | **Android Permissions** | `android/app/src/main/AndroidManifest.xml` |
@@ -257,16 +258,17 @@ work on models, providers, or code generation.
 - **Low** (10-20%): 25Hz sensors, 60s updates, 30m filter (`distanceFilterMoving + 10`)
 - **Critical** (<10%): 20Hz sensors, 90s updates, 50m filter (`distanceFilterStationary ~/ 2`)
 
-The two derived filters are computed in `PowerModeConfig` (`battery_optimizer.dart:59,68`) and are
-not named constants in `AppConstants` — check the code, not just the constants file.
+The two derived filters are now named constants (`AppConstants.distanceFilterLowPower`,
+`distanceFilterCriticalPower`), consumed by `PowerModeConfig`.
 
 **Target**: <5% battery drain per hour of active tracking.
-**Reality check**: these power modes are computed but never applied — see `tasks/LEDGER.md` L-006
-and task **T041**. Every GPS subscription currently uses fixed default settings at 50 Hz.
+**Status**: power modes drive the location settings and sensor sampling rates since T041 part 2
+(`529db42`); GPS is motion-gated by the coordinator. The drain target itself is unmeasured —
+see `tasks/T041-device-validation.md`.
 
 **Key Files**:
 - `lib/features/trip_detection/data/services/battery_optimizer.dart`
-- `lib/features/trip_detection/data/services/gps_controller.dart`
+- `lib/features/trip_detection/data/services/trip_detection_coordinator.dart` (owns the GPS gate)
 - `lib/features/trip_detection/data/services/adaptive_location_settings.dart`
 
 ---

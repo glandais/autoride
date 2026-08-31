@@ -2,6 +2,16 @@
 
 Date: 2026-06-17.
 
+> **Resolution (2026-08-31)**: the maintainer made the four decisions (scoped
+> `ref.keepAlive()` sessions; GPS gating in the coordinator with `GPSController`
+> deleted; setting-gated auto-detection, default ON; foreground stream as the
+> single source of truth) and the cluster was implemented in the documented
+> dependency order — commits `7afb833` (#5+#2), `529db42` (#3+#4), `da3ad62`
+> (#11+#7/#8), 245 tests green. **On-device validation is still outstanding** —
+> see `tasks/T041-device-validation.md`. This document is retained as the
+> historical rationale; the code-level assertions below describe the pre-T041
+> tree and are no longer current.
+
 This document exists because these findings were requested to be processed but
 **cannot be responsibly completed by an autonomous coding agent**. They are real
 and confirmed by the audit, but each one (a) requires a **product/architecture

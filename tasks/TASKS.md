@@ -61,13 +61,12 @@
   - *Dependencies*: T004
   - *Estimate*: 3-4 hours
 
-- ⚠️ **T006**: Battery-Optimized Location Strategy
+- ⏳ **T006**: Battery-Optimized Location Strategy
   - *Detail*: `tasks/T006-battery-optimization.md`
   - *Scope*: Adaptive accuracy, distance filtering, motion-gated GPS
   - *Dependencies*: T005, T007
   - *Estimate*: 2-3 hours
-  - *Status*: partially complete — `BatteryOptimizer` and `AdaptiveLocationSettings` exist and are tested, but nothing consumes them: `gpsControllerProvider` is unreferenced and `_startGPS`/`_stopGPS` only flip an enum behind `FIXME(T006)`, so motion-gated GPS and the adaptive settings are inert (audit #3/#4, ledger L-004/L-006)
-  - *Blocked on*: **T041** — the unfinished half (real GPS gating + applying the per-mode settings) is delegated there
+  - *Status*: implemented in T041 part 2 (`529db42`) — GPS gating lives in the coordinator (GPSController deleted), power modes drive location settings and sensor rates. Awaiting `tasks/T041-device-validation.md` items 1 and 4 before ✅
 
 ### 2.2 Motion Detection
 - ✅ **T007**: Sensor Integration (Accelerometer/Gyroscope)
@@ -116,14 +115,13 @@
   - *Dependencies*: T007, T008
   - *Estimate*: 2-3 hours
 
-- ⚠️ **T013**: Automatic Trip Start Detection
+- ⏳ **T013**: Automatic Trip Start Detection
   - *Detail*: `tasks/T013-trip-start-detection.md`
   - *Scope*: Combine motion + GPS for automatic trip start
   - *Dependencies*: T004, T008, T012
   - *Estimate*: 3-4 hours
   - *Completed*: 2025-11-22 (detector logic only)
-  - *Status*: partially complete — `TripStartDetector` works and is tested, but `TripDetectionCoordinator` has no live entry point: nothing in `lib/` constructs `tripDetectionCoordinatorProvider` and `startListening()` is called only by the coordinator's own restart, so no `Idle → Detecting → Active` path exists in the shipped app (audit #11, ledger L-001)
-  - *Blocked on*: **T041** — wiring the coordinator to a real lifecycle owner is delegated there
+  - *Status*: implemented in T041 part 3 (`da3ad62`) — `AutoDetectionController` starts the coordinator from the new `automaticDetectionEnabled` setting + permissions; manual start button added; auto-pause/stop reachable during a trip. Awaiting `tasks/T041-device-validation.md` before ✅
 
 - ✅ **T014**: Automatic Trip Stop Detection
   - *Detail*: `tasks/T014-trip-stop-detection.md`
@@ -350,13 +348,14 @@
 ## Phase 11: Audit Backlog
 
 ### 11.1 Core Pipeline
-- ⚠️ **T041**: Core Tracking-Pipeline Refactor
+- ⏳ **T041**: Core Tracking-Pipeline Refactor
   - *Detail*: `tasks/BLOCKED-pipeline-refactor.md`
   - *Scope*: The deferred audit cluster — #5 providerize the six direct stream call sites → #2 session ownership for the recorder/state machine/coordinator → #3 real motion-gated GPS → #4 apply adaptive settings → #11 a live entry point for auto-detection (plus a manual start control) → #7/#8 one source of truth between the background isolate and the foreground stream. Maps to ledger L-001…L-011.
   - *Dependencies*: T006, T013, T015 — and the three maintainer decisions below
   - *Estimate*: multi-session; land one dependency-chain step at a time, validating each on-device
-  - *Blocked on (maintainer decisions)*: (a) what owns a trip session's lifetime — `keepAlive` on the three providers, a scoped `ref.keepAlive()` opened in `startRecording`, or a single session-owner provider; (b) whether `GPSController` owns `Geolocator.getPositionStream` for all consumers or is deleted in favour of gating inside the coordinator; (c) when auto-detection should start — app launch after permissions, a background-tracking setting, or tied to the foreground service.
-  - *Validation*: **physical device required** — GPS demonstrably stops when stationary, a trip survives backgrounding and a tab switch, background recording continues under OS suspension, drain ≤ ~5 %/hr. None of this is observable from `flutter analyze`/`flutter test` or on an emulator.
+  - *Decisions (maintainer, 2026-08-31)*: (a) session lifetime = scoped `ref.keepAlive()` opened on start, released on stop/error/dispose (note: Riverpod 3 deactivates `ref.listen` subscriptions when the last listener leaves, so session streams are container-owned); (b) GPS gating inside the coordinator, `GPSController` deleted; (c) auto-detection setting-gated (`automaticDetectionEnabled`, default ON); (d) foreground stream is the single source of truth — the background isolate only holds the foreground-service notification.
+  - *Status*: **code complete** — landed in three commits per the dependency order: `7afb833` (#5 providerize + #2 sessions), `529db42` (#3 gating + #4 adaptive), `da3ad62` (#11 entry point + #7/#8 isolate). 245 tests, analyze clean.
+  - *Validation*: **physical device required** — see `tasks/T041-device-validation.md`. T041 closes only when that checklist passes.
   - *References*: `tasks/BLOCKED-pipeline-refactor.md` (decisions + dependency order), `tasks/AUDIT-FINDINGS.md` (2026-06-17, deferred cluster), `tasks/LEDGER.md` (2026-08-31, §3 findings and §5 step 4)
   - *Retires*: the blocked halves of T006 and T013; unblocks T032 and the recorder/coordinator tests under T029/T031
 
@@ -366,13 +365,13 @@
 
 **Total Tasks**: 41
 **Completed**: 23
-**In Progress**: 2
+**In Progress**: 5 (T006, T013, T037, T038, T041)
 **Pending**: 13
-**Blocked**: 3 (T006, T013, T041)
+**Blocked**: 0
 
 **Current Phase**: Phase 10 - Release Preparation, alongside the Phase 11 audit backlog
 **Last Completed**: T036 - App Icons & Splash Screen (2026-07-25)
-**Current Task**: T038 - Android Release Configuration (all in-repo work done; blocked only on the manual Play Console setup). T037 also open (§5.6/§5.7 outstanding).
+**Current Task**: T041 - Core Tracking-Pipeline Refactor (code complete, awaiting on-device validation — `tasks/T041-device-validation.md`). T038 open on manual Play Console setup; T037 open (§5.6/§5.7).
 **Next Task**: T039 - iOS Release Configuration (T038 now owns the version scheme and `publish_beta.sh`, so T039 can extend both)
 **Audit backlog**: `tasks/AUDIT-FINDINGS.md` (2026-06-17) and `tasks/LEDGER.md` (2026-08-31) record open defects that are not otherwise tracked here; the blocked core-pipeline cluster is T041.
 
