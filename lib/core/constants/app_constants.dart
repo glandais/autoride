@@ -17,17 +17,15 @@ class AppConstants {
   static const double standardGravity = 9.8; // m/s²
 
   // Location settings
-  // TODO(T041): `distanceFilter` has no consumer — the live GPS subscription uses
-  // `kDefaultLocationSettings` (10 m). It becomes the cycling-mode filter once
-  // motion-gated GPS / adaptive settings are wired up.
-  static const double distanceFilter = 15.0; // meters
+  // The live position stream is configured per power mode; see
+  // `locationSettingsForPowerMode` and the distance filters below.
 
   // Timeout for a SINGLE position fix (Geolocator.getCurrentPosition).
   // Deliberately NOT applied to the continuous position stream: a timeLimit
   // there terminates the stream in a tunnel or at a long red light.
   static const int locationTimeLimit = 30; // seconds
 
-  // Continuous location stream resubscription (see kDefaultLocationSettings).
+  // Continuous location stream resubscription (see `locationStream`).
   // The position stream can end or error (GPS loss, plugin error). Recording
   // must survive that, so the stream provider resubscribes with a capped
   // backoff instead of going permanently silent.
@@ -35,6 +33,9 @@ class AppConstants {
   static const Duration locationStreamMaxRetryDelay = Duration(seconds: 30);
 
   // ML settings
+  // Nominal sampling rate the buffer sizes below are expressed in. The LIVE
+  // rate is per power mode (`sensorSamplingRateNormal`…`Critical`), applied by
+  // the sensor stream providers.
   static const int sensorSamplingRate = 50; // Hz
   // TODO(T016-T019): unused until the TensorFlow Lite activity classifier lands.
   static const int mlInferenceInterval = 10; // seconds
@@ -48,12 +49,20 @@ class AppConstants {
   static const int sensorBufferSize = 3000; // samples (60s at 50Hz)
 
   // GPS Inactivity Timeout
+  // How long the rider must stay stationary (outside a trip) before the
+  // coordinator cancels its GPS subscription. See TripDetectionCoordinator.
   static const Duration gpsInactivityTimeout = Duration(seconds: 30);
 
   // Distance Filters by State
   static const int distanceFilterStationary = 100; // meters
   static const int distanceFilterMoving = 20; // meters
   static const int distanceFilterCycling = 15; // meters (optimal for cycling)
+
+  // Distance Filters by Power Mode (derived from the values above; named so the
+  // documented per-mode table is checkable against a constant).
+  static const int distanceFilterLowPower = distanceFilterMoving + 10; // 30 m
+  static const int distanceFilterCriticalPower =
+      distanceFilterStationary ~/ 2; // 50 m
 
   // Location Update Intervals by Power Mode
   static const Duration locationUpdateNormal = Duration(seconds: 30);

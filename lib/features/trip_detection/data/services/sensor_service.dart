@@ -2,35 +2,41 @@ import 'dart:async';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:sensors_plus/sensors_plus.dart';
 import '../../domain/models/motion_data.dart';
-import '../../../../core/constants/app_constants.dart';
+import 'battery_optimizer.dart';
 
 part 'sensor_service.g.dart';
 
+/// Sampling period for the current power mode (audit #4).
+///
+/// `sensors_plus` takes a sampling period rather than a rate, so the per-mode
+/// Hz values in [PowerModeConfig] are converted here. Both sensor providers
+/// watch the power mode, so dropping to a lower mode rebuilds them with a
+/// slower period; consumers subscribe through the providers and keep receiving
+/// samples across that rebuild.
+Duration _samplingPeriodFor(Ref ref) {
+  final rate = ref.watch(currentPowerModeProvider).sensorSamplingRate;
+  return Duration(microseconds: (1000000 / rate).round());
+}
+
 /// Accelerometer stream provider
-/// Streams raw accelerometer data at configured sampling rate
+/// Streams raw accelerometer data at the current power mode's sampling rate
 @riverpod
 Stream<AccelerometerData> accelerometerStream(
   Ref ref,
 ) async* {
-  // Convert Hz to Duration for sampling period
-  final samplingPeriod = Duration(
-    microseconds: (1000000 / AppConstants.sensorSamplingRate).round(),
-  );
+  final samplingPeriod = _samplingPeriodFor(ref);
 
   yield* accelerometerEventStream(samplingPeriod: samplingPeriod)
       .map((event) => AccelerometerData.fromEvent(event));
 }
 
 /// Gyroscope stream provider
-/// Streams raw gyroscope data at configured sampling rate
+/// Streams raw gyroscope data at the current power mode's sampling rate
 @riverpod
 Stream<GyroscopeData> gyroscopeStream(
   Ref ref,
 ) async* {
-  // Convert Hz to Duration for sampling period
-  final samplingPeriod = Duration(
-    microseconds: (1000000 / AppConstants.sensorSamplingRate).round(),
-  );
+  final samplingPeriod = _samplingPeriodFor(ref);
 
   yield* gyroscopeEventStream(samplingPeriod: samplingPeriod)
       .map((event) => GyroscopeData.fromEvent(event));

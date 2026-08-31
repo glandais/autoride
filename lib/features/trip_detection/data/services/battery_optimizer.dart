@@ -56,7 +56,7 @@ class PowerModeConfig {
     sensorSamplingRate: AppConstants.sensorSamplingRateLow,
     mlInferenceInterval: Duration(seconds: 15),
     locationUpdateInterval: AppConstants.locationUpdateLow,
-    distanceFilter: AppConstants.distanceFilterMoving + 10,
+    distanceFilter: AppConstants.distanceFilterLowPower,
   );
 
   /// Critical power mode (battery <10%)
@@ -65,7 +65,7 @@ class PowerModeConfig {
     sensorSamplingRate: AppConstants.sensorSamplingRateCritical,
     mlInferenceInterval: Duration(seconds: 20),
     locationUpdateInterval: AppConstants.locationUpdateCritical,
-    distanceFilter: AppConstants.distanceFilterStationary ~/ 2,
+    distanceFilter: AppConstants.distanceFilterCriticalPower,
   );
 
   @override

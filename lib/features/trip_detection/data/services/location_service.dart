@@ -3,26 +3,17 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 import '../../domain/models/location_data.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/utils/logger.dart';
+import 'adaptive_location_settings.dart';
 import 'location_permission_service.dart';
 
 part 'location_service.g.dart';
 
 const _logger = Logger('LocationService');
 
-/// Default location settings for the continuous position stream.
-///
-/// Deliberately carries NO `timeLimit`: Geolocator terminates the stream with a
-/// TimeoutException when no fix arrives inside the limit, which happens
-/// routinely in a tunnel, an urban canyon or at a long red light. A terminated
-/// stream used to leave a trip "recording" with a frozen distance for the rest
-/// of the ride. Use [kSingleFixLocationSettings] for one-shot fixes, where a
-/// timeout is the correct behaviour.
-const LocationSettings kDefaultLocationSettings = LocationSettings(
-  accuracy: LocationAccuracy.high,
-  distanceFilter: 10, // Update every 10 meters
-);
-
 /// Settings for a single on-demand position fix (bounded by a timeout).
+///
+/// The CONTINUOUS stream deliberately carries no `timeLimit` and is configured
+/// per power mode instead — see `locationSettingsForPowerMode`.
 const LocationSettings kSingleFixLocationSettings = LocationSettings(
   accuracy: LocationAccuracy.high,
   distanceFilter: 10,
@@ -106,12 +97,23 @@ class LocationService extends _$LocationService {
   }
 }
 
-/// Stream provider for continuous location updates
+/// Stream provider for continuous location updates.
+///
+/// When no explicit [settings] are passed the stream is configured from the
+/// current power mode through `adaptiveLocationSettingsProvider` (audit #4).
+/// Watching it here means a power-mode change rebuilds this provider — and with
+/// it the underlying `Geolocator.getPositionStream` — while consumers that
+/// listen through `locationStreamProvider` keep their subscription, so neither
+/// an active trip nor a detection session is dropped.
 @riverpod
 Stream<LocationData> locationStream(
   Ref ref, {
   LocationSettings? settings,
 }) async* {
+  // Resolved before the first await so the dependency is registered eagerly.
+  final effectiveSettings =
+      settings ?? ref.watch(adaptiveLocationSettingsProvider);
+
   // Check permission first
   final permissionStatus = await ref.watch(
     locationPermissionServiceProvider.future,
@@ -127,7 +129,6 @@ Stream<LocationData> locationStream(
   // Stream position updates, resubscribing if the platform stream errors or
   // completes. Losing the GPS fix must not silently end tracking for the rest
   // of a ride; the delay is capped so a persistent failure does not spin.
-  final effectiveSettings = settings ?? kDefaultLocationSettings;
   var consecutiveFailures = 0;
 
   while (true) {

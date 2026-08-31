@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
+import '../../../../core/constants/app_constants.dart';
 import '../../domain/models/activity_confidence.dart';
 import '../../domain/models/location_data.dart';
 import '../../domain/models/motion_data.dart';
@@ -40,7 +42,15 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
   // active; they must therefore be closed by hand (see `_cleanup` /
   // `_closeSession`, both wired to `ref.onDispose`).
   void Function()? _closeMotionSubscription;
+
+  /// Non-null exactly while the GPS gate is OPEN (audit #3). Location is never
+  /// subscribed to unconditionally: see [_updateGpsGate].
   void Function()? _closeLocationSubscription;
+
+  /// Runs while the rider is stationary with the gate still open; firing it
+  /// closes the gate. Restarted only on the stationary → stationary edge that
+  /// follows movement, so the timeout measures a continuous stationary period.
+  Timer? _gpsInactivityTimer;
 
   /// Closers for subscriptions that exist purely to keep the session-scoped
   /// collaborators (state machine, detectors) alive between two motion samples.
@@ -56,6 +66,11 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
   LocationData? _lastLocation;
   bool _isAnalyzing = false;
   bool _disposed = false;
+
+  /// How long the rider may stay stationary before the GPS gate closes.
+  /// Overridden in tests so the timeout is observable without waiting 30 s.
+  @visibleForTesting
+  Duration get gpsInactivityTimeout => AppConstants.gpsInactivityTimeout;
 
   @override
   Future<TripState> build() async {
@@ -97,7 +112,74 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
       ),
     ).close;
 
-    // Start listening to location stream (may have permission issues).
+    // GPS is NOT subscribed here. It is gated on motion (audit #3): the gate
+    // opens on the first moving/cycling sample and closes again after
+    // `gpsInactivityTimeout` of stationary. A trip that is already in progress
+    // needs speed for auto-pause/stop, so evaluate the gate once now — it opens
+    // immediately in that case.
+    _updateGpsGate(MotionState.unknown);
+
+    // Set up periodic check for detection timeout
+    _detectionTimer = Timer.periodic(
+      const Duration(seconds: 1),
+      (_) => _checkDetectionTimeout(),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Motion-gated GPS (audit #3 / L-004)
+  //
+  // The coordinator owns the only detection-phase GPS subscription, so gating
+  // lives here rather than in a separate controller: it already sees every
+  // motion sample and the trip state, which are exactly the two inputs.
+  //
+  //   gate CLOSED --(moving | cycling sample, or a trip in progress)--> OPEN
+  //   gate OPEN   --(stationary for `gpsInactivityTimeout`, no trip)--> CLOSED
+  //
+  // `unknown` keeps the current gate. No trip data can be lost: while a trip is
+  // being recorded the gate is pinned open, and the recorder holds its own
+  // container-owned location subscription for the whole recording anyway.
+  // ---------------------------------------------------------------------------
+
+  /// Motion state of a single sample, using the same thresholds as the
+  /// windowed analysis in [MotionWindow.state].
+  MotionState _motionStateOf(MotionData motion) {
+    return MotionWindow(
+      samples: [motion],
+      startTime: motion.timestamp,
+      endTime: motion.timestamp,
+    ).state;
+  }
+
+  /// Re-evaluate the GPS gate for [motionState].
+  void _updateGpsGate(MotionState motionState) {
+    // A recording (active or paused) trip always keeps GPS on: auto-pause and
+    // auto-stop detection are speed-based.
+    if (ref.read(tripStateMachineProvider).hasActiveTrip) {
+      _cancelGpsInactivityTimer();
+      _openGpsGate();
+      return;
+    }
+
+    switch (motionState) {
+      case MotionState.moving:
+      case MotionState.cycling:
+        _cancelGpsInactivityTimer();
+        _openGpsGate();
+
+      case MotionState.stationary:
+        _scheduleGpsGateClose();
+
+      case MotionState.unknown:
+        // Not enough information to change anything.
+        break;
+    }
+  }
+
+  /// Subscribe to the location stream if the gate is not already open.
+  void _openGpsGate() {
+    if (_closeLocationSubscription != null) return;
+
     _closeLocationSubscription = ref.container.listen(
       locationStreamProvider(),
       (previous, next) => next.when(
@@ -109,12 +191,35 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
         loading: () {},
       ),
     ).close;
+  }
 
-    // Set up periodic check for detection timeout
-    _detectionTimer = Timer.periodic(
-      const Duration(seconds: 1),
-      (_) => _checkDetectionTimeout(),
-    );
+  /// Cancel the location subscription and forget the last fix, so detection
+  /// degrades to motion-only instead of reasoning about a stale position.
+  void _closeGpsGate() {
+    _cancelGpsInactivityTimer();
+    _closeLocationSubscription?.call();
+    _closeLocationSubscription = null;
+    _lastLocation = null;
+  }
+
+  /// Arm the inactivity timeout once, on the first stationary sample after
+  /// movement. Re-arming on every stationary sample would push the deadline
+  /// forward forever and GPS would never stop.
+  void _scheduleGpsGateClose() {
+    if (_closeLocationSubscription == null) return;
+    if (_gpsInactivityTimer != null) return;
+
+    _gpsInactivityTimer = Timer(gpsInactivityTimeout, () {
+      _gpsInactivityTimer = null;
+      if (_disposed) return;
+      if (ref.read(tripStateMachineProvider).hasActiveTrip) return;
+      _closeGpsGate();
+    });
+  }
+
+  void _cancelGpsInactivityTimer() {
+    _gpsInactivityTimer?.cancel();
+    _gpsInactivityTimer = null;
   }
 
   /// Stop listening and release the detection session.
@@ -156,6 +261,10 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
 
   /// Handle incoming motion data
   Future<void> _onMotionData(MotionData motion) async {
+    // Motion drives the GPS gate before it drives detection, so the detector
+    // sees the location only while GPS is legitimately running.
+    _updateGpsGate(_motionStateOf(motion));
+
     // Get current state machine state
     final currentState = ref.read(tripStateMachineProvider);
 
@@ -331,9 +440,8 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
     _closeMotionSubscription?.call();
     _closeMotionSubscription = null;
 
-    _closeLocationSubscription?.call();
-    _closeLocationSubscription = null;
-
-    _lastLocation = null;
+    // Suspending the session also closes the GPS gate: the recorder owns its
+    // own location subscription while a trip runs, so nothing is lost.
+    _closeGpsGate();
   }
 }

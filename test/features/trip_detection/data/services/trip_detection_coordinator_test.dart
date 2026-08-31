@@ -2,8 +2,15 @@ import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+// `LocationSettings` only: geolocator also exports an `ActivityType` that
+// collides with the domain model's.
+import 'package:geolocator/geolocator.dart' show LocationSettings;
+// `Override` is not re-exported by flutter_riverpod.
+import 'package:riverpod_annotation/riverpod_annotation.dart' show Override;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:autoride/features/trip_detection/data/services/adaptive_location_settings.dart';
+import 'package:autoride/features/trip_detection/data/services/battery_optimizer.dart';
 import 'package:autoride/features/trip_detection/data/services/location_service.dart';
 import 'package:autoride/features/trip_detection/data/services/sensor_service.dart';
 import 'package:autoride/features/trip_detection/data/services/trip_detection_coordinator.dart';
@@ -247,6 +254,24 @@ class _MockLocationPermissionService extends LocationPermissionService {
   }
 }
 
+/// Battery-optimizer double whose power mode can be changed at will, without
+/// the battery_plus plugin.
+class _FakeBatteryOptimizer extends BatteryOptimizer {
+  @override
+  Future<PowerModeConfig> build() async => PowerModeConfig.normal;
+
+  void setMode(PowerModeConfig config) => state = AsyncValue.data(config);
+}
+
+/// Coordinator with a short GPS inactivity timeout so the gate's shutdown is
+/// observable without a 30 s wait. Nothing else is overridden.
+class _FastGateCoordinator extends TripDetectionCoordinator {
+  static const timeout = Duration(milliseconds: 20);
+
+  @override
+  Duration get gpsInactivityTimeout => timeout;
+}
+
 /// Name of the current union case (the generated union classes are private).
 String _stateName(TripState state) => state.map(
       idle: (_) => 'idle',
@@ -263,6 +288,18 @@ MotionData _motionSample(int index) {
     accelerometer:
         AccelerometerData(x: 3.0, y: 3.0, z: 10.0, timestamp: timestamp),
     gyroscope: GyroscopeData(x: 1.0, y: 0.5, z: 0.5, timestamp: timestamp),
+    timestamp: timestamp,
+  );
+}
+
+/// Motion sample a resting phone produces: gravity-only acceleration and no
+/// rotation, so `MotionWindow.state` reads `stationary`.
+MotionData _stationarySample(int index) {
+  final timestamp = DateTime(2026, 1, 1).add(Duration(milliseconds: index));
+  return MotionData(
+    accelerometer:
+        AccelerometerData(x: 0.0, y: 0.0, z: 9.8, timestamp: timestamp),
+    gyroscope: GyroscopeData(x: 0.0, y: 0.0, z: 0.0, timestamp: timestamp),
     timestamp: timestamp,
   );
 }
@@ -299,18 +336,24 @@ void main() {
   late _StopDetectorScript stopDetector;
   late ProviderSubscription<AsyncValue<TripState>> coordinatorSubscription;
 
-  setUp(() {
-    motionController = StreamController<MotionData>.broadcast();
-    locationController = StreamController<LocationData>.broadcast();
-    recorder = _RecorderLog();
-    startDetector = _StartDetectorScript();
-    stopDetector = _StopDetectorScript();
+  /// True while something is subscribed to the (overridden) location stream —
+  /// i.e. while the coordinator's GPS gate is open.
+  late bool gpsSubscribed;
 
-    container = ProviderContainer(
-      overrides: [
+  /// Number of times the location stream was (re)subscribed. A power-mode
+  /// change rebuilds the provider, which increments this without the
+  /// coordinator's session being interrupted.
+  late int gpsSubscribeCount;
+
+  List<Override> baseOverrides({
+    Override? location,
+    List<Override> extra = const [],
+  }) =>
+      [
         motionDataStreamProvider.overrideWith((ref) => motionController.stream),
-        locationStreamProvider
-            .overrideWith((ref, settings) => locationController.stream),
+        location ??
+            locationStreamProvider
+                .overrideWith((ref, settings) => locationController.stream),
         tripStateMachineProvider.overrideWith(_TestTripStateMachine.new),
         tripRecorderServiceProvider
             .overrideWith(() => _SpyTripRecorderService(recorder)),
@@ -321,8 +364,25 @@ void main() {
         notificationServiceProvider.overrideWith(_MockNotificationService.new),
         locationPermissionServiceProvider
             .overrideWith(_MockLocationPermissionService.new),
-      ],
+        ...extra,
+      ];
+
+  setUp(() {
+    gpsSubscribed = false;
+    gpsSubscribeCount = 0;
+    motionController = StreamController<MotionData>.broadcast();
+    locationController = StreamController<LocationData>.broadcast(
+      onListen: () {
+        gpsSubscribed = true;
+        gpsSubscribeCount++;
+      },
+      onCancel: () => gpsSubscribed = false,
     );
+    recorder = _RecorderLog();
+    startDetector = _StartDetectorScript();
+    stopDetector = _StopDetectorScript();
+
+    container = ProviderContainer(overrides: baseOverrides());
     coordinatorSubscription =
         container.listen(tripDetectionCoordinatorProvider, (_, _) {});
   });
@@ -411,10 +471,14 @@ void main() {
     test('location updates are handed to the start detector', () async {
       await startedCoordinator();
 
+      // The GPS gate is closed until motion is detected (audit #3), so open it
+      // with a moving sample before feeding a position.
+      await pushMotion(1);
+
       locationController.add(_location(index: 1));
       await pumpEventQueue();
 
-      await pushMotion(1);
+      await pushMotion(2);
 
       expect(startDetector.seenLocations.last, isNotNull);
       expect(startDetector.seenLocations.last!.speed, 5.0);
@@ -572,6 +636,253 @@ void main() {
         container.read(tripDetectionCoordinatorProvider.notifier),
         isNot(same(coordinator)),
       );
+    });
+  });
+
+  // ===========================================================================
+  // Motion-gated GPS (audit #3 / L-004).
+  //
+  // GPSController was deleted: it only flipped a private enum and had no
+  // consumer. The gate now lives in the coordinator, which already owns both
+  // inputs (motion samples and trip state). The behaviour the old
+  // gps_controller_test.dart described — start on movement, stop after
+  // `gpsInactivityTimeout` of stationary, idempotent start/stop — is asserted
+  // here against the real GPS subscription instead of an enum field.
+  // ===========================================================================
+  group('TripDetectionCoordinator - motion-gated GPS (audit #3)', () {
+    setUp(() {
+      container.dispose();
+      container = ProviderContainer(
+        overrides: baseOverrides(extra: [
+          tripDetectionCoordinatorProvider
+              .overrideWith(_FastGateCoordinator.new),
+        ]),
+      );
+      coordinatorSubscription =
+          container.listen(tripDetectionCoordinatorProvider, (_, _) {});
+    });
+
+    /// Lets the fast inactivity timeout elapse.
+    Future<void> waitOutInactivity() async {
+      await Future<void>.delayed(_FastGateCoordinator.timeout * 3);
+      await pumpEventQueue();
+    }
+
+    test('startListening alone does not subscribe to GPS', () async {
+      await startedCoordinator();
+
+      expect(gpsSubscribed, isFalse);
+      expect(gpsSubscribeCount, 0);
+    });
+
+    test('stationary motion never opens the gate', () async {
+      await startedCoordinator();
+
+      motionController.add(_stationarySample(1));
+      await pumpEventQueue();
+      motionController.add(_stationarySample(2));
+      await pumpEventQueue();
+
+      expect(gpsSubscribed, isFalse);
+    });
+
+    test('moving motion opens the gate exactly once', () async {
+      await startedCoordinator();
+
+      await pushMotion(1);
+      expect(gpsSubscribed, isTrue);
+
+      // Repeated movement must not re-subscribe (the old controller's
+      // "forceStartGPS is idempotent" case).
+      await pushMotion(2);
+      expect(gpsSubscribeCount, 1);
+    });
+
+    test('the gate closes after gpsInactivityTimeout of stationary motion',
+        () async {
+      await startedCoordinator();
+      await pushMotion(1);
+      expect(gpsSubscribed, isTrue);
+
+      motionController.add(_stationarySample(2));
+      await pumpEventQueue();
+      // Still open: the timeout has not elapsed yet.
+      expect(gpsSubscribed, isTrue);
+
+      await waitOutInactivity();
+
+      expect(gpsSubscribed, isFalse);
+    });
+
+    test('movement before the timeout elapses keeps the gate open', () async {
+      await startedCoordinator();
+      await pushMotion(1);
+
+      motionController.add(_stationarySample(2));
+      await pumpEventQueue();
+      await pushMotion(3); // moving again: cancels the pending shutdown
+      await waitOutInactivity();
+
+      expect(gpsSubscribed, isTrue);
+      expect(gpsSubscribeCount, 1);
+    });
+
+    test('closing the gate drops the last fix so detection is motion-only',
+        () async {
+      await startedCoordinator();
+      await pushMotion(1);
+      locationController.add(_location(index: 1));
+      await pumpEventQueue();
+      await pushMotion(2);
+      expect(startDetector.seenLocations.last, isNotNull);
+
+      motionController.add(_stationarySample(3));
+      await pumpEventQueue();
+      await waitOutInactivity();
+      motionController.add(_stationarySample(4));
+      await pumpEventQueue();
+
+      expect(startDetector.seenLocations.last, isNull);
+    });
+
+    test('an active trip keeps GPS on regardless of stationary motion',
+        () async {
+      startDetector.verdict = true;
+      await startedCoordinator();
+      await pushMotion(1); // starts the trip
+      expect(_stateName(container.read(tripStateMachineProvider)), 'active');
+
+      // Resume listening (as the stop-detection path does) and go stationary:
+      // auto-pause/stop needs speed, so the gate must not close.
+      final coordinator =
+          container.read(tripDetectionCoordinatorProvider.notifier);
+      await coordinator.startListening();
+      await pumpEventQueue();
+      expect(gpsSubscribed, isTrue);
+
+      motionController.add(_stationarySample(2));
+      await pumpEventQueue();
+      await waitOutInactivity();
+
+      expect(gpsSubscribed, isTrue);
+    });
+
+    test('stopListening closes the gate', () async {
+      final coordinator = await startedCoordinator();
+      await pushMotion(1);
+      expect(gpsSubscribed, isTrue);
+
+      coordinator.stopListening();
+      await pumpEventQueue();
+
+      expect(gpsSubscribed, isFalse);
+    });
+  });
+
+  // ===========================================================================
+  // Adaptive settings (audit #4 / L-006): the power mode must actually reach
+  // the live location stream, and changing it must not drop the session.
+  // ===========================================================================
+  group('TripDetectionCoordinator - adaptive location settings (audit #4)', () {
+    late List<LocationSettings> observedSettings;
+
+    /// Change the power mode on the CURRENT optimizer instance: the whole
+    /// battery -> settings -> location chain is autoDispose, so a stale
+    /// reference kept across a gate close would be a disposed notifier.
+    void setPowerMode(PowerModeConfig config) {
+      (container.read(batteryOptimizerProvider.notifier)
+              as _FakeBatteryOptimizer)
+          .setMode(config);
+    }
+
+    setUp(() {
+      observedSettings = [];
+
+      container.dispose();
+      container = ProviderContainer(
+        overrides: baseOverrides(
+          // Mirrors production `locationStream`: the settings come from the
+          // adaptive provider, so the stream is rebuilt on a power-mode change.
+          location: locationStreamProvider.overrideWith((ref, settings) {
+            observedSettings
+                .add(settings ?? ref.watch(adaptiveLocationSettingsProvider));
+            return locationController.stream;
+          }),
+          extra: [
+            batteryOptimizerProvider.overrideWith(_FakeBatteryOptimizer.new),
+          ],
+        ),
+      );
+      coordinatorSubscription =
+          container.listen(tripDetectionCoordinatorProvider, (_, _) {});
+    });
+
+    test('the gated stream is configured from the current power mode',
+        () async {
+      await startedCoordinator();
+      await pushMotion(1); // opens the gate
+
+      expect(observedSettings, hasLength(1));
+      expect(observedSettings.single.accuracy,
+          PowerModeConfig.normal.locationAccuracy);
+      expect(observedSettings.single.distanceFilter,
+          PowerModeConfig.normal.distanceFilter);
+      // Never a timeLimit on the continuous stream (L-009).
+      expect(observedSettings.single.timeLimit, isNull);
+    });
+
+    test('a power-mode change re-subscribes with new settings without losing '
+        'the session', () async {
+      final coordinator = await startedCoordinator();
+      await pushMotion(1);
+      expect(gpsSubscribed, isTrue);
+
+      setPowerMode(PowerModeConfig.critical);
+      await pumpEventQueue();
+
+      expect(observedSettings, hasLength(2));
+      expect(observedSettings.last.accuracy,
+          PowerModeConfig.critical.locationAccuracy);
+      expect(observedSettings.last.distanceFilter,
+          PowerModeConfig.critical.distanceFilter);
+
+      // Same coordinator, still gated on, still receiving fixes.
+      expect(
+        container.read(tripDetectionCoordinatorProvider.notifier),
+        same(coordinator),
+      );
+      expect(gpsSubscribed, isTrue);
+
+      locationController.add(_location(index: 2));
+      await pumpEventQueue();
+      await pushMotion(2);
+
+      expect(startDetector.seenLocations.last, isNotNull);
+    });
+
+    test('a power-mode change does not interrupt an active trip', () async {
+      startDetector.verdict = true;
+      await startedCoordinator();
+      await pushMotion(1);
+      expect(_stateName(container.read(tripStateMachineProvider)), 'active');
+
+      // Resume listening so the trip's GPS gate is open (the state the stop
+      // detector runs in); that is when a power-mode change is disruptive.
+      final coordinator =
+          container.read(tripDetectionCoordinatorProvider.notifier);
+      await coordinator.startListening();
+      await pumpEventQueue();
+      expect(gpsSubscribed, isTrue);
+
+      setPowerMode(PowerModeConfig.low);
+      await pumpEventQueue();
+
+      expect(_stateName(container.read(tripStateMachineProvider)), 'active');
+      expect(container.read(tripStateMachineProvider).currentTripId, 1);
+      expect(recorder.stopCalls, 0);
+      expect(gpsSubscribed, isTrue);
+      expect(observedSettings.last.distanceFilter,
+          PowerModeConfig.low.distanceFilter);
     });
   });
 }
