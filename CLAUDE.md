@@ -87,7 +87,7 @@ T###: Brief description
 **Project**: AutoRide - Automatic bike trip detection using motion sensors and ML
 
 **Core Tech Stack**:
-- **Flutter**: 3.10.1+
+- **Flutter**: 3.47.2+ (Dart 3.13+)
 - **State Management**: Riverpod with code generation (`@riverpod` annotation)
 - **Data Models**: Freezed with `sealed class` pattern
 - **Location**: Geolocator (GPS with background support)
@@ -414,6 +414,6 @@ Official docs (Flutter, Riverpod, Freezed, Geolocator, Sensors Plus) and battery
 
 ---
 
-**Flutter Version**: 3.10.1+
+**Flutter Version**: 3.47.2+ (Dart 3.13+)
 **Target SDK**: iOS 13+, Android 8+ (API 26+)
 **Project Status**: see `tasks/TASKS.md` (authoritative progress and current phase)

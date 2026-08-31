@@ -4,7 +4,7 @@
 
 AutoRide is a privacy-focused mobile app that uses advanced motion detection and machine learning to automatically recognize when you're cycling and record your trips—no manual start/stop required.
 
-[![Flutter](https://img.shields.io/badge/Flutter-3.10.1+-02569B?logo=flutter)](https://flutter.dev)
+[![Flutter](https://img.shields.io/badge/Flutter-3.47.2+-02569B?logo=flutter)](https://flutter.dev)
 [![Platform](https://img.shields.io/badge/Platform-iOS%20%7C%20Android-lightgrey)](#)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
@@ -107,7 +107,7 @@ Until then, [build it from source](#building-from-source).
 
 ### Prerequisites
 
-- **Flutter SDK** 3.10.1 or higher ([Install Flutter](https://docs.flutter.dev/get-started/install))
+- **Flutter SDK** 3.47.2 or higher (ships Dart 3.13, required by `freezed` ^4) ([Install Flutter](https://docs.flutter.dev/get-started/install))
 - **Android Studio** / **Xcode** (for Android/iOS development)
 - **Git** for version control
 
@@ -194,8 +194,8 @@ See [CLAUDE.md](CLAUDE.md) for detailed development guidelines and best practice
 ## Tech Stack
 
 ### Core Framework
-- **Flutter** 3.10.1+ - Cross-platform UI framework
-- **Dart** 3.10.1+ - Programming language
+- **Flutter** 3.47.2+ - Cross-platform UI framework
+- **Dart** 3.13+ - Programming language
 
 ### State Management
 - **flutter_riverpod** - Reactive state management
