@@ -21,6 +21,9 @@ const _logger = Logger('TripDetectionCoordinator');
 ///
 /// Listens to sensor and GPS streams, analyzes data for trip start/stop,
 /// and manages state machine transitions.
+// TODO(T041): nothing in lib/ constructs `tripDetectionCoordinatorProvider`, so
+// automatic detection has no entry point and `startListening()` is only reached
+// by the coordinator restarting itself. See BLOCKED-pipeline-refactor.md #11.
 @riverpod
 class TripDetectionCoordinator extends _$TripDetectionCoordinator {
   Timer? _detectionTimer;

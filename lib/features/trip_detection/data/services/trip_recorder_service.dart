@@ -151,7 +151,16 @@ class TripRecorderService extends _$TripRecorderService {
     _maxSpeedKmh = 0.0;
     _totalPauseDurationSeconds = 0;
     _lastLocation = null;
-    _routePointBuffer.clear();
+
+    // Do NOT clear the buffer: it may still hold points from a previous trip
+    // whose final flush failed. Each RoutePoint carries its own trip id, so
+    // retrying here (and on the periodic flush below) persists them to the
+    // right trip instead of discarding them.
+    if (_routePointBuffer.isNotEmpty) {
+      await _flushRoutePointBuffer(
+        maxAttempts: AppConstants.routePointFlushMaxAttempts,
+      );
+    }
 
     // Start location stream
     _startLocationStream();
@@ -204,14 +213,19 @@ class TripRecorderService extends _$TripRecorderService {
       _pauseStartTime = null;
     }
 
-    // Flush remaining route points before finalizing. If this fails we must
-    // not silently drop the tail of the route — log it loudly with a count so
-    // the loss is observable rather than invisible.
-    final flushed = await _flushRoutePointBuffer();
+    // Flush remaining route points before finalizing. This is the last chance
+    // to persist the tail of the ride, so retry; if it still fails the points
+    // stay buffered (they carry their own trip id) and are retried by the next
+    // startRecording, rather than being discarded.
+    final flushed = await _flushRoutePointBuffer(
+      maxAttempts: AppConstants.routePointFlushMaxAttempts,
+    );
     if (!flushed) {
       _logger.error(
-        'Final route-point flush failed: ${_routePointBuffer.length} points '
-        'could not be saved for trip ${_activeTrip!.id}',
+        'Final route-point flush failed after '
+        '${AppConstants.routePointFlushMaxAttempts} attempts: '
+        '${_routePointBuffer.length} points kept buffered for retry '
+        'for trip ${_activeTrip!.id}',
       );
     }
 
@@ -239,7 +253,10 @@ class TripRecorderService extends _$TripRecorderService {
     _stopFlushTimer();
     _stopMetricsTimer();
     _activeTrip = null;
-    _routePointBuffer.clear();
+    // Only drop the buffer if it was actually persisted (see above).
+    if (flushed) {
+      _routePointBuffer.clear();
+    }
     _lastLocation = null;
     _totalDistanceMeters = 0.0;
     _maxSpeedKmh = 0.0;
@@ -360,24 +377,30 @@ class TripRecorderService extends _$TripRecorderService {
   /// Flush route point buffer to database.
   ///
   /// Returns true if the buffer was persisted (or was already empty), false if
-  /// the write failed. On failure the points are kept in the buffer to be
+  /// every attempt failed. On failure the points are kept in the buffer to be
   /// retried on the next flush rather than dropped silently.
-  Future<bool> _flushRoutePointBuffer() async {
-    if (_routePointBuffer.isEmpty) return true;
+  Future<bool> _flushRoutePointBuffer({int maxAttempts = 1}) async {
+    for (var attempt = 1; attempt <= maxAttempts; attempt++) {
+      if (_routePointBuffer.isEmpty) return true;
 
-    try {
-      await _repository!.saveRoutePoints(_routePointBuffer);
-      _routePointBuffer.clear();
-      return true;
-    } catch (e, stackTrace) {
-      _logger.error(
-        'Failed to flush ${_routePointBuffer.length} route points; '
-        'keeping them buffered for retry',
-        e,
-        stackTrace,
-      );
-      return false;
+      try {
+        await _repository!.saveRoutePoints(_routePointBuffer);
+        _routePointBuffer.clear();
+        return true;
+      } catch (e, stackTrace) {
+        _logger.error(
+          'Failed to flush ${_routePointBuffer.length} route points '
+          '(attempt $attempt/$maxAttempts); keeping them buffered for retry',
+          e,
+          stackTrace,
+        );
+        if (attempt < maxAttempts) {
+          await Future<void>.delayed(AppConstants.routePointFlushRetryDelay);
+        }
+      }
     }
+
+    return false;
   }
 
   /// Start periodic flush timer

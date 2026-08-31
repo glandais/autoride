@@ -20,12 +20,29 @@ class TripStartDetector extends _$TripStartDetector {
   /// Analyze motion and GPS data to determine if trip should start
   ///
   /// Updates internal state and returns whether trip start should be triggered.
+  ///
+  /// This is called for every motion sample (50 Hz), but a *detection* is
+  /// counted at most once per [AppConstants.detectionEvaluationInterval], so
+  /// `tripStartMinConsecutiveDetections` means seconds of sustained cycling
+  /// rather than a few tens of milliseconds. Samples arriving inside the
+  /// current interval still refresh the confidence score.
+  ///
+  /// [now] exists so tests can drive the clock deterministically; production
+  /// callers omit it.
   Future<bool> analyzeForTripStart(
     MotionData motion,
-    LocationData? location,
-  ) async {
-    final now = DateTime.now();
+    LocationData? location, {
+    DateTime? now,
+  }) async {
+    final timestamp = now ?? DateTime.now();
+    return _analyze(motion, location, timestamp);
+  }
 
+  Future<bool> _analyze(
+    MotionData motion,
+    LocationData? location,
+    DateTime now,
+  ) async {
     // Check if cooldown is still active
     if (state.cooldownActive) {
       if (state.isCooldownExpired(
@@ -49,10 +66,20 @@ class TripStartDetector extends _$TripStartDetector {
       const Duration(seconds: AppConstants.tripStartDetectionWindowSeconds),
     );
 
+    // A new detection is only counted once per evaluation interval.
+    final lastDetection = state.lastDetectionTime;
+    final intervalElapsed = lastDetection == null ||
+        now.difference(lastDetection) >= AppConstants.detectionEvaluationInterval;
+
     // Update state based on confidence and timing
     if (confidence >= AppConstants.tripStartConfidenceThreshold) {
       // Positive detection
-      if (withinWindow) {
+      if (!intervalElapsed) {
+        // Same evaluation interval: refresh confidence only. Do NOT advance
+        // the streak or the detection timestamp, otherwise 50 Hz sampling
+        // would satisfy the consecutive-detection threshold in ~60 ms.
+        state = state.copyWith(confidence: confidence);
+      } else if (withinWindow) {
         // Within window, increment consecutive count
         state = state.copyWith(
           confidence: confidence,
@@ -72,11 +99,11 @@ class TripStartDetector extends _$TripStartDetector {
       if (!withinWindow) {
         state = state.reset();
       } else {
-        // Within window but low confidence - just update confidence
-        state = state.copyWith(
-          confidence: confidence,
-          lastDetectionTime: now,
-        );
+        // Within window but low confidence - just update confidence.
+        // lastDetectionTime is deliberately NOT refreshed: it marks the last
+        // *positive* detection, so a stream of low-confidence samples lets the
+        // window expire and the streak reset instead of holding it open.
+        state = state.copyWith(confidence: confidence);
       }
     }
 

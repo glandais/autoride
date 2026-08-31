@@ -87,6 +87,9 @@ class DisplaySettingsNotifier extends _$DisplaySettingsNotifier {
 }
 
 /// Provider for battery settings updates
+// TODO(T041): no consumer in lib/ - the settings widgets call
+// `settingsServiceProvider` directly. Same for the location and
+// notification notifiers below; keep them or fold the widgets onto them.
 @riverpod
 class BatterySettingsNotifier extends _$BatterySettingsNotifier {
   @override

@@ -2,6 +2,8 @@ import 'package:freezed_annotation/freezed_annotation.dart';
 import 'package:sensors_plus/sensors_plus.dart';
 import 'dart:math';
 
+import '../../../../core/constants/app_constants.dart';
+
 part 'motion_data.freezed.dart';
 
 /// Accelerometer data model
@@ -33,7 +35,7 @@ extension AccelerometerDataExtensions on AccelerometerData {
   double get magnitude => sqrt(x * x + y * y + z * z);
 
   /// Check if device is stationary (within threshold)
-  bool isStationary({double threshold = 9.8}) {
+  bool isStationary({double threshold = AppConstants.standardGravity}) {
     // Standard gravity is ~9.8 m/s²
     // Stationary device should be close to gravity magnitude
     return (magnitude - threshold).abs() < 0.5;
@@ -42,7 +44,7 @@ extension AccelerometerDataExtensions on AccelerometerData {
   /// Check if significant movement detected
   bool hasSignificantMovement({double threshold = 1.5}) {
     // Movement above threshold indicates acceleration beyond gravity
-    return (magnitude - 9.8).abs() > threshold;
+    return (magnitude - AppConstants.standardGravity).abs() > threshold;
   }
 }
 
@@ -75,7 +77,7 @@ extension GyroscopeDataExtensions on GyroscopeData {
   double get magnitude => sqrt(x * x + y * y + z * z);
 
   /// Check if rotational movement detected (cycling has repetitive rotation)
-  bool hasRotation({double threshold = 0.5}) {
+  bool hasRotation({double threshold = AppConstants.cyclingRotationMin}) {
     return magnitude > threshold; // rad/s
   }
 }
@@ -168,14 +170,23 @@ extension MotionWindowExtensions on MotionWindow {
     final avgAccel = averageAcceleration;
     final avgRotation = averageRotation;
 
-    // Stationary: low acceleration and rotation
-    if (avgAccel < 10.0 && avgRotation < 0.3) {
+    // Stationary: the raw accelerometer magnitude includes gravity, so a
+    // resting device reads ~standardGravity. Compare the DEVIATION from
+    // gravity, using the same tolerance as TripStopDetector — otherwise a
+    // resting phone reading 10.1 m/s² is "stationary" to one half of the
+    // pipeline and "moving" to the other.
+    final accelDeviation = (avgAccel - AppConstants.standardGravity).abs();
+    if (accelDeviation <= AppConstants.stationaryAccelerationMax &&
+        avgRotation <= AppConstants.stationaryRotationMax) {
       return MotionState.stationary;
     }
 
     // Movement detected - basic classification
     // Note: Refined cycling detection will be in T008
-    if (avgAccel > 10.5 && avgRotation > 0.5) {
+    if (avgAccel >= AppConstants.cyclingAccelerationMin &&
+        avgAccel <= AppConstants.cyclingAccelerationMax &&
+        avgRotation >= AppConstants.cyclingRotationMin &&
+        avgRotation <= AppConstants.cyclingRotationMax) {
       return MotionState.cycling; // Preliminary detection
     }
 
@@ -183,7 +194,8 @@ extension MotionWindowExtensions on MotionWindow {
   }
 
   /// Check if window has enough samples for analysis
-  bool get hasEnoughSamples => samples.length >= 50; // ~1 second at 50Hz
+  bool get hasEnoughSamples =>
+      samples.length >= AppConstants.pedalingCycleSamples; // ~1s at 50Hz
 
   /// Analyze if pattern indicates cycling (enhanced)
   /// Uses multi-factor analysis for better accuracy (T008)
@@ -191,14 +203,15 @@ extension MotionWindowExtensions on MotionWindow {
     if (samples.isEmpty) return false;
 
     // Check minimum samples
-    if (samples.length < 100) return false;
+    if (samples.length < AppConstants.minSamplesForPattern) return false;
 
     // Basic thresholds
     final avgAccel = averageAcceleration;
     final avgRotation = averageRotation;
 
     // Must meet basic acceleration and rotation criteria
-    if (avgAccel < 10.0 || avgRotation < 0.5) {
+    if (avgAccel < AppConstants.cyclingAccelerationMin ||
+        avgRotation < AppConstants.cyclingRotationMin) {
       return false;
     }
 
@@ -219,7 +232,7 @@ extension MotionWindowExtensions on MotionWindow {
     for (var i = 1; i < magnitudes.length - 1; i++) {
       if (magnitudes[i] > magnitudes[i - 1] &&
           magnitudes[i] > magnitudes[i + 1] &&
-          magnitudes[i] > 10.0) {
+          magnitudes[i] > AppConstants.cyclingAccelerationMin) {
         peakCount++;
       }
     }

@@ -69,6 +69,12 @@ class SetupCompleteScreen extends ConsumerWidget {
                     label: 'Automatic Tracking',
                     enabled: state.backgroundPermissionGranted,
                   ),
+                  const Divider(),
+                  _SetupItem(
+                    icon: Icons.notifications_active,
+                    label: 'Trip Notifications',
+                    enabled: state.notificationPermissionGranted,
+                  ),
                 ],
               ),
             ),

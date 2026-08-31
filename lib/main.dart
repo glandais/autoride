@@ -156,8 +156,10 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   ];
 
   void _onTabTapped(int index) {
+    // The Active Trip tab is only reachable while a trip is running.
+    final hasActiveTrip = ref.read(tripStateMachineProvider).hasActiveTrip;
     setState(() {
-      _currentIndex = index;
+      _currentIndex = (index == 1 && !hasActiveTrip) ? 0 : index;
     });
   }
 
@@ -166,16 +168,27 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     final tripState = ref.watch(tripStateMachineProvider);
     final hasActiveTrip = tripState.hasActiveTrip;
 
-    // If user manually navigates to Active Trip tab when no trip is active,
-    // show Trip History instead
-    if (_currentIndex == 1 && !hasActiveTrip) {
-      _currentIndex = 0;
-    }
+    // If the trip ends while the Active Trip tab is selected, fall back to
+    // History. This is a state mutation, so it belongs in a listener rather
+    // than in build() — assigning _currentIndex during build makes build
+    // non-idempotent and can desync the NavigationBar from the rendered body.
+    ref.listen(tripStateMachineProvider, (previous, next) {
+      if (_currentIndex == 1 && !next.hasActiveTrip) {
+        setState(() {
+          _currentIndex = 0;
+        });
+      }
+    });
+
+    // Render defensively without mutating state, in case this build runs
+    // before the listener above has fired.
+    final selectedIndex =
+        (_currentIndex == 1 && !hasActiveTrip) ? 0 : _currentIndex;
 
     return Scaffold(
-      body: _screens[_currentIndex],
+      body: _screens[selectedIndex],
       bottomNavigationBar: NavigationBar(
-        selectedIndex: _currentIndex,
+        selectedIndex: selectedIndex,
         onDestinationSelected: _onTabTapped,
         destinations: [
           const NavigationDestination(

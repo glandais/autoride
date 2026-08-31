@@ -80,6 +80,9 @@ class TripHistory extends _$TripHistory {
 
 /// Trip count provider
 /// Provides the total number of trips
+// TODO(T031): no consumer in lib/ - the history screen renders a plain list and
+// no summary/statistics UI reads this yet. Same for `totalDistance` and
+// `tripsGroupedByDate` below.
 @riverpod
 Future<int> tripCount(Ref ref) async {
   final repository = await ref.watch(tripRepositoryProvider.future);

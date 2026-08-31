@@ -22,14 +22,30 @@ class TripStopDetector extends _$TripStopDetector {
   /// Analyze motion and GPS data to determine trip stop decision
   ///
   /// Returns [StopDecision] indicating whether to continue, pause, or stop trip.
+  ///
+  /// Called for every motion sample (50 Hz). The stationary and movement
+  /// counters only advance once per
+  /// [AppConstants.detectionEvaluationInterval], so
+  /// `minConsecutiveStationaryDetections` and
+  /// `tripStopMovementHysteresisSamples` mean seconds rather than a few tens of
+  /// milliseconds. Uncounted samples still keep the pause timer up to date.
+  ///
+  /// [now] exists so tests can drive the clock deterministically; production
+  /// callers omit it.
   Future<StopDecision> analyzeForTripStop(
     MotionData motion,
-    LocationData? location,
-  ) async {
-    final now = DateTime.now();
+    LocationData? location, {
+    DateTime? now,
+  }) async {
+    final timestamp = now ?? DateTime.now();
 
     // Check if currently stationary
     final isStationary = _isStationary(motion, location);
+
+    final canCount = state.canCountDetection(
+      timestamp,
+      AppConstants.detectionEvaluationInterval,
+    );
 
     if (isStationary) {
       // Increment consecutive stationary detections.
@@ -37,24 +53,26 @@ class TripStopDetector extends _$TripStopDetector {
       // single transient spike between two stationary readings is forgiven.
       if (state.consecutiveStationaryDetections == 0) {
         // First stationary detection - start pause timer
-        state = state.startPause(now);
-      } else {
+        state = state.startPause(timestamp);
+      } else if (canCount) {
         // Continue tracking stationary state
-        state = state.incrementStationary();
+        state = state.incrementStationary(timestamp);
       }
 
       // Update pause duration
-      state = state.updatePauseDuration(now);
+      state = state.updatePauseDuration(timestamp);
 
       // Determine decision based on pause duration
       return _evaluatePauseDuration();
     } else {
       // Movement detected. GPS speed at a true standstill is noisy, so we
       // debounce: only reset the accumulated pause once movement is sustained
-      // across `tripStopMovementHysteresisSamples` consecutive readings. A
-      // single transient reading must not zero the pause timer.
+      // across `tripStopMovementHysteresisSamples` counted readings. A single
+      // transient reading must not zero the pause timer.
       if (state.isStationary) {
-        state = state.incrementMovement();
+        if (canCount) {
+          state = state.incrementMovement(timestamp);
+        }
 
         if (state.consecutiveMovementDetections >=
             AppConstants.tripStopMovementHysteresisSamples) {
@@ -65,7 +83,7 @@ class TripStopDetector extends _$TripStopDetector {
 
         // Not yet confirmed as movement: keep the pause accumulating so the
         // auto-stop / auto-pause logic still applies despite the noisy sample.
-        state = state.updatePauseDuration(now);
+        state = state.updatePauseDuration(timestamp);
         return _evaluatePauseDuration();
       }
       return StopDecision.continueTrip;
@@ -74,9 +92,34 @@ class TripStopDetector extends _$TripStopDetector {
 
   /// Check if trip should resume after pause
   ///
-  /// Returns true if sustained movement detected.
-  bool shouldResumeTrip(MotionData motion, LocationData? location) {
-    return !_isStationary(motion, location);
+  /// Returns true only once movement has been sustained for
+  /// [AppConstants.resumeMovementThresholdSeconds]; a single non-stationary
+  /// sample (a bump, a GPS speed spike) must not resume a paused trip.
+  ///
+  /// [now] exists so tests can drive the clock deterministically.
+  bool shouldResumeTrip(
+    MotionData motion,
+    LocationData? location, {
+    DateTime? now,
+  }) {
+    final timestamp = now ?? DateTime.now();
+
+    if (_isStationary(motion, location)) {
+      // Movement interrupted - restart the sustained-movement timer.
+      if (state.movementStartTime != null) {
+        state = state.copyWith(movementStartTime: null);
+      }
+      return false;
+    }
+
+    final movementStart = state.movementStartTime;
+    if (movementStart == null) {
+      state = state.copyWith(movementStartTime: timestamp);
+      return false;
+    }
+
+    return timestamp.difference(movementStart) >=
+        const Duration(seconds: AppConstants.resumeMovementThresholdSeconds);
   }
 
   /// Reset detection state

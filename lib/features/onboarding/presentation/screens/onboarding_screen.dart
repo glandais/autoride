@@ -16,7 +16,31 @@ class OnboardingScreen extends ConsumerStatefulWidget {
   ConsumerState<OnboardingScreen> createState() => _OnboardingScreenState();
 }
 
-class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
+class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
+    with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Android 11+ grants "Allow all the time" only through app settings, so the
+    // status we hold when openAppSettings() returns is the pre-detour one.
+    // Re-read every permission when the user comes back, otherwise a user who
+    // did grant it returns to an app that believes they refused.
+    if (state == AppLifecycleState.resumed) {
+      ref.read(onboardingProvider.notifier).refreshPermissionStatuses();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(onboardingProvider);

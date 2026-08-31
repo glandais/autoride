@@ -7,6 +7,9 @@ import '../../domain/models/location_data.dart';
 
 part 'location_tracking_provider.g.dart';
 
+// TODO(T041): `locationTrackingProvider` has no consumer in lib/. It is the
+// only subscriber to the background isolate's `update` events, so the isolate's
+// output currently reaches no code at all. See BLOCKED-pipeline-refactor.md #7/#8.
 @riverpod
 class LocationTracking extends _$LocationTracking {
   @override

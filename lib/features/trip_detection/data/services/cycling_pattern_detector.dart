@@ -11,6 +11,9 @@ part 'cycling_pattern_detector.g.dart';
 
 /// Cycling pattern detector service
 /// Analyzes motion patterns to detect cycling activity
+// TODO(T041): `cyclingPatternDetectorProvider` has no consumer in lib/. The
+// running trip-start path uses TripStartDetector's single-sample fit instead
+// of this three-layer detector; wiring it up is part of the pipeline refactor.
 @riverpod
 class CyclingPatternDetector extends _$CyclingPatternDetector {
   @override

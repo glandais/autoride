@@ -59,6 +59,8 @@ class SensorUtils {
 }
 
 /// Provider for sensor data statistics
+// TODO(T041): `sensorStatisticsProvider` has no consumer in lib/ - nothing
+// feeds it motion windows yet.
 @riverpod
 class SensorStatistics extends _$SensorStatistics {
   @override

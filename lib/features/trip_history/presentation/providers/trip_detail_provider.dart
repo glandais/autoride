@@ -20,6 +20,8 @@ Future<Trip> tripDetail(Ref ref, int tripId) async {
 
 /// Trip route points provider
 /// Loads only the route points for a trip (alternative to loading full trip)
+// TODO(T041): no consumer in lib/ - the detail screen reads the route points off
+// the fully-loaded Trip instead.
 @riverpod
 Future<List<RoutePoint>> tripRoutePoints(Ref ref, int tripId) async {
   final repository = await ref.watch(tripRepositoryProvider.future);

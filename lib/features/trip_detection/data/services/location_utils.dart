@@ -4,6 +4,9 @@ import '../../domain/models/location_data.dart';
 part 'location_utils.g.dart';
 
 /// Calculate distance between two locations in meters
+// TODO(T041): none of the three helpers in this file has a consumer in lib/ -
+// callers use `LocationData.distanceTo` and `TripMetrics`' formatting getters
+// directly. Keep or fold into those once the pipeline refactor settles.
 @riverpod
 double distanceBetween(
   Ref ref,

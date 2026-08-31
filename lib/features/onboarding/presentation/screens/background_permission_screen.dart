@@ -118,7 +118,9 @@ class BackgroundPermissionScreen extends ConsumerWidget {
                 ? 'Background Enabled ✓'
                 : 'Enable Automatic Tracking',
             onPressed: state.backgroundPermissionGranted
-                ? () => ref.read(onboardingProvider.notifier).nextPage()
+                ? () => ref
+                    .read(onboardingProvider.notifier)
+                    .skipBackgroundPermission()
                 : () => ref.read(onboardingProvider.notifier).requestBackgroundPermission(),
             icon: state.backgroundPermissionGranted ? Icons.check : Icons.auto_awesome,
           ),
@@ -128,7 +130,7 @@ class BackgroundPermissionScreen extends ConsumerWidget {
           if (!state.backgroundPermissionGranted)
             TextButton(
               onPressed: () {
-                ref.read(onboardingProvider.notifier).nextPage();
+                ref.read(onboardingProvider.notifier).skipBackgroundPermission();
               },
               child: const Text('Skip for Now'),
             ),

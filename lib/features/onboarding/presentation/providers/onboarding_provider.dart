@@ -152,7 +152,80 @@ class Onboarding extends _$Onboarding {
     }
 
     // Can proceed even if denied (background is optional for manual trips)
+    await _finishPermissionStep();
+  }
+
+  /// Leave the background-permission step without requesting it.
+  Future<void> skipBackgroundPermission() async {
+    await _finishPermissionStep();
+  }
+
+  /// Request POST_NOTIFICATIONS (Android 13+) / the iOS notification prompt,
+  /// then advance.
+  ///
+  /// The whole background design depends on notifications (foreground-service
+  /// notification, trip start/stop alerts). The permission is declared in the
+  /// manifest but Android 13+ also requires a runtime grant, so without this
+  /// every notification the app posts is silently suppressed.
+  Future<void> _finishPermissionStep() async {
+    await requestNotificationPermission();
+    if (!ref.mounted) return;
     await nextPage();
+  }
+
+  /// Request notification permission (no-op grant on Android < 13).
+  Future<void> requestNotificationPermission() async {
+    _log.info('Requesting notification permission');
+    try {
+      final permissionHandler =
+          ref.read(permissionHandlerServiceProvider.notifier);
+      final status = await permissionHandler.requestPermission(
+        AppPermission.notification,
+      );
+
+      if (!ref.mounted) return;
+
+      _log.info('Notification permission result: granted=${status.isGranted}');
+      state = state.copyWith(notificationPermissionGranted: status.isGranted);
+    } catch (e) {
+      // Notifications are not required to record trips - never block onboarding.
+      _log.warning('Notification permission request failed: $e');
+      if (!ref.mounted) return;
+      state = state.copyWith(notificationPermissionGranted: false);
+    }
+  }
+
+  /// Re-read every permission status from the OS.
+  ///
+  /// Android 11+ cannot request "Allow all the time" from a dialog: the user is
+  /// sent to app settings, and the status we hold is the one from *before* that
+  /// detour. Called when the app returns to the foreground so a user who did
+  /// grant it is not treated as having refused.
+  Future<void> refreshPermissionStatuses() async {
+    try {
+      final permissionHandler =
+          ref.read(permissionHandlerServiceProvider.notifier);
+
+      final foreground = await permissionHandler.checkPermission(
+        AppPermission.locationWhenInUse,
+      );
+      final background = await permissionHandler.checkPermission(
+        AppPermission.locationAlways,
+      );
+      final notification = await permissionHandler.checkPermission(
+        AppPermission.notification,
+      );
+
+      if (!ref.mounted) return;
+
+      state = state.copyWith(
+        locationPermissionGranted: foreground.isGranted,
+        backgroundPermissionGranted: background.isGranted,
+        notificationPermissionGranted: notification.isGranted,
+      );
+    } catch (e) {
+      _log.warning('Permission status refresh failed: $e');
+    }
   }
 
   /// Complete onboarding flow

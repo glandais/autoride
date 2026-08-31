@@ -8,6 +8,10 @@ part 'sensor_service.g.dart';
 
 /// Accelerometer stream provider
 /// Streams raw accelerometer data at configured sampling rate
+// TODO(T041): consumed by calling the generated FUNCTION (`accelerometerStream(ref)`)
+// rather than `ref.watch(accelerometerStreamProvider)`, which defeats overrides
+// and opens an unmanaged sensor subscription per call. Same for the gyroscope
+// and the merged motion stream below. See BLOCKED-pipeline-refactor.md #5.
 @riverpod
 Stream<AccelerometerData> accelerometerStream(
   Ref ref,
@@ -76,8 +80,11 @@ Stream<dynamic> _mergeStreams(
 ) async* {
   final controller = StreamController<dynamic>();
 
-  final sub1 = stream1.listen(controller.add);
-  final sub2 = stream2.listen(controller.add);
+  // Forward errors as well as data: an accelerometer/gyroscope failure must
+  // reach the merged stream's consumer (the coordinator's onError) instead of
+  // silently stopping detection with no diagnostic.
+  final sub1 = stream1.listen(controller.add, onError: controller.addError);
+  final sub2 = stream2.listen(controller.add, onError: controller.addError);
 
   try {
     yield* controller.stream;
@@ -88,6 +95,8 @@ Stream<dynamic> _mergeStreams(
   }
 }
 
+// TODO(T041): `sensorServiceProvider` has no consumer in lib/ - no code checks
+// sensor availability before starting detection.
 @riverpod
 class SensorService extends _$SensorService {
   @override

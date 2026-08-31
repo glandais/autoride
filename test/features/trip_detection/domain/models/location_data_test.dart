@@ -17,6 +17,12 @@ class _FakeLocationPermissionService extends LocationPermissionService {
 }
 
 void main() {
+  // LocationService.build() now subscribes to the position stream so the
+  // exposed "current location" stays fresh for the tracking screen's map
+  // marker and re-center button. That touches a platform event channel, which
+  // needs the test binding even though no data ever arrives here.
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   // ---------------------------------------------------------------------------
   // LocationData model (this file was previously mislabeled as a
   // "LocationService" test, but it only ever exercised the LocationData model).

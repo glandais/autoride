@@ -90,6 +90,53 @@ void main() {
       );
     }
 
+    /// Feeds movement samples until the sustained-movement threshold is
+    /// reached, returning whether the detector agreed to resume.
+    ///
+    /// Resuming is time-based (`resumeMovementThresholdSeconds`) rather than
+    /// per-sample, so a single non-stationary reading must never resume a
+    /// paused trip.
+    bool resumesAfterSustainedMovement(
+      TripStopDetector detector,
+      MotionData motion,
+      LocationData? location, {
+      DateTime? from,
+    }) {
+      final start = from ?? DateTime.now();
+      var resumed = false;
+      for (var second = 0;
+          second <= AppConstants.resumeMovementThresholdSeconds;
+          second++) {
+        resumed = detector.shouldResumeTrip(
+          motion,
+          location,
+          now: start.add(Duration(seconds: second)),
+        );
+      }
+      return resumed;
+    }
+
+    /// Feeds [count] readings one evaluation interval apart, so each one is
+    /// actually counted by the detector's stationary/movement counters.
+    Future<StopDecision> feedCountedReadings(
+      TripStopDetector detector,
+      MotionData motion,
+      LocationData? location, {
+      required int count,
+      DateTime? from,
+    }) async {
+      final start = from ?? DateTime.now();
+      var decision = StopDecision.continueTrip;
+      for (var i = 0; i < count; i++) {
+        decision = await detector.analyzeForTripStop(
+          motion,
+          location,
+          now: start.add(AppConstants.detectionEvaluationInterval * (i + 1)),
+        );
+      }
+      return decision;
+    }
+
     test('initial state should be not stationary', () {
       final container = createContainer();
       addTearDown(container.dispose);
@@ -132,9 +179,13 @@ void main() {
       await detector.analyzeForTripStop(resting, createStationaryLocation());
       expect(container.read(tripStopDetectorProvider).isStationary, isTrue);
 
-      // A clearly-moving device (magnitude far from gravity) is NOT stationary.
+      // A clearly-moving device (magnitude far from gravity) is NOT stationary,
+      // so sustained movement resumes the trip.
       final moving = createCyclingMotion();
-      expect(detector.shouldResumeTrip(moving, createCyclingLocation()), isTrue);
+      expect(
+        resumesAfterSustainedMovement(detector, moving, createCyclingLocation()),
+        isTrue,
+      );
     });
 
     test('should detect stationary state with low motion and GPS speed', () async {
@@ -218,9 +269,12 @@ void main() {
         consecutiveStationaryDetections: AppConstants.minConsecutiveStationaryDetections,
       );
 
-      // Check if should resume with movement
-      final shouldResume = detector.shouldResumeTrip(cyclingMotion, location);
-      expect(shouldResume, isTrue);
+      // A single movement sample is not enough; sustained movement resumes.
+      expect(detector.shouldResumeTrip(cyclingMotion, location), isFalse);
+      expect(
+        resumesAfterSustainedMovement(detector, cyclingMotion, location),
+        isTrue,
+      );
     });
 
     test('should require consecutive stationary detections', () async {
@@ -232,17 +286,32 @@ void main() {
       final location = createStationaryLocation();
 
       // First detection
-      await detector.analyzeForTripStop(motion, location);
+      final start = DateTime.now();
+      await detector.analyzeForTripStop(motion, location, now: start);
       var state = container.read(tripStopDetectorProvider);
       expect(state.consecutiveStationaryDetections, equals(1));
 
+      // A second reading inside the SAME evaluation interval must NOT count.
+      await detector.analyzeForTripStop(
+        motion,
+        location,
+        now: start.add(const Duration(milliseconds: 20)),
+      );
+      expect(
+        container.read(tripStopDetectorProvider).consecutiveStationaryDetections,
+        equals(1),
+        reason: 'counters advance once per interval, not per 50Hz sample',
+      );
+
       // Second detection
-      await detector.analyzeForTripStop(motion, location);
+      await feedCountedReadings(detector, motion, location,
+          count: 1, from: start);
       state = container.read(tripStopDetectorProvider);
       expect(state.consecutiveStationaryDetections, equals(2));
 
       // Third detection
-      await detector.analyzeForTripStop(motion, location);
+      await feedCountedReadings(detector, motion, location,
+          count: 1, from: start.add(AppConstants.detectionEvaluationInterval));
       state = container.read(tripStopDetectorProvider);
       expect(
         state.consecutiveStationaryDetections,
@@ -266,11 +335,14 @@ void main() {
       expect(state.consecutiveStationaryDetections, greaterThan(0));
 
       // Detect SUSTAINED movement. Hysteresis requires
-      // tripStopMovementHysteresisSamples consecutive non-stationary readings
-      // before the pause is reset, so feed that many.
-      for (var i = 0; i < AppConstants.tripStopMovementHysteresisSamples; i++) {
-        await detector.analyzeForTripStop(cyclingMotion, location);
-      }
+      // tripStopMovementHysteresisSamples consecutive counted non-stationary
+      // readings before the pause is reset, so feed that many.
+      await feedCountedReadings(
+        detector,
+        cyclingMotion,
+        location,
+        count: AppConstants.tripStopMovementHysteresisSamples,
+      );
 
       // State should be reset
       state = container.read(tripStopDetectorProvider);
@@ -341,9 +413,15 @@ void main() {
       );
       expect(pauseDecision, equals(StopDecision.pauseTrip));
 
-      // Resume with movement
-      final shouldResume = detector.shouldResumeTrip(cyclingMotion, cyclingLocation);
-      expect(shouldResume, isTrue);
+      // Resume with sustained movement
+      expect(
+        resumesAfterSustainedMovement(
+          detector,
+          cyclingMotion,
+          cyclingLocation,
+        ),
+        isTrue,
+      );
     });
 
     test('trip end scenario: 10 min stationary should stop', () async {
@@ -443,23 +521,34 @@ void main() {
             AppConstants.minConsecutiveStationaryDetections,
       );
 
-      // Feed N-1 movement readings: not yet enough to confirm movement, so the
-      // pause must still be accumulating (auto-stop still reachable).
-      StopDecision decision = StopDecision.continueTrip;
-      for (var i = 0;
-          i < AppConstants.tripStopMovementHysteresisSamples - 1;
-          i++) {
-        decision = await detector.analyzeForTripStop(cyclingMotion, cyclingLocation);
-      }
+      // Feed N-1 counted movement readings: not yet enough to confirm
+      // movement, so the pause must still be accumulating (auto-stop still
+      // reachable).
+      final movementStart = DateTime.now();
+      final decision = await feedCountedReadings(
+        detector,
+        cyclingMotion,
+        cyclingLocation,
+        count: AppConstants.tripStopMovementHysteresisSamples - 1,
+        from: movementStart,
+      );
       expect(container.read(tripStopDetectorProvider).pauseStartTime, isNotNull,
           reason: 'pause should still be accumulating before hysteresis is met');
       expect(decision, equals(StopDecision.stopTrip),
           reason: 'auto-stop still applies while movement is unconfirmed');
 
-      // The Nth consecutive movement reading confirms sustained movement and
+      // The Nth counted movement reading confirms sustained movement and
       // resets the pause.
-      final resetDecision =
-          await detector.analyzeForTripStop(cyclingMotion, cyclingLocation);
+      final resetDecision = await feedCountedReadings(
+        detector,
+        cyclingMotion,
+        cyclingLocation,
+        count: 1,
+        from: movementStart.add(
+          AppConstants.detectionEvaluationInterval *
+              (AppConstants.tripStopMovementHysteresisSamples - 1),
+        ),
+      );
 
       final state = container.read(tripStopDetectorProvider);
       expect(state.isStationary, isFalse);

@@ -11,9 +11,11 @@ analyzer:
   errors:
     invalid_annotation_target: ignore
 
-  strong-mode:
-    implicit-casts: false
-    implicit-dynamic: false
+  # `strong-mode: implicit-casts / implicit-dynamic` were removed from the Dart 3
+  # analyzer and silently ignored. These are the replacements that actually run.
+  language:
+    strict-casts: true
+    strict-raw-types: true
 
 linter:
   rules:

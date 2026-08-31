@@ -8,6 +8,10 @@ import '../../../../core/constants/app_constants.dart';
 part 'adaptive_location_settings.g.dart';
 
 /// Adaptive location settings based on motion state and battery level
+// TODO(T041): `adaptiveLocationSettingsProvider` has no consumer in lib/.
+// Every GPS subscription uses `kDefaultLocationSettings` and both sensor
+// streams are hardcoded to 50Hz, so the per-power-mode table below is not
+// applied anywhere. See tasks/BLOCKED-pipeline-refactor.md #4.
 @riverpod
 class AdaptiveLocationSettings extends _$AdaptiveLocationSettings {
   @override

@@ -6,6 +6,8 @@ class AppConstants {
   // Detection thresholds
   static const double cyclingSpeedMin = 8.0; // km/h
   static const double cyclingSpeedMax = 40.0; // km/h
+  // TODO(T041): no consumer — the live detectors use `stationaryAccelerationMax`
+  // as the gravity-relative movement threshold.
   static const double movementThreshold = 1.5; // m/s² acceleration
 
   // Acceleration convention
@@ -15,11 +17,26 @@ class AppConstants {
   static const double standardGravity = 9.8; // m/s²
 
   // Location settings
+  // TODO(T041): `distanceFilter` has no consumer — the live GPS subscription uses
+  // `kDefaultLocationSettings` (10 m). It becomes the cycling-mode filter once
+  // motion-gated GPS / adaptive settings are wired up.
   static const double distanceFilter = 15.0; // meters
+
+  // Timeout for a SINGLE position fix (Geolocator.getCurrentPosition).
+  // Deliberately NOT applied to the continuous position stream: a timeLimit
+  // there terminates the stream in a tunnel or at a long red light.
   static const int locationTimeLimit = 30; // seconds
+
+  // Continuous location stream resubscription (see kDefaultLocationSettings).
+  // The position stream can end or error (GPS loss, plugin error). Recording
+  // must survive that, so the stream provider resubscribes with a capped
+  // backoff instead of going permanently silent.
+  static const Duration locationStreamRetryDelay = Duration(seconds: 2);
+  static const Duration locationStreamMaxRetryDelay = Duration(seconds: 30);
 
   // ML settings
   static const int sensorSamplingRate = 50; // Hz
+  // TODO(T016-T019): unused until the TensorFlow Lite activity classifier lands.
   static const int mlInferenceInterval = 10; // seconds
   static const double confidenceThreshold = 0.85;
 
@@ -55,6 +72,8 @@ class AppConstants {
   // Acceleration thresholds (m/s²)
   static const double cyclingAccelerationMin = 10.0;  // Minimum for cycling
   static const double cyclingAccelerationMax = 20.0;  // Maximum typical cycling
+  // TODO(T041): no consumer — walking is currently rejected implicitly by the
+  // cycling acceleration band rather than by an explicit walking ceiling.
   static const double walkingAccelerationMax = 12.0;  // Walking typically <12
 
   // Rotation thresholds (rad/s)
@@ -81,6 +100,9 @@ class AppConstants {
   static const int pedalingCycleSamples = 50;   // ~1 second for one pedal cycle
 
   // Confidence thresholds
+  // TODO(T041): consumed only by CyclingPatternDetector, which has no live
+  // entry point yet; the running trip-start path uses
+  // `tripStartConfidenceThreshold` instead.
   static const double minConfidenceForDetection = 0.6;  // Minimum to trigger
   static const double highConfidenceThreshold = 0.8;    // High confidence
 
@@ -91,6 +113,8 @@ class AppConstants {
 
   // Trip State Machine Configuration (T012)
   static const int detectionTimeoutSeconds = 30; // Max time in Detecting before timeout
+  // TODO(T041): no consumer — the stop detector gates the pause on
+  // `minPauseDurationSeconds` + consecutive stationary detections instead.
   static const int stationaryThresholdSeconds = 10; // Stationary time before pause
   static const int maxPauseDurationSeconds = 300; // 5 min - max pause before auto-stop
   static const int resumeMovementThresholdSeconds = 5; // Movement time before resume
@@ -100,11 +124,23 @@ class AppConstants {
   // Confidence threshold to trigger trip start (0.0-1.0)
   static const double tripStartConfidenceThreshold = 0.7;
 
-  // Minimum consecutive detections before starting trip
+  // Minimum consecutive detections before starting trip.
+  // A "detection" is one evaluation slot of `detectionEvaluationInterval`, NOT
+  // one 50 Hz sensor sample — otherwise 3 detections would mean ~60 ms and a
+  // single bump could start a trip.
   static const int tripStartMinConsecutiveDetections = 3;
 
-  // Time window for consecutive detection counting (seconds)
+  // Time window for consecutive detection counting (seconds).
+  // Maximum gap between two counted detections before the streak resets.
   static const int tripStartDetectionWindowSeconds = 5;
+
+  // Detection evaluation cadence (shared by trip start and trip stop).
+  //
+  // Both detectors are fed every motion sample (50 Hz). Counting one detection
+  // per sample makes every "consecutive detections" threshold meaningless, so
+  // counters only advance once per interval; samples in between still update
+  // confidence and pause timers.
+  static const Duration detectionEvaluationInterval = Duration(seconds: 1);
 
   // Cooldown period after false start (seconds)
   static const int tripStartCooldownPeriodSeconds = 30;
@@ -114,6 +150,8 @@ class AppConstants {
 
   // Grace period before GPS required (seconds)
   // Allows motion-only detection for first N seconds (e.g., GPS lock delay)
+  // TODO(T041): no consumer — the detector already falls back to motion-only
+  // whenever `location` is null, without an explicit grace period.
   static const int tripStartGpsGracePeriodSeconds = 10;
 
   // Weighting for confidence calculation
@@ -157,6 +195,13 @@ class AppConstants {
   // 100 points ≈ 2KB memory, saves every ~1.5km at 15m intervals
   static const int routePointBufferSize = 100;
 
+  // Retry policy for persisting the route-point buffer.
+  // The final flush at trip stop is the last chance to persist the tail of a
+  // ride, so it is retried; if it still fails the points stay buffered (they
+  // carry their own trip id) rather than being dropped.
+  static const int routePointFlushMaxAttempts = 3;
+  static const Duration routePointFlushRetryDelay = Duration(milliseconds: 250);
+
   // Maximum interval between buffer flushes (seconds)
   // Fallback if distance filter not triggered (ensures data persistence)
   static const int maxRecordingIntervalSeconds = 30;
@@ -176,6 +221,8 @@ class AppConstants {
 
   // Onboarding Configuration (T021)
   static const String onboardingCompleteKey = 'onboarding_complete';
+  // TODO(T041): unused — the onboarding widgets and provider still hardcode the
+  // page count (5) and the 300 ms page transition.
   static const int onboardingPageCount = 5;
   static const Duration onboardingAnimationDuration = Duration(milliseconds: 300);
   static const Duration onboardingPageTransitionDuration = Duration(milliseconds: 250);
@@ -194,6 +241,8 @@ class AppConstants {
   static const String tripEventsChannelName = 'Trip Events';
 
   // Notification Update Intervals
+  // TODO(T041): no consumer — nothing drives the foreground notification on a
+  // timer yet; `showForegroundNotification` is only called on demand.
   static const Duration notificationUpdateInterval = Duration(seconds: 5);
 
   // Legal Documents (T037)

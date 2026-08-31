@@ -23,7 +23,7 @@ class MotionDetectionService extends _$MotionDetectionService {
       _addToBuffer(motionData);
 
       // Periodically analyze buffer (every 1 second)
-      if (_buffer.length >= 50) { // ~1 second at 50Hz
+      if (_buffer.length >= AppConstants.pedalingCycleSamples) { // ~1s at 50Hz
         final state = _analyzeBuffer();
         yield state;
       }

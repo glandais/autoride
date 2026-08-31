@@ -16,6 +16,9 @@ enum GPSState {
 
 /// Motion-gated GPS controller
 /// Only activates GPS when movement is detected by sensors
+// TODO(T041): `gpsControllerProvider` has no consumer in lib/. Motion-gated
+// GPS is not wired up yet - the live GPS lifecycle is an unconditional
+// `locationStream` subscription. See tasks/BLOCKED-pipeline-refactor.md #3.
 @riverpod
 class GPSController extends _$GPSController {
   Timer? _inactivityTimer;

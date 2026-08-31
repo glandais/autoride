@@ -10,6 +10,7 @@ sealed class OnboardingState with _$OnboardingState {
     @Default(0) int currentPage,
     @Default(false) bool locationPermissionGranted,
     @Default(false) bool backgroundPermissionGranted,
+    @Default(false) bool notificationPermissionGranted,
     @Default(false) bool isComplete,
   }) = _OnboardingState;
 

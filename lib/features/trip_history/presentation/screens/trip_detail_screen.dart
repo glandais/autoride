@@ -4,6 +4,7 @@ import 'package:autoride/features/trip_history/presentation/providers/trip_detai
 import 'package:autoride/features/trip_history/presentation/providers/trip_history_provider.dart';
 import 'package:autoride/features/trip_history/presentation/widgets/trip_detail_card.dart';
 import 'package:autoride/features/trip_history/presentation/widgets/trip_route_map.dart';
+import 'package:autoride/features/trip_detection/domain/models/trip.dart';
 import 'package:autoride/shared/widgets/error_view.dart';
 import 'package:autoride/shared/widgets/loading_view.dart';
 import 'package:autoride/core/theme/app_spacing.dart';
@@ -203,7 +204,7 @@ class TripDetailScreen extends ConsumerWidget {
 class _MetadataSection extends StatelessWidget {
   const _MetadataSection({required this.trip});
 
-  final dynamic trip; // Trip type
+  final Trip trip;
 
   @override
   Widget build(BuildContext context) {
