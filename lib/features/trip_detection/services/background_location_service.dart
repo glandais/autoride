@@ -5,6 +5,7 @@ import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../../../core/constants/app_constants.dart';
+import '../data/services/notification_service.dart';
 
 part 'background_location_service.g.dart';
 
@@ -64,6 +65,15 @@ class BackgroundLocationService extends _$BackgroundLocationService {
 
   /// Initialize background service (call once at app startup)
   Future<void> initialize() async {
+    // The foreground-service notification is posted on
+    // `tripTrackingChannelId`, and Android kills the process with
+    // `CannotPostForegroundServiceNotificationException` when that channel
+    // does not exist yet. `NotificationService` is what creates it, so it has
+    // to have finished before the service is configured — otherwise the very
+    // first launch after an install crash-loops until the OS restricts the
+    // app.
+    await ref.read(notificationServiceProvider.future);
+
     await service.configure(
       androidConfiguration: AndroidConfiguration(
         onStart: onStart,

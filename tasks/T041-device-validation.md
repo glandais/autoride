@@ -27,6 +27,15 @@
 - "Precise Location" off shows the precise-location banner and subtitle; on again
   clears them.
 
+**2026-09-01, Pixel 6a (Android 17 / API 37, release APK)** — first Android device
+run. Sideloading required uninstalling the Play build (upload key vs Play signing
+key), which is what exposed L-072: on a clean install the app crash-looped at launch
+with `Bad notification for startForeground` until the OS restricted it, because the
+foreground service's notification channel did not exist yet. Fixed by awaiting
+`notificationServiceProvider` in `BackgroundLocationService.initialize()`; the app
+then launches and reaches the "Always"/precise-location settings prompt of item 6.
+The checklist items below are still unrun on Android.
+
 Code complete on `develop` (`7afb833` → `529db42` → `da3ad62`, 245 tests green).
 None of the items below are observable from `flutter analyze`/`flutter test` or on an
 emulator — run them on a physical device in `--release` mode. T041 (and the reopened
