@@ -1,4 +1,5 @@
 import 'package:riverpod_annotation/riverpod_annotation.dart';
+
 import '../../domain/models/location_data.dart';
 import '../../domain/models/motion_data.dart';
 import '../../domain/models/trip_start_state.dart';
@@ -68,8 +69,10 @@ class TripStartDetector extends _$TripStartDetector {
 
     // A new detection is only counted once per evaluation interval.
     final lastDetection = state.lastDetectionTime;
-    final intervalElapsed = lastDetection == null ||
-        now.difference(lastDetection) >= AppConstants.detectionEvaluationInterval;
+    final intervalElapsed =
+        lastDetection == null ||
+        now.difference(lastDetection) >=
+            AppConstants.detectionEvaluationInterval;
 
     // Update state based on confidence and timing
     if (confidence >= AppConstants.tripStartConfidenceThreshold) {
@@ -133,10 +136,7 @@ class TripStartDetector extends _$TripStartDetector {
   ///
   /// Combines motion pattern score with GPS speed validation.
   /// If GPS unavailable, uses motion-only detection.
-  double _calculateStartConfidence(
-    MotionData motion,
-    LocationData? location,
-  ) {
+  double _calculateStartConfidence(MotionData motion, LocationData? location) {
     // Get motion pattern score from cycling detector
     final motionScore = _getMotionScore(motion);
 
@@ -149,7 +149,8 @@ class TripStartDetector extends _$TripStartDetector {
     final speedScore = _getSpeedScore(location);
 
     // Combine scores with weighted average
-    final confidence = (motionScore * AppConstants.tripStartMotionWeight) +
+    final confidence =
+        (motionScore * AppConstants.tripStartMotionWeight) +
         (speedScore * AppConstants.tripStartSpeedWeight);
 
     return confidence.clamp(0.0, 1.0);
@@ -167,9 +168,12 @@ class TripStartDetector extends _$TripStartDetector {
         accelMagnitude <= AppConstants.cyclingAccelerationMax) {
       // Within cycling range - calculate how well it fits
       const accelMid =
-          (AppConstants.cyclingAccelerationMin + AppConstants.cyclingAccelerationMax) / 2;
+          (AppConstants.cyclingAccelerationMin +
+              AppConstants.cyclingAccelerationMax) /
+          2;
       const accelRange =
-          AppConstants.cyclingAccelerationMax - AppConstants.cyclingAccelerationMin;
+          AppConstants.cyclingAccelerationMax -
+          AppConstants.cyclingAccelerationMin;
       final deviation = (accelMagnitude - accelMid).abs();
       accelScore = 1.0 - (deviation / (accelRange / 2)).clamp(0.0, 1.0);
     }
@@ -179,7 +183,8 @@ class TripStartDetector extends _$TripStartDetector {
         gyroMagnitude <= AppConstants.cyclingRotationMax) {
       // Within cycling range - calculate how well it fits
       const gyroMid =
-          (AppConstants.cyclingRotationMin + AppConstants.cyclingRotationMax) / 2;
+          (AppConstants.cyclingRotationMin + AppConstants.cyclingRotationMax) /
+          2;
       const gyroRange =
           AppConstants.cyclingRotationMax - AppConstants.cyclingRotationMin;
       final deviation = (gyroMagnitude - gyroMid).abs();
@@ -206,7 +211,8 @@ class TripStartDetector extends _$TripStartDetector {
     // Within cycling range - calculate how well it fits
     // Highest score at typical cycling speed (18 km/h)
     const typicalSpeed = AppConstants.cyclingSpeedTypical;
-    const speedRange = AppConstants.cyclingSpeedMax - AppConstants.cyclingSpeedMin;
+    const speedRange =
+        AppConstants.cyclingSpeedMax - AppConstants.cyclingSpeedMin;
     final deviation = (speedKmh - typicalSpeed).abs();
 
     // Score decreases as deviation from typical speed increases

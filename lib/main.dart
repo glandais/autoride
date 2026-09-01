@@ -23,11 +23,7 @@ void main() async {
   // Validate platform configuration (debug mode only)
   await PlatformConfigValidator.printConfigStatus();
 
-  runApp(
-    const ProviderScope(
-      child: AutoRideApp(),
-    ),
-  );
+  runApp(const ProviderScope(child: AutoRideApp()));
 }
 
 class AutoRideApp extends ConsumerStatefulWidget {
@@ -72,7 +68,8 @@ class _AutoRideAppState extends ConsumerState<AutoRideApp>
 
       ref.listenManual(tripStateMachineProvider, (previous, next) {
         // Auto-navigate when trip becomes Active (from Idle or Detecting)
-        final wasNotActive = previous?.map(
+        final wasNotActive =
+            previous?.map(
               idle: (_) => true,
               detecting: (_) => true,
               active: (_) => false,
@@ -145,16 +142,10 @@ class InitialRouteScreen extends ConsumerWidget {
           return const HomeShell();
         }
       },
-      loading: () => const Scaffold(
-        body: Center(
-          child: CircularProgressIndicator(),
-        ),
-      ),
-      error: (error, stack) => Scaffold(
-        body: Center(
-          child: Text('Error: $error'),
-        ),
-      ),
+      loading: () =>
+          const Scaffold(body: Center(child: CircularProgressIndicator())),
+      error: (error, stack) =>
+          Scaffold(body: Center(child: Text('Error: $error'))),
     );
   }
 }

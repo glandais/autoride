@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import '../../../../core/theme/app_spacing.dart';
 
 /// Individual setting row with label and control widget
@@ -58,16 +59,15 @@ class SettingTile extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    title,
-                    style: theme.textTheme.bodyLarge,
-                  ),
+                  Text(title, style: theme.textTheme.bodyLarge),
                   if (subtitle != null) ...[
                     const SizedBox(height: AppSpacing.xs),
                     Text(
                       subtitle!,
                       style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.textTheme.bodySmall?.color?.withValues(alpha: 0.7),
+                        color: theme.textTheme.bodySmall?.color?.withValues(
+                          alpha: 0.7,
+                        ),
                       ),
                     ),
                   ],

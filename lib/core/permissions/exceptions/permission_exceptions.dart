@@ -37,28 +37,29 @@ abstract class PermissionException implements Exception {
 /// Permission was denied by the user
 class PermissionDeniedException extends PermissionException {
   const PermissionDeniedException(AppPermission permission)
-      : super('Permission denied', permission);
+    : super('Permission denied', permission);
 }
 
 /// Permission was permanently denied (requires settings)
 class PermissionPermanentlyDeniedException extends PermissionException {
   const PermissionPermanentlyDeniedException(AppPermission permission)
-      : super(
-          'Permission permanently denied. Please enable in settings.',
-          permission,
-        );
+    : super(
+        'Permission permanently denied. Please enable in settings.',
+        permission,
+      );
 }
 
 /// Permission request already in progress
 class PermissionRequestInProgressException extends PermissionException {
   const PermissionRequestInProgressException(AppPermission permission)
-      : super('Permission request is already in progress', permission);
+    : super('Permission request is already in progress', permission);
 }
 
 /// Location service is disabled
 class LocationServiceDisabledException implements Exception {
   const LocationServiceDisabledException([
-    this.message = 'Location service is disabled. Please enable it in settings.',
+    this.message =
+        'Location service is disabled. Please enable it in settings.',
   ]);
 
   final String message;

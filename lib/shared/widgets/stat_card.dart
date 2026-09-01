@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import '../../core/theme/app_spacing.dart';
 
 /// Reusable card widget for displaying trip statistics
@@ -37,15 +38,9 @@ class StatCard extends StatelessWidget {
                 color: iconColor ?? theme.colorScheme.primary,
               ),
               const SizedBox(height: AppSpacing.sm),
-              Text(
-                value,
-                style: theme.textTheme.headlineSmall,
-              ),
+              Text(value, style: theme.textTheme.headlineSmall),
               const SizedBox(height: AppSpacing.xs),
-              Text(
-                label,
-                style: theme.textTheme.bodySmall,
-              ),
+              Text(label, style: theme.textTheme.bodySmall),
             ],
           ),
         ),

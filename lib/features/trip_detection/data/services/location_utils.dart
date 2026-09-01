@@ -1,4 +1,5 @@
 import 'package:riverpod_annotation/riverpod_annotation.dart';
+
 import '../../domain/models/location_data.dart';
 
 part 'location_utils.g.dart';
@@ -8,11 +9,7 @@ part 'location_utils.g.dart';
 // callers use `LocationData.distanceTo` and `TripMetrics`' formatting getters
 // directly. Keep or fold into those once the pipeline refactor settles.
 @riverpod
-double distanceBetween(
-  Ref ref,
-  LocationData start,
-  LocationData end,
-) {
+double distanceBetween(Ref ref, LocationData start, LocationData end) {
   return start.distanceTo(end);
 }
 

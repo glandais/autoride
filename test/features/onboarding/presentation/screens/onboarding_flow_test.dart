@@ -41,8 +41,9 @@ void main() {
       tester,
       const OnboardingScreen(),
       overrides: [
-        permissionHandlerServiceProvider
-            .overrideWith(() => FakePermissionHandlerService(script)),
+        permissionHandlerServiceProvider.overrideWith(
+          () => FakePermissionHandlerService(script),
+        ),
         onboardingServiceProvider.overrideWith(() => onboardingService),
       ],
     );
@@ -71,8 +72,9 @@ void main() {
       container.read(onboardingProvider).currentPage;
 
   group('Onboarding - navigation', () {
-    testWidgets('welcome and features advance to the location rationale',
-        (tester) async {
+    testWidgets('welcome and features advance to the location rationale', (
+      tester,
+    ) async {
       final container = await pumpOnboarding(tester);
 
       expect(visibleText('Get Started'), findsOneWidget);
@@ -94,8 +96,9 @@ void main() {
   });
 
   group('Onboarding - location permission', () {
-    testWidgets('granting location advances to the background step',
-        (tester) async {
+    testWidgets('granting location advances to the background step', (
+      tester,
+    ) async {
       script.requestGrants[AppPermission.locationWhenInUse] = true;
       final container = await pumpOnboarding(tester);
       await goToPage(tester, container, 2);
@@ -112,8 +115,9 @@ void main() {
       expect(find.byType(BackgroundPermissionScreen), findsOneWidget);
     });
 
-    testWidgets('denying location keeps the user on the rationale, no crash',
-        (tester) async {
+    testWidgets('denying location keeps the user on the rationale, no crash', (
+      tester,
+    ) async {
       script.requestGrants[AppPermission.locationWhenInUse] = false;
       final container = await pumpOnboarding(tester);
       await goToPage(tester, container, 2);
@@ -131,47 +135,53 @@ void main() {
       expect(visibleText('Allow Location Access'), findsOneWidget);
     });
 
-    testWidgets('a permanently denied location sends the user to app settings',
-        (tester) async {
-      script.permanentlyDenied.add(AppPermission.locationWhenInUse);
-      final container = await pumpOnboarding(tester);
-      await goToPage(tester, container, 2);
+    testWidgets(
+      'a permanently denied location sends the user to app settings',
+      (tester) async {
+        script.permanentlyDenied.add(AppPermission.locationWhenInUse);
+        final container = await pumpOnboarding(tester);
+        await goToPage(tester, container, 2);
 
-      await tester.tap(visibleText('Allow Location Access'));
-      await tester.pumpAndSettle();
+        await tester.tap(visibleText('Allow Location Access'));
+        await tester.pumpAndSettle();
 
-      expect(script.settingsOpened, 1);
-      expect(currentPage(container), 2);
-      expect(
-        container.read(onboardingProvider).locationPermissionGranted,
-        isFalse,
-      );
-    });
+        expect(script.settingsOpened, 1);
+        expect(currentPage(container), 2);
+        expect(
+          container.read(onboardingProvider).locationPermissionGranted,
+          isFalse,
+        );
+      },
+    );
   });
 
   group('Onboarding - background permission', () {
-    testWidgets('granting background also requests notifications, then advances',
-        (tester) async {
-      script.requestGrants[AppPermission.locationWhenInUse] = true;
-      script.requestGrants[AppPermission.locationAlways] = true;
-      script.requestGrants[AppPermission.notification] = true;
-      final container = await pumpOnboarding(tester);
-      await goToPage(tester, container, 3);
+    testWidgets(
+      'granting background also requests notifications, then advances',
+      (tester) async {
+        script.requestGrants[AppPermission.locationWhenInUse] = true;
+        script.requestGrants[AppPermission.locationAlways] = true;
+        script.requestGrants[AppPermission.notification] = true;
+        final container = await pumpOnboarding(tester);
+        await goToPage(tester, container, 3);
 
-      await tester.tap(visibleText('Enable Automatic Tracking'));
-      await tester.pumpAndSettle();
+        await tester.tap(visibleText('Enable Automatic Tracking'));
+        await tester.pumpAndSettle();
 
-      expect(script.wasRequested(AppPermission.locationAlways), isTrue);
-      // POST_NOTIFICATIONS was declared but never requested before T041/L-016.
-      expect(script.wasRequested(AppPermission.notification), isTrue);
+        expect(script.wasRequested(AppPermission.locationAlways), isTrue);
+        // POST_NOTIFICATIONS was declared but never requested before T041/L-016.
+        expect(script.wasRequested(AppPermission.notification), isTrue);
 
-      final state = container.read(onboardingProvider);
-      expect(state.backgroundPermissionGranted, isTrue);
-      expect(state.notificationPermissionGranted, isTrue);
-      expect(currentPage(container), 4);
-    });
+        final state = container.read(onboardingProvider);
+        expect(state.backgroundPermissionGranted, isTrue);
+        expect(state.notificationPermissionGranted, isTrue);
+        expect(currentPage(container), 4);
+      },
+    );
 
-    testWidgets('a denied background permission still proceeds', (tester) async {
+    testWidgets('a denied background permission still proceeds', (
+      tester,
+    ) async {
       script.requestGrants[AppPermission.locationWhenInUse] = true;
       script.requestGrants[AppPermission.locationAlways] = false;
       script.requestGrants[AppPermission.notification] = true;
@@ -186,8 +196,9 @@ void main() {
       expect(currentPage(container), 4);
     });
 
-    testWidgets('"Skip for Now" requests notifications and advances',
-        (tester) async {
+    testWidgets('"Skip for Now" requests notifications and advances', (
+      tester,
+    ) async {
       script.requestGrants[AppPermission.notification] = true;
       final container = await pumpOnboarding(tester);
       await goToPage(tester, container, 3);
@@ -226,7 +237,10 @@ void main() {
       expect(visibleText('Trip Notifications'), findsOneWidget);
 
       // Granted rows are ticked, the refused one is crossed out.
-      expect(_summaryIcon('Location Access', Icons.check_circle), findsOneWidget);
+      expect(
+        _summaryIcon('Location Access', Icons.check_circle),
+        findsOneWidget,
+      );
       expect(_summaryIcon('Automatic Tracking', Icons.cancel), findsOneWidget);
       expect(
         _summaryIcon('Trip Notifications', Icons.check_circle),
@@ -258,8 +272,9 @@ void main() {
   group('Onboarding - app resume', () {
     // Android 11+ only grants "Allow all the time" through app settings, so the
     // status held when openAppSettings() returns is the pre-detour one.
-    testWidgets('re-reads every permission status when the app resumes',
-        (tester) async {
+    testWidgets('re-reads every permission status when the app resumes', (
+      tester,
+    ) async {
       final container = await pumpOnboarding(tester);
       await goToPage(tester, container, 3);
       expect(
@@ -286,14 +301,11 @@ void main() {
 
 /// The trailing state icon of one row of the setup summary.
 Finder _summaryIcon(String label, IconData icon) => find.descendant(
-      of: find
-          .ancestor(
-            of: find.text(label).hitTestable(),
-            matching: find.byType(Row),
-          )
-          .first,
-      matching: find.byIcon(icon),
-    );
+  of: find
+      .ancestor(of: find.text(label).hitTestable(), matching: find.byType(Row))
+      .first,
+  matching: find.byIcon(icon),
+);
 
 Future<void> _sendLifecycleState(
   WidgetTester tester,

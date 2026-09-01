@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
+
 import '../../domain/models/user_settings.dart';
 import '../../data/services/settings_service.dart';
 import '../../../trip_history/data/repositories/trip_repository.dart';
@@ -25,10 +26,7 @@ Future<String> appVersionLabel(Ref ref) async {
 
 /// Data management and app information section
 class DataManagementSection extends ConsumerWidget {
-  const DataManagementSection({
-    required this.settings,
-    super.key,
-  });
+  const DataManagementSection({required this.settings, super.key});
 
   final UserSettings settings;
 
@@ -46,15 +44,16 @@ class DataManagementSection extends ConsumerWidget {
             final confirmed = await _showConfirmDialog(
               context,
               title: 'Clear all trips?',
-              message:
-                  'This will permanently delete all trip data. This action cannot be undone.',
+              message: 'This will permanently delete all trip data. This action cannot be undone.',
               confirmText: 'Delete',
               isDestructive: true,
             );
 
             if (confirmed && context.mounted) {
               try {
-                final repository = await ref.read(tripRepositoryProvider.future);
+                final repository = await ref.read(
+                  tripRepositoryProvider.future,
+                );
                 await repository.deleteAllTrips();
 
                 if (context.mounted) {
@@ -99,7 +98,9 @@ class DataManagementSection extends ConsumerWidget {
 
             if (confirmed && context.mounted) {
               try {
-                await ref.read(settingsServiceProvider.notifier).resetToDefaults();
+                await ref
+                    .read(settingsServiceProvider.notifier)
+                    .resetToDefaults();
 
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
@@ -130,7 +131,9 @@ class DataManagementSection extends ConsumerWidget {
         // App version
         SettingTile(
           title: 'App version',
-          subtitle: ref.watch(appVersionLabelProvider).when(
+          subtitle: ref
+              .watch(appVersionLabelProvider)
+              .when(
                 data: (label) => label,
                 loading: () => 'AutoRide',
                 error: (_, _) => 'AutoRide',

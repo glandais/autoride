@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import '../exceptions/permission_exceptions.dart';
 
 /// Permission rationale data
@@ -43,8 +44,7 @@ class PermissionRationale {
   static const locationAlways = PermissionRationale(
     permission: AppPermission.locationAlways,
     title: 'Background Location',
-    description:
-        'Enable automatic trip detection even when the app is closed.',
+    description: 'Enable automatic trip detection even when the app is closed.',
     icon: Icons.auto_awesome,
     benefits: [
       'Completely automatic - no need to start/stop manually',
@@ -72,8 +72,7 @@ class PermissionRationale {
   static const activityRecognition = PermissionRationale(
     permission: AppPermission.activityRecognition,
     title: 'Activity Recognition',
-    description:
-        'Improve trip detection accuracy with activity recognition.',
+    description: 'Improve trip detection accuracy with activity recognition.',
     icon: Icons.directions_bike,
     benefits: [
       'Better cycling detection accuracy',

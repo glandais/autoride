@@ -39,13 +39,14 @@ void main() {
       expect(loadedSettings.distanceFilterMeters, equals(25));
       expect(loadedSettings.distanceUnit, equals(DistanceUnit.imperial));
       expect(loadedSettings.speedUnit, equals(SpeedUnit.mph));
-      expect(loadedSettings.batteryMode, equals(BatteryOptimizationMode.performance));
+      expect(
+        loadedSettings.batteryMode,
+        equals(BatteryOptimizationMode.performance),
+      );
     });
 
     test('should update lastModified timestamp when saving', () async {
-      const settings = UserSettings(
-        distanceFilterMeters: 20,
-      );
+      const settings = UserSettings(distanceFilterMeters: 20);
 
       // First save
       await repository.saveSettings(settings);
@@ -58,7 +59,9 @@ void main() {
       await Future.delayed(const Duration(milliseconds: 10));
 
       // Second save
-      await repository.saveSettings(firstLoad.copyWith(distanceFilterMeters: 30));
+      await repository.saveSettings(
+        firstLoad.copyWith(distanceFilterMeters: 30),
+      );
       final secondLoad = await repository.loadSettings();
       expect(secondLoad.lastModified, isNotNull);
 
@@ -102,7 +105,10 @@ void main() {
 
       expect(loadedSettings.detection.automaticDetectionEnabled, isFalse);
       expect(loadedSettings.detection.autoStartEnabled, isFalse);
-      expect(loadedSettings.detection.sensitivity, equals(CyclingSensitivity.high));
+      expect(
+        loadedSettings.detection.sensitivity,
+        equals(CyclingSensitivity.high),
+      );
       expect(loadedSettings.detection.minimumTripDurationSeconds, equals(180));
       expect(loadedSettings.detection.stationaryTimeoutSeconds, equals(400));
     });
@@ -152,51 +158,90 @@ void main() {
       expect(settings, equals(const UserSettings()));
     });
 
-    test('should preserve all settings fields during save/load cycle', () async {
-      const testSettings = UserSettings(
-        detection: DetectionSettings(
-          autoStartEnabled: false,
-          sensitivity: CyclingSensitivity.low,
-          minimumTripDurationSeconds: 90,
-          stationaryTimeoutSeconds: 200,
-        ),
-        batteryMode: BatteryOptimizationMode.aggressive,
-        locationAccuracy: LocationAccuracyPreference.low,
-        distanceFilterMeters: 30,
-        backgroundLocationEnabled: false,
-        tripNotificationsEnabled: false,
-        showOngoingNotification: false,
-        soundOnTripStartStop: true,
-        dataCollectionConsent: true,
-        anonymousUsageStats: true,
-        distanceUnit: DistanceUnit.imperial,
-        speedUnit: SpeedUnit.mph,
-        themeMode: ThemeMode.dark,
-        debugLoggingEnabled: true,
-        showSensorOverlay: true,
-      );
+    test(
+      'should preserve all settings fields during save/load cycle',
+      () async {
+        const testSettings = UserSettings(
+          detection: DetectionSettings(
+            autoStartEnabled: false,
+            sensitivity: CyclingSensitivity.low,
+            minimumTripDurationSeconds: 90,
+            stationaryTimeoutSeconds: 200,
+          ),
+          batteryMode: BatteryOptimizationMode.aggressive,
+          locationAccuracy: LocationAccuracyPreference.low,
+          distanceFilterMeters: 30,
+          backgroundLocationEnabled: false,
+          tripNotificationsEnabled: false,
+          showOngoingNotification: false,
+          soundOnTripStartStop: true,
+          dataCollectionConsent: true,
+          anonymousUsageStats: true,
+          distanceUnit: DistanceUnit.imperial,
+          speedUnit: SpeedUnit.mph,
+          themeMode: ThemeMode.dark,
+          debugLoggingEnabled: true,
+          showSensorOverlay: true,
+        );
 
-      await repository.saveSettings(testSettings);
-      final loadedSettings = await repository.loadSettings();
+        await repository.saveSettings(testSettings);
+        final loadedSettings = await repository.loadSettings();
 
-      // Verify all fields (except lastModified and version)
-      expect(loadedSettings.detection.autoStartEnabled, equals(testSettings.detection.autoStartEnabled));
-      expect(loadedSettings.detection.sensitivity, equals(testSettings.detection.sensitivity));
-      expect(loadedSettings.batteryMode, equals(testSettings.batteryMode));
-      expect(loadedSettings.locationAccuracy, equals(testSettings.locationAccuracy));
-      expect(loadedSettings.distanceFilterMeters, equals(testSettings.distanceFilterMeters));
-      expect(loadedSettings.backgroundLocationEnabled, equals(testSettings.backgroundLocationEnabled));
-      expect(loadedSettings.tripNotificationsEnabled, equals(testSettings.tripNotificationsEnabled));
-      expect(loadedSettings.showOngoingNotification, equals(testSettings.showOngoingNotification));
-      expect(loadedSettings.soundOnTripStartStop, equals(testSettings.soundOnTripStartStop));
-      expect(loadedSettings.dataCollectionConsent, equals(testSettings.dataCollectionConsent));
-      expect(loadedSettings.anonymousUsageStats, equals(testSettings.anonymousUsageStats));
-      expect(loadedSettings.distanceUnit, equals(testSettings.distanceUnit));
-      expect(loadedSettings.speedUnit, equals(testSettings.speedUnit));
-      expect(loadedSettings.themeMode, equals(testSettings.themeMode));
-      expect(loadedSettings.debugLoggingEnabled, equals(testSettings.debugLoggingEnabled));
-      expect(loadedSettings.showSensorOverlay, equals(testSettings.showSensorOverlay));
-    });
+        // Verify all fields (except lastModified and version)
+        expect(
+          loadedSettings.detection.autoStartEnabled,
+          equals(testSettings.detection.autoStartEnabled),
+        );
+        expect(
+          loadedSettings.detection.sensitivity,
+          equals(testSettings.detection.sensitivity),
+        );
+        expect(loadedSettings.batteryMode, equals(testSettings.batteryMode));
+        expect(
+          loadedSettings.locationAccuracy,
+          equals(testSettings.locationAccuracy),
+        );
+        expect(
+          loadedSettings.distanceFilterMeters,
+          equals(testSettings.distanceFilterMeters),
+        );
+        expect(
+          loadedSettings.backgroundLocationEnabled,
+          equals(testSettings.backgroundLocationEnabled),
+        );
+        expect(
+          loadedSettings.tripNotificationsEnabled,
+          equals(testSettings.tripNotificationsEnabled),
+        );
+        expect(
+          loadedSettings.showOngoingNotification,
+          equals(testSettings.showOngoingNotification),
+        );
+        expect(
+          loadedSettings.soundOnTripStartStop,
+          equals(testSettings.soundOnTripStartStop),
+        );
+        expect(
+          loadedSettings.dataCollectionConsent,
+          equals(testSettings.dataCollectionConsent),
+        );
+        expect(
+          loadedSettings.anonymousUsageStats,
+          equals(testSettings.anonymousUsageStats),
+        );
+        expect(loadedSettings.distanceUnit, equals(testSettings.distanceUnit));
+        expect(loadedSettings.speedUnit, equals(testSettings.speedUnit));
+        expect(loadedSettings.themeMode, equals(testSettings.themeMode));
+        expect(
+          loadedSettings.debugLoggingEnabled,
+          equals(testSettings.debugLoggingEnabled),
+        );
+        expect(
+          loadedSettings.showSensorOverlay,
+          equals(testSettings.showSensorOverlay),
+        );
+      },
+    );
 
     test('should handle multiple save/load cycles', () async {
       // First cycle

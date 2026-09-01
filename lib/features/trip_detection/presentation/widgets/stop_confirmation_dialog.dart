@@ -12,10 +12,7 @@ import 'package:autoride/core/theme/app_spacing.dart';
 /// - `false` if user cancels
 /// - `null` if dialog is dismissed
 class StopConfirmationDialog extends StatelessWidget {
-  const StopConfirmationDialog({
-    required this.metrics,
-    super.key,
-  });
+  const StopConfirmationDialog({required this.metrics, super.key});
 
   /// Current trip metrics to display in summary
   final TripMetrics metrics;
@@ -122,11 +119,7 @@ class StopConfirmationDialog extends StatelessWidget {
 
     return Row(
       children: [
-        Icon(
-          icon,
-          size: 16,
-          color: theme.colorScheme.primary,
-        ),
+        Icon(icon, size: 16, color: theme.colorScheme.primary),
         const SizedBox(width: AppSpacing.xs),
         Text(
           '$label:',

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../../../../core/theme/app_spacing.dart';
 import '../providers/onboarding_provider.dart';
 import '../widgets/onboarding_action_button.dart';
@@ -95,24 +96,14 @@ class _FeatureHighlight extends StatelessWidget {
 
     return Row(
       children: [
-        Icon(
-          icon,
-          size: AppSpacing.iconLg,
-          color: theme.colorScheme.primary,
-        ),
+        Icon(icon, size: AppSpacing.iconLg, color: theme.colorScheme.primary),
         const SizedBox(width: AppSpacing.md),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                title,
-                style: theme.textTheme.titleMedium,
-              ),
-              Text(
-                description,
-                style: theme.textTheme.bodySmall,
-              ),
+              Text(title, style: theme.textTheme.titleMedium),
+              Text(description, style: theme.textTheme.bodySmall),
             ],
           ),
         ),

@@ -12,9 +12,9 @@ class PermissionScript {
     Map<AppPermission, bool>? requestGrants,
     Map<AppPermission, bool>? checkGrants,
     Set<AppPermission>? permanentlyDenied,
-  })  : requestGrants = requestGrants ?? {},
-        checkGrants = checkGrants ?? {},
-        permanentlyDenied = permanentlyDenied ?? {};
+  }) : requestGrants = requestGrants ?? {},
+       checkGrants = checkGrants ?? {},
+       permanentlyDenied = permanentlyDenied ?? {};
 
   /// Result returned by `requestPermission` per permission (default: denied).
   final Map<AppPermission, bool> requestGrants;
@@ -61,7 +61,8 @@ class FakePermissionHandlerService extends PermissionHandlerService {
   @override
   Future<AppPermissionStatus> checkPermission(AppPermission permission) async {
     script.checked.add(permission);
-    final granted = script.checkGrants[permission] ??
+    final granted =
+        script.checkGrants[permission] ??
         script.requestGrants[permission] ??
         false;
     return _status(permission, granted);

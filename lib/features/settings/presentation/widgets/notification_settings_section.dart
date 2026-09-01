@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../../domain/models/user_settings.dart';
 import '../../data/services/settings_service.dart';
 import 'setting_section.dart';
@@ -7,10 +8,7 @@ import 'setting_tile.dart';
 
 /// Notification preferences section
 class NotificationSettingsSection extends ConsumerWidget {
-  const NotificationSettingsSection({
-    required this.settings,
-    super.key,
-  });
+  const NotificationSettingsSection({required this.settings, super.key});
 
   final UserSettings settings;
 
@@ -26,7 +24,9 @@ class NotificationSettingsSection extends ConsumerWidget {
           trailing: Switch(
             value: settings.tripNotificationsEnabled,
             onChanged: (value) {
-              ref.read(settingsServiceProvider.notifier).updatePartial(
+              ref
+                  .read(settingsServiceProvider.notifier)
+                  .updatePartial(
                     (s) => s.copyWith(tripNotificationsEnabled: value),
                   );
             },
@@ -41,7 +41,9 @@ class NotificationSettingsSection extends ConsumerWidget {
           trailing: Switch(
             value: settings.showOngoingNotification,
             onChanged: (value) {
-              ref.read(settingsServiceProvider.notifier).updatePartial(
+              ref
+                  .read(settingsServiceProvider.notifier)
+                  .updatePartial(
                     (s) => s.copyWith(showOngoingNotification: value),
                   );
             },
@@ -56,7 +58,9 @@ class NotificationSettingsSection extends ConsumerWidget {
           trailing: Switch(
             value: settings.soundOnTripStartStop,
             onChanged: (value) {
-              ref.read(settingsServiceProvider.notifier).updatePartial(
+              ref
+                  .read(settingsServiceProvider.notifier)
+                  .updatePartial(
                     (s) => s.copyWith(soundOnTripStartStop: value),
                   );
             },

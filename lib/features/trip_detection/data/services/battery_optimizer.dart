@@ -1,7 +1,9 @@
 import 'dart:async';
+
 import 'package:battery_plus/battery_plus.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:geolocator/geolocator.dart';
+
 import '../../../../core/constants/app_constants.dart';
 import '../../../settings/data/services/settings_service.dart';
 import '../../../settings/domain/models/user_settings.dart';
@@ -10,10 +12,10 @@ part 'battery_optimizer.g.dart';
 
 /// Battery level enum
 enum BatteryLevel {
-  critical,  // <10%
-  low,       // 10-20%
-  medium,    // 20-50%
-  normal,    // >50%
+  critical, // <10%
+  low, // 10-20%
+  medium, // 20-50%
+  normal, // >50%
 }
 
 /// Power mode configuration
@@ -114,8 +116,9 @@ class BatteryOptimizer extends _$BatteryOptimizer {
     _currentBatteryLevel = await _battery.batteryLevel;
 
     // Monitor battery level changes
-    _batterySubscription =
-        _battery.onBatteryStateChanged.listen((BatteryState batteryState) async {
+    _batterySubscription = _battery.onBatteryStateChanged.listen((
+      BatteryState batteryState,
+    ) async {
       _currentBatteryLevel = await _battery.batteryLevel;
       await _updatePowerMode();
     });
@@ -150,7 +153,8 @@ class BatteryOptimizer extends _$BatteryOptimizer {
     if (settings.batteryMode == BatteryOptimizationMode.performance) {
       // Still respect critical battery level for safety
       if (batteryLevel < AppConstants.criticalBatteryThreshold) {
-        return PowerModeConfig.low; // Use low instead of critical in performance mode
+        return PowerModeConfig
+            .low; // Use low instead of critical in performance mode
       }
       return PowerModeConfig.normal; // Maximum performance otherwise
     }

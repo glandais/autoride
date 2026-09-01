@@ -3,6 +3,7 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:autoride/features/trip_history/data/repositories/trip_repository.dart';
 import 'package:autoride/features/trip_detection/domain/models/trip.dart';
 import 'package:autoride/features/trip_detection/domain/models/activity_confidence.dart';
+
 import '../../../../helpers/test_database.dart';
 
 void main() {
@@ -32,7 +33,8 @@ void main() {
     double distance = 5000.0,
     List<RoutePoint>? routePoints,
   }) {
-    final start = startTime ?? DateTime.now().subtract(const Duration(hours: 1));
+    final start =
+        startTime ?? DateTime.now().subtract(const Duration(hours: 1));
     return Trip(
       startTime: start,
       endTime: start.add(Duration(seconds: durationSeconds)),
@@ -199,15 +201,12 @@ void main() {
       expect(trips, hasLength(2)); // Yesterday and today
     });
 
-    test(
-        'should load route points for each trip in date range '
+    test('should load route points for each trip in date range '
         'with correct association and order', () async {
       final base = DateTime(2026, 1, 1, 12);
 
       // Trip A: 3 route points (latitudes 1, 2, 3).
-      final tripA = await repository.saveTrip(
-        createTestTrip(startTime: base),
-      );
+      final tripA = await repository.saveTrip(createTestTrip(startTime: base));
       // Trip B: 2 route points (latitudes 10, 11).
       final tripB = await repository.saveTrip(
         createTestTrip(startTime: base.add(const Duration(hours: 1))),
@@ -263,14 +262,8 @@ void main() {
       expect(loadedB.routePoints, hasLength(2));
 
       // Correct association: every point belongs to its own trip.
-      expect(
-        loadedA.routePoints.every((p) => p.tripId == tripA.id),
-        isTrue,
-      );
-      expect(
-        loadedB.routePoints.every((p) => p.tripId == tripB.id),
-        isTrue,
-      );
+      expect(loadedA.routePoints.every((p) => p.tripId == tripA.id), isTrue);
+      expect(loadedB.routePoints.every((p) => p.tripId == tripB.id), isTrue);
 
       // Correct order: points ordered by timestamp ASC within each trip.
       expect(
@@ -292,7 +285,9 @@ void main() {
       );
       await repository.saveTrip(walkingTrip);
 
-      final cyclingTrips = await repository.getTripsByActivity(ActivityType.cycling);
+      final cyclingTrips = await repository.getTripsByActivity(
+        ActivityType.cycling,
+      );
 
       expect(cyclingTrips, hasLength(2));
       expect(
@@ -360,10 +355,7 @@ void main() {
       final savedTrip = await repository.saveTrip(trip);
 
       // Update trip
-      final updatedTrip = savedTrip.copyWith(
-        distance: 10000.0,
-        avgSpeed: 20.0,
-      );
+      final updatedTrip = savedTrip.copyWith(distance: 10000.0, avgSpeed: 20.0);
 
       await repository.updateTrip(updatedTrip);
 

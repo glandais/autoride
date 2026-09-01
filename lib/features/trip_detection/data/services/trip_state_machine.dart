@@ -1,4 +1,5 @@
 import 'package:riverpod_annotation/riverpod_annotation.dart';
+
 import '../../domain/models/trip_state.dart';
 import '../../../../core/constants/app_constants.dart';
 import 'notification_service.dart';
@@ -18,9 +19,7 @@ class TripStateMachine extends _$TripStateMachine {
   void startDetecting() {
     state.mapOrNull(
       idle: (_) {
-        state = TripState.detecting(
-          detectionStartTime: DateTime.now(),
-        );
+        state = TripState.detecting(detectionStartTime: DateTime.now());
       },
     );
   }
@@ -30,13 +29,12 @@ class TripStateMachine extends _$TripStateMachine {
   void startTripWithId(int tripId) {
     state.mapOrNull(
       detecting: (_) {
-        state = TripState.active(
-          tripId: tripId,
-          startTime: DateTime.now(),
-        );
+        state = TripState.active(tripId: tripId, startTime: DateTime.now());
 
         // Show trip start notification
-        ref.read(notificationServiceProvider.notifier).showTripStartNotification();
+        ref
+            .read(notificationServiceProvider.notifier)
+            .showTripStartNotification();
       },
     );
   }
@@ -78,14 +76,18 @@ class TripStateMachine extends _$TripStateMachine {
       active: (_) {
         // Show trip stop notification with final metrics
         recorderAsync.whenData((metrics) {
-          ref.read(notificationServiceProvider.notifier).showTripStopNotification(
-            distance: metrics.distanceMeters,
-            duration: Duration(seconds: metrics.durationSeconds),
-            avgSpeed: metrics.avgSpeedKmh ?? 0.0,
-          );
+          ref
+              .read(notificationServiceProvider.notifier)
+              .showTripStopNotification(
+                distance: metrics.distanceMeters,
+                duration: Duration(seconds: metrics.durationSeconds),
+                avgSpeed: metrics.avgSpeedKmh ?? 0.0,
+              );
 
           // Cancel foreground notification
-          ref.read(notificationServiceProvider.notifier).cancelForegroundNotification();
+          ref
+              .read(notificationServiceProvider.notifier)
+              .cancelForegroundNotification();
         });
 
         state = const TripState.idle();
@@ -93,14 +95,18 @@ class TripStateMachine extends _$TripStateMachine {
       paused: (_) {
         // Show trip stop notification with final metrics
         recorderAsync.whenData((metrics) {
-          ref.read(notificationServiceProvider.notifier).showTripStopNotification(
-            distance: metrics.distanceMeters,
-            duration: Duration(seconds: metrics.durationSeconds),
-            avgSpeed: metrics.avgSpeedKmh ?? 0.0,
-          );
+          ref
+              .read(notificationServiceProvider.notifier)
+              .showTripStopNotification(
+                distance: metrics.distanceMeters,
+                duration: Duration(seconds: metrics.durationSeconds),
+                avgSpeed: metrics.avgSpeedKmh ?? 0.0,
+              );
 
           // Cancel foreground notification
-          ref.read(notificationServiceProvider.notifier).cancelForegroundNotification();
+          ref
+              .read(notificationServiceProvider.notifier)
+              .cancelForegroundNotification();
         });
 
         state = const TripState.idle();

@@ -1,9 +1,11 @@
 import 'package:permission_handler/permission_handler.dart' as ph;
 import 'package:riverpod_annotation/riverpod_annotation.dart';
-import 'package:geolocator/geolocator.dart' hide
-    PermissionDeniedException,
-    PermissionRequestInProgressException,
-    LocationServiceDisabledException;
+import 'package:geolocator/geolocator.dart'
+    hide
+        PermissionDeniedException,
+        PermissionRequestInProgressException,
+        LocationServiceDisabledException;
+
 import '../models/permission_status.dart';
 import '../exceptions/permission_exceptions.dart';
 import '../../platform/models/platform_info.dart';
@@ -45,10 +47,7 @@ class PermissionHandlerService extends _$PermissionHandlerService {
     final phPermission = _toPermissionHandler(permission);
     final status = await phPermission.status;
 
-    return AppPermissionStatus.fromPermissionHandlerStatus(
-      permission,
-      status,
-    );
+    return AppPermissionStatus.fromPermissionHandlerStatus(permission, status);
   }
 
   /// Request permission with validation and error handling

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import '../../../../core/theme/app_spacing.dart';
 
 class OnboardingPageIndicator extends StatelessWidget {

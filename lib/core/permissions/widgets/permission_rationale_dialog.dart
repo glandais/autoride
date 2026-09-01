@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import '../../theme/app_spacing.dart';
 import '../models/permission_rationale.dart';
 
@@ -23,11 +24,7 @@ class PermissionRationaleDialog extends StatelessWidget {
     final theme = Theme.of(context);
 
     return AlertDialog(
-      icon: Icon(
-        rationale.icon,
-        size: 48,
-        color: theme.colorScheme.primary,
-      ),
+      icon: Icon(rationale.icon, size: 48, color: theme.colorScheme.primary),
       title: Text(rationale.title),
       content: SingleChildScrollView(
         child: Column(
@@ -35,10 +32,7 @@ class PermissionRationaleDialog extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Description
-            Text(
-              rationale.description,
-              style: theme.textTheme.bodyMedium,
-            ),
+            Text(rationale.description, style: theme.textTheme.bodyMedium),
             const SizedBox(height: AppSpacing.lg),
 
             // Benefits
@@ -60,10 +54,7 @@ class PermissionRationaleDialog extends StatelessWidget {
                     ),
                     const SizedBox(width: AppSpacing.xs),
                     Expanded(
-                      child: Text(
-                        benefit,
-                        style: theme.textTheme.bodySmall,
-                      ),
+                      child: Text(benefit, style: theme.textTheme.bodySmall),
                     ),
                   ],
                 ),

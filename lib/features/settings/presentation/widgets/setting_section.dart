@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import '../../../../core/theme/app_spacing.dart';
 
 /// Container widget for grouping related settings with a title
@@ -56,7 +57,9 @@ class SettingSection extends StatelessWidget {
                 Text(
                   subtitle!,
                   style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.textTheme.bodySmall?.color?.withValues(alpha: 0.7),
+                    color: theme.textTheme.bodySmall?.color?.withValues(
+                      alpha: 0.7,
+                    ),
                   ),
                 ),
               ],
@@ -73,10 +76,7 @@ class SettingSection extends StatelessWidget {
     );
 
     if (useCard) {
-      return Card(
-        margin: EdgeInsets.zero,
-        child: content,
-      );
+      return Card(margin: EdgeInsets.zero, child: content);
     }
 
     return content;

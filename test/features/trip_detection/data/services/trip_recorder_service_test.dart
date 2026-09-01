@@ -150,11 +150,7 @@ class _MockLocationPermissionService extends LocationPermissionService {
 }
 
 /// A GPS fix `latIndex` * ~11.1 m north of the reference point.
-LocationData _fix(
-  int latIndex, {
-  double speed = 5.0,
-  double accuracy = 5.0,
-}) {
+LocationData _fix(int latIndex, {double speed = 5.0, double accuracy = 5.0}) {
   return LocationData(
     latitude: 48.8566 + latIndex * 0.0001,
     longitude: 2.3522,
@@ -216,8 +212,9 @@ void main() {
     container = ProviderContainer(
       overrides: [
         // Inject the location stream the recorder subscribes to.
-        locationStreamProvider
-            .overrideWith((ref, settings) => locationController.stream),
+        locationStreamProvider.overrideWith(
+          (ref, settings) => locationController.stream,
+        ),
         // Inject the fake repository (provider is async -> return a Future).
         tripRepositoryProvider.overrideWith((ref) async => fakeRepository),
         // Mock NotificationService: the real TripStateMachine (used by the
@@ -226,8 +223,9 @@ void main() {
         // Force location permission "denied" so the recorder's location stream
         // errors cleanly (handled by its onError) instead of hitting the
         // unavailable Geolocator plugin.
-        locationPermissionServiceProvider
-            .overrideWith(_MockLocationPermissionService.new),
+        locationPermissionServiceProvider.overrideWith(
+          _MockLocationPermissionService.new,
+        ),
         // Break the recorder <-> state-machine circular provider dependency.
         tripStateMachineProvider.overrideWith(_TestTripStateMachine.new),
       ],
@@ -294,8 +292,7 @@ void main() {
 
   group('TripRecorderService - lifecycle', () {
     test('build returns zeroed metrics', () async {
-      final metrics =
-          await container.read(tripRecorderServiceProvider.future);
+      final metrics = await container.read(tripRecorderServiceProvider.future);
 
       expect(metrics.distanceMeters, 0.0);
       expect(metrics.durationSeconds, 0);
@@ -304,24 +301,26 @@ void main() {
       expect(metrics.maxSpeedKmh, isNull);
     });
 
-    test('startRecording persists an initial trip and updates state machine',
-        () async {
-      final recorder = await readRecorder();
+    test(
+      'startRecording persists an initial trip and updates state machine',
+      () async {
+        final recorder = await readRecorder();
 
-      await startTrip(recorder, confidenceScore: 0.85);
+        await startTrip(recorder, confidenceScore: 0.85);
 
-      // Initial trip saved exactly once with an assigned ID.
-      expect(fakeRepository.savedTrips, hasLength(1));
-      final saved = fakeRepository.savedTrips.first;
-      expect(saved.id, 1);
-      expect(saved.detectedActivity, ActivityType.cycling);
-      expect(saved.confidenceScore, 0.85);
+        // Initial trip saved exactly once with an assigned ID.
+        expect(fakeRepository.savedTrips, hasLength(1));
+        final saved = fakeRepository.savedTrips.first;
+        expect(saved.id, 1);
+        expect(saved.detectedActivity, ActivityType.cycling);
+        expect(saved.confidenceScore, 0.85);
 
-      // State machine advanced to active with the DB id.
-      final tripState = container.read(tripStateMachineProvider);
-      expect(tripState.isRecording, isTrue);
-      expect(tripState.currentTripId, 1);
-    });
+        // State machine advanced to active with the DB id.
+        final tripState = container.read(tripStateMachineProvider);
+        expect(tripState.isRecording, isTrue);
+        expect(tripState.currentTripId, 1);
+      },
+    );
 
     test('double startRecording throws StateError', () async {
       final recorder = await readRecorder();
@@ -358,8 +357,11 @@ void main() {
       // speed metrics remain null.
       expect(updated.distance, 0.0);
       expect(updated.maxSpeed, isNull);
-      expect(updated.endTime.isAfter(updated.startTime) ||
-          updated.endTime.isAtSameMomentAs(updated.startTime), isTrue);
+      expect(
+        updated.endTime.isAfter(updated.startTime) ||
+            updated.endTime.isAtSameMomentAs(updated.startTime),
+        isTrue,
+      );
 
       // Returned trip matches the persisted one.
       expect(finalTrip.id, updated.id);
@@ -392,8 +394,7 @@ void main() {
       expect(container.read(tripStateMachineProvider).currentTripId, 2);
     });
 
-    test(
-        'startRecording before the async build completes does not crash '
+    test('startRecording before the async build completes does not crash '
         '(regression: null-check on _repository, first on-device iOS run '
         '2026-09-01)', () async {
       // A repository that resolves slowly, like the real database open on a
@@ -401,16 +402,19 @@ void main() {
       // manual start button fires.
       final slowContainer = ProviderContainer(
         overrides: [
-          locationStreamProvider
-              .overrideWith((ref, settings) => locationController.stream),
+          locationStreamProvider.overrideWith(
+            (ref, settings) => locationController.stream,
+          ),
           tripRepositoryProvider.overrideWith((ref) async {
             await Future<void>.delayed(const Duration(milliseconds: 200));
             return fakeRepository;
           }),
-          notificationServiceProvider
-              .overrideWith(_MockNotificationService.new),
-          locationPermissionServiceProvider
-              .overrideWith(_MockLocationPermissionService.new),
+          notificationServiceProvider.overrideWith(
+            _MockNotificationService.new,
+          ),
+          locationPermissionServiceProvider.overrideWith(
+            _MockLocationPermissionService.new,
+          ),
           tripStateMachineProvider.overrideWith(_TestTripStateMachine.new),
         ],
       );
@@ -418,11 +422,15 @@ void main() {
       await slowContainer.read(settingsServiceProvider.future);
       // Same keep-alive pattern as readRecorder(): in the real app the
       // tracking screen and AutoDetectionController hold these listeners.
-      final keepAlive =
-          slowContainer.listen(tripRecorderServiceProvider, (_, _) {});
+      final keepAlive = slowContainer.listen(
+        tripRecorderServiceProvider,
+        (_, _) {},
+      );
       addTearDown(keepAlive.close);
-      final keepAliveSm =
-          slowContainer.listen(tripStateMachineProvider, (_, _) {});
+      final keepAliveSm = slowContainer.listen(
+        tripStateMachineProvider,
+        (_, _) {},
+      );
       addTearDown(keepAliveSm.close);
 
       // Deliberately NOT awaiting tripRecorderServiceProvider.future — the
@@ -605,32 +613,36 @@ void main() {
     });
 
     test(
-        'L-008: a failing final flush keeps the tail buffered and the next trip '
-        'retries it', () async {
-      final recorder = await readRecorder();
-      await startTrip(recorder);
+      'L-008: a failing final flush keeps the tail buffered and the next trip '
+      'retries it',
+      () async {
+        final recorder = await readRecorder();
+        await startTrip(recorder);
 
-      await pushFix(_fix(0));
-      await pushFix(_fix(2));
+        await pushFix(_fix(0));
+        await pushFix(_fix(2));
 
-      fakeRepository.throwOnSaveRoutePoints = true;
-      final finalTrip = await recorder.stopRecording();
+        fakeRepository.throwOnSaveRoutePoints = true;
+        final finalTrip = await recorder.stopRecording();
 
-      // Nothing persisted, but the trip itself was finalized.
-      expect(fakeRepository.savedRoutePointBatches, isEmpty);
-      expect(finalTrip.distance, closeTo(22.3, 1.0));
+        // Nothing persisted, but the trip itself was finalized.
+        expect(fakeRepository.savedRoutePointBatches, isEmpty);
+        expect(finalTrip.distance, closeTo(22.3, 1.0));
 
-      // Next trip retries the buffered points, which carry the OLD trip id.
-      fakeRepository.throwOnSaveRoutePoints = false;
-      await startTrip(recorder);
+        // Next trip retries the buffered points, which carry the OLD trip id.
+        fakeRepository.throwOnSaveRoutePoints = false;
+        await startTrip(recorder);
 
-      expect(fakeRepository.savedRoutePointBatches, hasLength(1));
-      expect(fakeRepository.savedRoutePointBatches.first, hasLength(2));
-      expect(
-        fakeRepository.savedRoutePointBatches.first.every((p) => p.tripId == 1),
-        isTrue,
-      );
-    });
+        expect(fakeRepository.savedRoutePointBatches, hasLength(1));
+        expect(fakeRepository.savedRoutePointBatches.first, hasLength(2));
+        expect(
+          fakeRepository.savedRoutePointBatches.first.every(
+            (p) => p.tripId == 1,
+          ),
+          isTrue,
+        );
+      },
+    );
   });
 
   group('TripRecorderService - session ownership (audit #2)', () {
@@ -642,8 +654,10 @@ void main() {
       await dropExternalListeners();
 
       // Same notifier instance: the session keepAlive link held it.
-      expect(container.read(tripRecorderServiceProvider.notifier),
-          same(recorder));
+      expect(
+        container.read(tripRecorderServiceProvider.notifier),
+        same(recorder),
+      );
 
       // And it is still consuming GPS fixes.
       await pushFix(_fix(2));
@@ -664,24 +678,30 @@ void main() {
       container.invalidate(tripRepositoryProvider);
       await pumpEventQueue();
 
-      expect(container.read(tripRecorderServiceProvider.notifier),
-          same(recorder));
+      expect(
+        container.read(tripRecorderServiceProvider.notifier),
+        same(recorder),
+      );
 
       await pushFix(_fix(2));
       expect(currentDistance(), closeTo(22.3, 1.0));
     });
 
-    test('stopRecording releases the session so the provider can dispose',
-        () async {
-      final recorder = await readRecorder();
-      await startTrip(recorder);
-      await recorder.stopRecording();
+    test(
+      'stopRecording releases the session so the provider can dispose',
+      () async {
+        final recorder = await readRecorder();
+        await startTrip(recorder);
+        await recorder.stopRecording();
 
-      await dropExternalListeners();
+        await dropExternalListeners();
 
-      expect(container.read(tripRecorderServiceProvider.notifier),
-          isNot(same(recorder)));
-    });
+        expect(
+          container.read(tripRecorderServiceProvider.notifier),
+          isNot(same(recorder)),
+        );
+      },
+    );
 
     test('a failed startRecording does not pin the session', () async {
       final recorder = await readRecorder();
@@ -698,8 +718,10 @@ void main() {
 
       await dropExternalListeners();
 
-      expect(container.read(tripRecorderServiceProvider.notifier),
-          isNot(same(recorder)));
+      expect(
+        container.read(tripRecorderServiceProvider.notifier),
+        isNot(same(recorder)),
+      );
     });
   });
 }

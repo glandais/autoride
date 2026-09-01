@@ -1,6 +1,8 @@
 import 'dart:async';
+
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:sensors_plus/sensors_plus.dart';
+
 import '../../domain/models/motion_data.dart';
 import 'battery_optimizer.dart';
 
@@ -21,9 +23,7 @@ Duration _samplingPeriodFor(Ref ref) {
 /// Accelerometer stream provider
 /// Streams raw accelerometer data at the current power mode's sampling rate
 @riverpod
-Stream<AccelerometerData> accelerometerStream(
-  Ref ref,
-) async* {
+Stream<AccelerometerData> accelerometerStream(Ref ref) async* {
   final samplingPeriod = _samplingPeriodFor(ref);
 
   yield* accelerometerEventStream(samplingPeriod: samplingPeriod)
@@ -33,9 +33,7 @@ Stream<AccelerometerData> accelerometerStream(
 /// Gyroscope stream provider
 /// Streams raw gyroscope data at the current power mode's sampling rate
 @riverpod
-Stream<GyroscopeData> gyroscopeStream(
-  Ref ref,
-) async* {
+Stream<GyroscopeData> gyroscopeStream(Ref ref) async* {
   final samplingPeriod = _samplingPeriodFor(ref);
 
   yield* gyroscopeEventStream(samplingPeriod: samplingPeriod)
@@ -121,9 +119,7 @@ class SensorService extends _$SensorService {
       await accelerometerEventStream()
           .timeout(const Duration(seconds: 2))
           .first;
-      await gyroscopeEventStream()
-          .timeout(const Duration(seconds: 2))
-          .first;
+      await gyroscopeEventStream().timeout(const Duration(seconds: 2)).first;
       return true;
     } catch (e) {
       return false;

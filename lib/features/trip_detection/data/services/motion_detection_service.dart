@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:collection';
+
 import 'package:riverpod_annotation/riverpod_annotation.dart';
+
 import '../../domain/models/motion_data.dart';
 import 'sensor_service.dart';
 import '../../../../core/constants/app_constants.dart';

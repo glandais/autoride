@@ -1,5 +1,7 @@
 import 'dart:async';
+
 import 'package:riverpod_annotation/riverpod_annotation.dart';
+
 import '../../domain/models/motion_data.dart';
 import '../../domain/models/activity_confidence.dart';
 import '../../domain/models/location_data.dart';
@@ -118,8 +120,7 @@ class CyclingPatternDetector extends _$CyclingPatternDetector {
     // and make the result depend on buffer fill level rather than pedaling.
     final firstPeakTime = window.samples[peaks.first].timestamp;
     final lastPeakTime = window.samples[peaks.last].timestamp;
-    final peakSpanMs =
-        lastPeakTime.difference(firstPeakTime).inMilliseconds;
+    final peakSpanMs = lastPeakTime.difference(firstPeakTime).inMilliseconds;
     if (peakSpanMs <= 0) {
       return 0.0; // Degenerate span (e.g. identical timestamps)
     }
@@ -132,8 +133,8 @@ class CyclingPatternDetector extends _$CyclingPatternDetector {
       // Calculate how close to typical cycling frequency
       final distanceFromTypical =
           (frequency - AppConstants.pedalingFrequencyTypical).abs();
-      const maxDistance = AppConstants.pedalingFrequencyMax -
-          AppConstants.pedalingFrequencyMin;
+      const maxDistance =
+          AppConstants.pedalingFrequencyMax - AppConstants.pedalingFrequencyMin;
       final score = 1.0 - (distanceFromTypical / maxDistance);
       return score.clamp(0.6, 1.0); // Cycling frequency detected
     }
@@ -162,10 +163,10 @@ class CyclingPatternDetector extends _$CyclingPatternDetector {
     if (speedKmh >= AppConstants.cyclingSpeedMin &&
         speedKmh <= AppConstants.cyclingSpeedMax) {
       // Calculate how typical the speed is for cycling
-      final distanceFromTypical =
-          (speedKmh - AppConstants.cyclingSpeedTypical).abs();
-      const maxDistance = AppConstants.cyclingSpeedMax -
-          AppConstants.cyclingSpeedMin;
+      final distanceFromTypical = (speedKmh - AppConstants.cyclingSpeedTypical)
+          .abs();
+      const maxDistance =
+          AppConstants.cyclingSpeedMax - AppConstants.cyclingSpeedMin;
       final score = 1.0 - (distanceFromTypical / maxDistance);
       return score.clamp(0.6, 1.0);
     } else if (speedKmh < AppConstants.cyclingSpeedMin) {
@@ -186,7 +187,8 @@ class CyclingPatternDetector extends _$CyclingPatternDetector {
     final avgRotation = window.averageRotation;
 
     // Cycling score (weighted average)
-    final cyclingScore = (motionScore * AppConstants.motionScoreWeight) +
+    final cyclingScore =
+        (motionScore * AppConstants.motionScoreWeight) +
         (frequencyScore * AppConstants.frequencyScoreWeight) +
         (speedScore * AppConstants.speedScoreWeight);
 
@@ -194,7 +196,8 @@ class CyclingPatternDetector extends _$CyclingPatternDetector {
     final stationaryScore = (avgAccel < 10.0 && avgRotation < 0.3) ? 0.9 : 0.1;
 
     // Walking score
-    final walkingScore = (avgAccel >= 10.0 &&
+    final walkingScore =
+        (avgAccel >= 10.0 &&
             avgAccel < 12.0 &&
             frequencyScore < 0.5 &&
             speedScore < 0.4)
@@ -202,14 +205,14 @@ class CyclingPatternDetector extends _$CyclingPatternDetector {
         : 0.2;
 
     // Driving score
-    final drivingScore = (avgAccel > 10.0 &&
-            avgRotation < 1.0 &&
-            speedScore < 0.3) // High speed
+    final drivingScore =
+        (avgAccel > 10.0 && avgRotation < 1.0 && speedScore < 0.3) // High speed
         ? 0.6
         : 0.2;
 
     // Running score
-    final runningScore = (avgAccel > 12.0 &&
+    final runningScore =
+        (avgAccel > 12.0 &&
             frequencyScore > 0.5 &&
             frequencyScore < 0.7 &&
             speedScore < 0.5)
@@ -228,7 +231,8 @@ class CyclingPatternDetector extends _$CyclingPatternDetector {
 
   /// Get current activity classification
   Future<ActivityConfidence> getCurrentActivity() async {
-    final window = ref.read(motionDetectionServiceProvider.notifier)
+    final window = ref
+        .read(motionDetectionServiceProvider.notifier)
         .getCurrentWindow();
 
     if (window == null || !window.hasEnoughSamples) {

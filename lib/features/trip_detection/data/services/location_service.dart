@@ -1,5 +1,6 @@
 import 'package:geolocator/geolocator.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
+
 import '../../domain/models/location_data.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/utils/logger.dart';
@@ -34,9 +35,7 @@ class LocationService extends _$LocationService {
   }
 
   /// Get current location (one-time)
-  Future<LocationData?> getCurrentLocation({
-    LocationSettings? settings,
-  }) async {
+  Future<LocationData?> getCurrentLocation({LocationSettings? settings}) async {
     try {
       // Check permission
       final permissionStatus = await ref.read(
@@ -129,9 +128,8 @@ Stream<LocationData> locationStream(
 
   while (true) {
     try {
-      yield* Geolocator.getPositionStream(
-        locationSettings: effectiveSettings,
-      ).map((position) => LocationData.fromPosition(position));
+      yield* Geolocator.getPositionStream(locationSettings: effectiveSettings)
+          .map((position) => LocationData.fromPosition(position));
 
       // Completed without error: still an interruption of a stream that is
       // supposed to run for the whole trip, so resubscribe.
@@ -147,7 +145,8 @@ Stream<LocationData> locationStream(
 
 /// Exponential backoff for stream resubscription, capped.
 Duration _retryDelay(int failureCount) {
-  final millis = AppConstants.locationStreamRetryDelay.inMilliseconds *
+  final millis =
+      AppConstants.locationStreamRetryDelay.inMilliseconds *
       (1 << (failureCount - 1).clamp(0, 5));
   final capped = millis.clamp(
     AppConstants.locationStreamRetryDelay.inMilliseconds,

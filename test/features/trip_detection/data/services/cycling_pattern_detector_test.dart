@@ -67,8 +67,9 @@ void main() {
   ProviderContainer containerFor(MotionWindow? window) {
     final container = ProviderContainer(
       overrides: [
-        motionDetectionServiceProvider
-            .overrideWith(() => _FakeMotionDetectionService(window)),
+        motionDetectionServiceProvider.overrideWith(
+          () => _FakeMotionDetectionService(window),
+        ),
       ],
     );
     addTearDown(container.dispose);
@@ -116,53 +117,65 @@ void main() {
   // ---------------------------------------------------------------------------
 
   group('CyclingPatternDetector - layer 1 (motion pattern)', () {
-    test('scores 1.0 when accel and rotation are both in cycling range',
-        () async {
-      final result = await analyse(buildWindow(
-        count: 150,
-        accelMagnitude: 12.0, // within [10, 20]
-        gyroMagnitude: 1.0, // within [0.5, 3.0]
-      ));
+    test(
+      'scores 1.0 when accel and rotation are both in cycling range',
+      () async {
+        final result = await analyse(
+          buildWindow(
+            count: 150,
+            accelMagnitude: 12.0, // within [10, 20]
+            gyroMagnitude: 1.0, // within [0.5, 3.0]
+          ),
+        );
 
-      expect(result.motionScore, equals(1.0));
-    });
+        expect(result.motionScore, equals(1.0));
+      },
+    );
 
     test('scores 0.5 when only the acceleration fits', () async {
-      final result = await analyse(buildWindow(
-        count: 150,
-        accelMagnitude: 12.0,
-        gyroMagnitude: 0.1, // below cyclingRotationMin
-      ));
+      final result = await analyse(
+        buildWindow(
+          count: 150,
+          accelMagnitude: 12.0,
+          gyroMagnitude: 0.1, // below cyclingRotationMin
+        ),
+      );
 
       expect(result.motionScore, equals(0.5));
     });
 
     test('scores 0.5 when only the rotation fits', () async {
-      final result = await analyse(buildWindow(
-        count: 150,
-        accelMagnitude: 25.0, // above cyclingAccelerationMax
-        gyroMagnitude: 1.0,
-      ));
+      final result = await analyse(
+        buildWindow(
+          count: 150,
+          accelMagnitude: 25.0, // above cyclingAccelerationMax
+          gyroMagnitude: 1.0,
+        ),
+      );
 
       expect(result.motionScore, equals(0.5));
     });
 
     test('gives the below-range accel consolation 0.2', () async {
-      final result = await analyse(buildWindow(
-        count: 150,
-        accelMagnitude: 9.0, // below cyclingAccelerationMin
-        gyroMagnitude: 0.1,
-      ));
+      final result = await analyse(
+        buildWindow(
+          count: 150,
+          accelMagnitude: 9.0, // below cyclingAccelerationMin
+          gyroMagnitude: 0.1,
+        ),
+      );
 
       expect(result.motionScore, closeTo(0.2, 1e-9));
     });
 
     test('scores 0.0 when accel is above range and rotation is not', () async {
-      final result = await analyse(buildWindow(
-        count: 150,
-        accelMagnitude: 25.0,
-        gyroMagnitude: 5.0, // above cyclingRotationMax
-      ));
+      final result = await analyse(
+        buildWindow(
+          count: 150,
+          accelMagnitude: 25.0,
+          gyroMagnitude: 5.0, // above cyclingRotationMax
+        ),
+      );
 
       expect(result.motionScore, equals(0.0));
     });
@@ -175,10 +188,12 @@ void main() {
   group('CyclingPatternDetector - layer 2 (pedaling frequency)', () {
     test('scores 0.0 below AppConstants.minSamplesForPattern', () async {
       // Enough to be analysed (>= 50) but not to look for a cadence (< 100).
-      final result = await analyse(buildWindow(
-        count: AppConstants.minSamplesForPattern - 1,
-        peakEvery: 42,
-      ));
+      final result = await analyse(
+        buildWindow(
+          count: AppConstants.minSamplesForPattern - 1,
+          peakEvery: 42,
+        ),
+      );
 
       expect(result.frequencyScore, equals(0.0));
     });
@@ -197,12 +212,14 @@ void main() {
     });
 
     test('ignores peaks below the 10.0 m/s² amplitude threshold', () async {
-      final result = await analyse(buildWindow(
-        count: 150,
-        accelMagnitude: 8.0,
-        peakEvery: 42,
-        peakMagnitude: 9.5, // still under the isPeak threshold of 10.0
-      ));
+      final result = await analyse(
+        buildWindow(
+          count: 150,
+          accelMagnitude: 8.0,
+          peakEvery: 42,
+          peakMagnitude: 9.5, // still under the isPeak threshold of 10.0
+        ),
+      );
 
       expect(result.frequencyScore, equals(0.0));
     });
@@ -230,11 +247,9 @@ void main() {
     });
 
     test('scores 0.0 on a degenerate (zero-length) peak span', () async {
-      final result = await analyse(buildWindow(
-        count: 300,
-        peakEvery: 42,
-        identicalTimestamps: true,
-      ));
+      final result = await analyse(
+        buildWindow(count: 300, peakEvery: 42, identicalTimestamps: true),
+      );
 
       expect(result.frequencyScore, equals(0.0));
     });
@@ -263,11 +278,9 @@ void main() {
     });
 
     test('speedScore is the neutral 0.5 for a stationary window too', () async {
-      final result = await analyse(buildWindow(
-        count: 150,
-        accelMagnitude: 9.8,
-        gyroMagnitude: 0.0,
-      ));
+      final result = await analyse(
+        buildWindow(count: 150, accelMagnitude: 9.8, gyroMagnitude: 0.0),
+      );
 
       expect(result.speedScore, equals(0.5));
     });
@@ -292,7 +305,8 @@ void main() {
     test('combines the layers with the documented 40/35/25 weights', () async {
       final result = await analyse(buildWindow(count: 300, peakEvery: 42));
 
-      final expected = result.motionScore * AppConstants.motionScoreWeight +
+      final expected =
+          result.motionScore * AppConstants.motionScoreWeight +
           result.speedScore * AppConstants.speedScoreWeight +
           result.frequencyScore * AppConstants.frequencyScoreWeight;
 
@@ -301,11 +315,9 @@ void main() {
     });
 
     test('classifies a resting device as stationary', () async {
-      final result = await analyse(buildWindow(
-        count: 150,
-        accelMagnitude: 9.8,
-        gyroMagnitude: 0.0,
-      ));
+      final result = await analyse(
+        buildWindow(count: 150, accelMagnitude: 9.8, gyroMagnitude: 0.0),
+      );
 
       expect(result.activity, equals(ActivityType.stationary));
       expect(result.isCyclingDetected, isFalse);
@@ -317,11 +329,9 @@ void main() {
       // speedScore < 0.4, which the hardcoded 0.5 can never satisfy. This pins
       // the second consequence of the layer-3 defect: the walking branch of
       // `_calculateActivityScores` is dead too.
-      final result = await analyse(buildWindow(
-        count: 150,
-        accelMagnitude: 11.0,
-        gyroMagnitude: 0.1,
-      ));
+      final result = await analyse(
+        buildWindow(count: 150, accelMagnitude: 11.0, gyroMagnitude: 0.1),
+      );
 
       expect(result.allScores?[ActivityType.walking], equals(0.2));
     });
@@ -339,7 +349,9 @@ void main() {
       final container = containerFor(buildWindow(count: 300, peakEvery: 42));
 
       expect(
-        await container.read(cyclingPatternDetectorProvider.notifier).isCycling(),
+        await container
+            .read(cyclingPatternDetectorProvider.notifier)
+            .isCycling(),
         isTrue,
       );
     });
@@ -350,7 +362,9 @@ void main() {
       );
 
       expect(
-        await container.read(cyclingPatternDetectorProvider.notifier).isCycling(),
+        await container
+            .read(cyclingPatternDetectorProvider.notifier)
+            .isCycling(),
         isFalse,
       );
     });
@@ -359,7 +373,9 @@ void main() {
       final container = containerFor(null);
 
       expect(
-        await container.read(cyclingPatternDetectorProvider.notifier).isCycling(),
+        await container
+            .read(cyclingPatternDetectorProvider.notifier)
+            .isCycling(),
         isFalse,
       );
     });

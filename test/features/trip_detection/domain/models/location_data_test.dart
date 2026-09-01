@@ -148,10 +148,7 @@ void main() {
         LocationPermissionStatus.denied,
       );
 
-      expect(
-        exception.toString(),
-        contains('Location permission not granted'),
-      );
+      expect(exception.toString(), contains('Location permission not granted'));
     });
 
     test('initial build state is null', () async {

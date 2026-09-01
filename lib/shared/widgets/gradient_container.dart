@@ -21,11 +21,7 @@ class GradientContainer extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: colors,
-          begin: begin,
-          end: end,
-        ),
+        gradient: LinearGradient(colors: colors, begin: begin, end: end),
         borderRadius: borderRadius,
       ),
       child: child,

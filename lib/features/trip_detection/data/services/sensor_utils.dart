@@ -1,5 +1,7 @@
 import 'dart:math';
+
 import 'package:riverpod_annotation/riverpod_annotation.dart';
+
 import '../../domain/models/motion_data.dart';
 
 part 'sensor_utils.g.dart';
@@ -21,20 +23,14 @@ class SensorUtils {
 
   /// Detect peaks in sensor data (for pattern recognition)
   /// Returns true if value is a local maximum
-  static bool isPeak(
-    List<double> values,
-    int index, {
-    double threshold = 0.0,
-  }) {
+  static bool isPeak(List<double> values, int index, {double threshold = 0.0}) {
     if (index <= 0 || index >= values.length - 1) return false;
 
     final current = values[index];
     final prev = values[index - 1];
     final next = values[index + 1];
 
-    return current > prev &&
-        current > next &&
-        current > threshold;
+    return current > prev && current > next && current > threshold;
   }
 
   /// Calculate standard deviation of values
@@ -42,9 +38,9 @@ class SensorUtils {
     if (values.isEmpty) return 0.0;
 
     final mean = values.reduce((a, b) => a + b) / values.length;
-    final variance = values
-        .map((x) => pow(x - mean, 2))
-        .reduce((a, b) => a + b) / values.length;
+    final variance =
+        values.map((x) => pow(x - mean, 2)).reduce((a, b) => a + b) /
+        values.length;
 
     return sqrt(variance);
   }
@@ -52,9 +48,7 @@ class SensorUtils {
   /// Downsample data by taking every nth sample
   static List<T> downsample<T>(List<T> data, int factor) {
     if (factor <= 1) return data;
-    return [
-      for (var i = 0; i < data.length; i += factor) data[i]
-    ];
+    return [for (var i = 0; i < data.length; i += factor) data[i]];
   }
 }
 

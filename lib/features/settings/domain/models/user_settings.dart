@@ -1,5 +1,6 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 import 'package:geolocator/geolocator.dart';
+
 import 'detection_settings.dart';
 
 part 'user_settings.freezed.dart';
@@ -13,11 +14,7 @@ enum BatteryOptimizationMode {
 }
 
 /// Location accuracy preference levels
-enum LocationAccuracyPreference {
-  low,
-  medium,
-  high,
-}
+enum LocationAccuracyPreference { low, medium, high }
 
 /// Distance units for display
 enum DistanceUnit {
@@ -33,11 +30,7 @@ enum SpeedUnit {
 }
 
 /// Theme modes
-enum ThemeMode {
-  light,
-  dark,
-  system,
-}
+enum ThemeMode { light, dark, system }
 
 /// Complete user settings model
 @freezed

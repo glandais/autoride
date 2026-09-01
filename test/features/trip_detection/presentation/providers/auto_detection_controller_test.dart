@@ -94,10 +94,10 @@ class _SpyTripRecorderService extends TripRecorderService {
 
   @override
   Future<TripMetrics> build() async => const TripMetrics(
-        distanceMeters: 0,
-        durationSeconds: 0,
-        routePointCount: 0,
-      );
+    distanceMeters: 0,
+    durationSeconds: 0,
+    routePointCount: 0,
+  );
 
   @override
   Future<void> startRecording({
@@ -137,8 +137,8 @@ class _FakeSettingsService extends SettingsService {
 
   @override
   Future<UserSettings> build() async => UserSettings(
-        detection: DetectionSettings(automaticDetectionEnabled: enabled),
-      );
+    detection: DetectionSettings(automaticDetectionEnabled: enabled),
+  );
 
   void setEnabled(bool value) {
     state = AsyncValue.data(
@@ -235,22 +235,27 @@ void main() {
     _PermissionLog? permissionLog,
     bool isFirstLaunch = false,
     _FakeSettingsService? settings,
-  }) =>
-      [
-        settingsServiceProvider
-            .overrideWith(() => settings ?? _FakeSettingsService(enabled: enabled)),
-        locationPermissionServiceProvider.overrideWith(
-            () => _FakePermissionService(permissionLog ?? _PermissionLog(permission))),
-        onboardingServiceProvider
-            .overrideWith(() => _FakeOnboardingService(firstLaunch: isFirstLaunch)),
-        tripDetectionCoordinatorProvider
-            .overrideWith(() => _SpyCoordinator(coordinator)),
-        tripStateMachineProvider.overrideWith(_TestTripStateMachine.new),
-        tripRecorderServiceProvider
-            .overrideWith(() => _SpyTripRecorderService(recorder)),
-        backgroundLocationServiceProvider
-            .overrideWith(() => _FakeBackgroundLocationService(backgroundService)),
-      ];
+  }) => [
+    settingsServiceProvider.overrideWith(
+      () => settings ?? _FakeSettingsService(enabled: enabled),
+    ),
+    locationPermissionServiceProvider.overrideWith(
+      () => _FakePermissionService(permissionLog ?? _PermissionLog(permission)),
+    ),
+    onboardingServiceProvider.overrideWith(
+      () => _FakeOnboardingService(firstLaunch: isFirstLaunch),
+    ),
+    tripDetectionCoordinatorProvider.overrideWith(
+      () => _SpyCoordinator(coordinator),
+    ),
+    tripStateMachineProvider.overrideWith(_TestTripStateMachine.new),
+    tripRecorderServiceProvider.overrideWith(
+      () => _SpyTripRecorderService(recorder),
+    ),
+    backgroundLocationServiceProvider.overrideWith(
+      () => _FakeBackgroundLocationService(backgroundService),
+    ),
+  ];
 
   /// Builds the controller and lets the async settings/permission/onboarding
   /// values resolve, so the lifecycle decision has actually been applied.
@@ -258,8 +263,10 @@ void main() {
     List<Override> overrides,
   ) async {
     container = ProviderContainer(overrides: overrides);
-    controllerSubscription =
-        container.listen(autoDetectionControllerProvider, (_, _) {});
+    controllerSubscription = container.listen(
+      autoDetectionControllerProvider,
+      (_, _) {},
+    );
     await pumpEventQueue();
     return container.read(autoDetectionControllerProvider.notifier);
   }
@@ -276,17 +283,19 @@ void main() {
   });
 
   group('AutoDetectionController - detection lifecycle', () {
-    test('starts the coordinator when the setting is on and permission granted',
-        () async {
-      await startController(overridesFor());
+    test(
+      'starts the coordinator when the setting is on and permission granted',
+      () async {
+        await startController(overridesFor());
 
-      expect(coordinator.startCalls, 1);
-      expect(coordinator.stopCalls, 0);
-      expect(
-        container.read(autoDetectionControllerProvider).shouldListen,
-        isTrue,
-      );
-    });
+        expect(coordinator.startCalls, 1);
+        expect(coordinator.stopCalls, 0);
+        expect(
+          container.read(autoDetectionControllerProvider).shouldListen,
+          isTrue,
+        );
+      },
+    );
 
     test('never starts while location permission is missing', () async {
       await startController(
@@ -324,8 +333,9 @@ void main() {
     // only start on the next cold launch.
     test('picks up a permission granted after the status was cached', () async {
       final permission = _PermissionLog(LocationPermissionStatus.denied);
-      final controller =
-          await startController(overridesFor(permissionLog: permission));
+      final controller = await startController(
+        overridesFor(permissionLog: permission),
+      );
       expect(coordinator.startCalls, 0);
 
       permission.status = LocationPermissionStatus.granted;
@@ -335,65 +345,70 @@ void main() {
       expect(coordinator.startCalls, 1);
     });
 
-    test('turning the setting off stops the coordinator, on starts it again',
-        () async {
-      final settings = _FakeSettingsService(enabled: true);
-      await startController(overridesFor(settings: settings));
-      expect(coordinator.startCalls, 1);
+    test(
+      'turning the setting off stops the coordinator, on starts it again',
+      () async {
+        final settings = _FakeSettingsService(enabled: true);
+        await startController(overridesFor(settings: settings));
+        expect(coordinator.startCalls, 1);
 
-      settings.setEnabled(false);
-      await pumpEventQueue();
-      expect(coordinator.stopCalls, 1);
-      expect(
-        container.read(autoDetectionControllerProvider).shouldListen,
-        isFalse,
-      );
+        settings.setEnabled(false);
+        await pumpEventQueue();
+        expect(coordinator.stopCalls, 1);
+        expect(
+          container.read(autoDetectionControllerProvider).shouldListen,
+          isFalse,
+        );
 
-      settings.setEnabled(true);
-      await pumpEventQueue();
-      expect(coordinator.startCalls, 2);
-    });
+        settings.setEnabled(true);
+        await pumpEventQueue();
+        expect(coordinator.startCalls, 2);
+      },
+    );
 
-    test('turning the setting off during a trip does not stop the recording',
-        () async {
-      final settings = _FakeSettingsService(enabled: true);
-      final controller = await startController(overridesFor(settings: settings));
+    test(
+      'turning the setting off during a trip does not stop the recording',
+      () async {
+        final settings = _FakeSettingsService(enabled: true);
+        final controller = await startController(
+          overridesFor(settings: settings),
+        );
 
-      await controller.startTripManually();
-      await pumpEventQueue();
-      expect(
-        container.read(tripStateMachineProvider).hasActiveTrip,
-        isTrue,
-      );
+        await controller.startTripManually();
+        await pumpEventQueue();
+        expect(container.read(tripStateMachineProvider).hasActiveTrip, isTrue);
 
-      settings.setEnabled(false);
-      await pumpEventQueue();
+        settings.setEnabled(false);
+        await pumpEventQueue();
 
-      // The coordinator is asked to stop (it defers the teardown itself, see
-      // trip_detection_coordinator_test.dart) but the trip keeps running.
-      expect(coordinator.stopCalls, greaterThan(0));
-      expect(container.read(tripStateMachineProvider).hasActiveTrip, isTrue);
-    });
+        // The coordinator is asked to stop (it defers the teardown itself, see
+        // trip_detection_coordinator_test.dart) but the trip keeps running.
+        expect(coordinator.stopCalls, greaterThan(0));
+        expect(container.read(tripStateMachineProvider).hasActiveTrip, isTrue);
+      },
+    );
   });
 
   group('AutoDetectionController - manual start', () {
-    test('starts a trip with full confidence even when detection is off',
-        () async {
-      final controller = await startController(overridesFor(enabled: false));
-      expect(coordinator.startCalls, 0);
+    test(
+      'starts a trip with full confidence even when detection is off',
+      () async {
+        final controller = await startController(overridesFor(enabled: false));
+        expect(coordinator.startCalls, 0);
 
-      await controller.startTripManually();
-      await pumpEventQueue();
+        await controller.startTripManually();
+        await pumpEventQueue();
 
-      expect(recorder.startedWithConfidence, [1.0]);
-      expect(recorder.startedWithActivity, [ActivityType.cycling]);
-      expect(container.read(tripStateMachineProvider).currentTripId, 1);
+        expect(recorder.startedWithConfidence, [1.0]);
+        expect(recorder.startedWithActivity, [ActivityType.cycling]);
+        expect(container.read(tripStateMachineProvider).currentTripId, 1);
 
-      // The session is started for the ride (auto-pause/stop need motion) and
-      // handed back afterwards, since automatic detection is off.
-      expect(coordinator.startCalls, 1);
-      expect(coordinator.stopCalls, 1);
-    });
+        // The session is started for the ride (auto-pause/stop need motion) and
+        // handed back afterwards, since automatic detection is off.
+        expect(coordinator.startCalls, 1);
+        expect(coordinator.stopCalls, 1);
+      },
+    );
 
     test('does not release the session when detection is on', () async {
       final controller = await startController(overridesFor());
@@ -434,7 +449,9 @@ void main() {
       expect(backgroundService.initializeCalls, 1);
       expect(backgroundService.startCalls, 1);
 
-      await container.read(tripRecorderServiceProvider.notifier).stopRecording();
+      await container
+          .read(tripRecorderServiceProvider.notifier)
+          .stopRecording();
       await pumpEventQueue();
       expect(backgroundService.stopCalls, 1);
     });
@@ -444,22 +461,29 @@ void main() {
       // subclass makes the second push observable without waiting.
       final controller = await startController([
         ...overridesFor(),
-        autoDetectionControllerProvider
-            .overrideWith(_FastNotificationController.new),
+        autoDetectionControllerProvider.overrideWith(
+          _FastNotificationController.new,
+        ),
       ]);
       await controller.startTripManually();
       await pumpEventQueue();
 
-      final spy = container.read(tripRecorderServiceProvider.notifier)
-          as _SpyTripRecorderService;
-      spy.publish(const TripMetrics(
-        distanceMeters: 1500,
-        durationSeconds: 300,
-        routePointCount: 12,
-      ));
+      final spy = container.read(
+        tripRecorderServiceProvider.notifier,
+      ) as _SpyTripRecorderService;
+      spy.publish(
+        const TripMetrics(
+          distanceMeters: 1500,
+          durationSeconds: 300,
+          routePointCount: 12,
+        ),
+      );
       await pumpEventQueue();
 
-      expect(backgroundService.notificationContents, contains('1.50 km • 5m 0s'));
+      expect(
+        backgroundService.notificationContents,
+        contains('1.50 km • 5m 0s'),
+      );
     });
   });
 }

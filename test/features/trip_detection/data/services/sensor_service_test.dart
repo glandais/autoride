@@ -158,8 +158,9 @@ void main() {
       gyroController = StreamController<GyroscopeData>.broadcast();
       container = ProviderContainer(
         overrides: [
-          accelerometerStreamProvider
-              .overrideWith((ref) => accelController.stream),
+          accelerometerStreamProvider.overrideWith(
+            (ref) => accelController.stream,
+          ),
           gyroscopeStreamProvider.overrideWith((ref) => gyroController.stream),
         ],
       );
@@ -178,13 +179,15 @@ void main() {
       });
       await pumpEventQueue();
 
-      accelController.add(AccelerometerData(
-          x: 3.0, y: 3.0, z: 10.0, timestamp: DateTime(2026)));
+      accelController.add(
+        AccelerometerData(x: 3.0, y: 3.0, z: 10.0, timestamp: DateTime(2026)),
+      );
       await pumpEventQueue();
       expect(emitted, isEmpty);
 
       gyroController.add(
-          GyroscopeData(x: 1.0, y: 0.5, z: 0.5, timestamp: DateTime(2026)));
+        GyroscopeData(x: 1.0, y: 0.5, z: 0.5, timestamp: DateTime(2026)),
+      );
       await pumpEventQueue();
 
       expect(emitted, hasLength(1));

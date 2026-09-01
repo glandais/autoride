@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../../../../core/theme/app_spacing.dart';
 import '../providers/onboarding_provider.dart';
 import '../widgets/onboarding_action_button.dart';
@@ -54,14 +55,16 @@ class FeaturesScreen extends ConsumerWidget {
                 _FeatureCard(
                   icon: Icons.history,
                   title: 'Trip History',
-                  description: 'Automatic recording and storage of your cycling routes',
+                  description:
+                      'Automatic recording and storage of your cycling routes',
                   color: theme.colorScheme.tertiary,
                 ),
                 const SizedBox(height: AppSpacing.md),
                 const _FeatureCard(
                   icon: Icons.battery_std,
                   title: 'Battery Friendly',
-                  description: 'Adaptive tracking adjusts based on battery level',
+                  description:
+                      'Adaptive tracking adjusts based on battery level',
                   color: Colors.green,
                 ),
               ],
@@ -116,26 +119,16 @@ class _FeatureCard extends StatelessWidget {
                 ),
                 borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
               ),
-              child: Icon(
-                icon,
-                size: AppSpacing.iconLg,
-                color: color,
-              ),
+              child: Icon(icon, size: AppSpacing.iconLg, color: color),
             ),
             const SizedBox(width: AppSpacing.md),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    title,
-                    style: theme.textTheme.titleMedium,
-                  ),
+                  Text(title, style: theme.textTheme.titleMedium),
                   const SizedBox(height: AppSpacing.xs),
-                  Text(
-                    description,
-                    style: theme.textTheme.bodySmall,
-                  ),
+                  Text(description, style: theme.textTheme.bodySmall),
                 ],
               ),
             ),

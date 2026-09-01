@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../../domain/models/user_settings.dart';
 import '../../data/services/settings_service.dart';
 import 'setting_section.dart';
@@ -8,10 +9,7 @@ import 'setting_tile.dart';
 
 /// Developer settings section (debug builds only)
 class DeveloperSettingsSection extends ConsumerWidget {
-  const DeveloperSettingsSection({
-    required this.settings,
-    super.key,
-  });
+  const DeveloperSettingsSection({required this.settings, super.key});
 
   final UserSettings settings;
 
@@ -32,9 +30,9 @@ class DeveloperSettingsSection extends ConsumerWidget {
           trailing: Switch(
             value: settings.debugLoggingEnabled,
             onChanged: (value) {
-              ref.read(settingsServiceProvider.notifier).updatePartial(
-                    (s) => s.copyWith(debugLoggingEnabled: value),
-                  );
+              ref
+                  .read(settingsServiceProvider.notifier)
+                  .updatePartial((s) => s.copyWith(debugLoggingEnabled: value));
             },
           ),
         ),
@@ -47,9 +45,9 @@ class DeveloperSettingsSection extends ConsumerWidget {
           trailing: Switch(
             value: settings.showSensorOverlay,
             onChanged: (value) {
-              ref.read(settingsServiceProvider.notifier).updatePartial(
-                    (s) => s.copyWith(showSensorOverlay: value),
-                  );
+              ref
+                  .read(settingsServiceProvider.notifier)
+                  .updatePartial((s) => s.copyWith(showSensorOverlay: value));
             },
           ),
         ),

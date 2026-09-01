@@ -36,19 +36,19 @@ void main() {
   List<Override> overrides({
     TripState initialTripState = const TripState.idle(),
     List<RoutePoint> routePoints = const [],
-  }) =>
-      [
-        ...tripSurfaceOverrides(
-          recorder: recorder,
-          detection: detection,
-          initialTripState: initialTripState,
-        ),
-        // The recorder's GPS subscription is faked away; the screen only reads
-        // the same stream for its marker.
-        locationStreamProvider
-            .overrideWith((ref, settings) => const Stream<LocationData>.empty()),
-        activeRoutePointsProvider.overrideWith((ref) async => routePoints),
-      ];
+  }) => [
+    ...tripSurfaceOverrides(
+      recorder: recorder,
+      detection: detection,
+      initialTripState: initialTripState,
+    ),
+    // The recorder's GPS subscription is faked away; the screen only reads
+    // the same stream for its marker.
+    locationStreamProvider.overrideWith(
+      (ref, settings) => const Stream<LocationData>.empty(),
+    ),
+    activeRoutePointsProvider.overrideWith((ref) async => routePoints),
+  ];
 
   Future<void> pumpScreen(
     WidgetTester tester, {
@@ -72,8 +72,9 @@ void main() {
       );
 
   group('TripTrackingScreen - idle view', () {
-    testWidgets('shows the detection status and the manual start button',
-        (tester) async {
+    testWidgets('shows the detection status and the manual start button', (
+      tester,
+    ) async {
       await pumpScreen(tester);
 
       expect(find.text('No trip in progress'), findsOneWidget);
@@ -82,8 +83,9 @@ void main() {
       expect(find.byKey(const Key('manual-start-trip-button')), findsOneWidget);
     });
 
-    testWidgets('explains why detection is idle instead of showing it as on',
-        (tester) async {
+    testWidgets('explains why detection is idle instead of showing it as on', (
+      tester,
+    ) async {
       detection.state = const AutoDetectionState(
         enabled: false,
         permissionGranted: true,
@@ -108,23 +110,28 @@ void main() {
       expect(find.text('Location permission required'), findsOneWidget);
     });
 
-    testWidgets('the start button starts a trip and switches to the trip view',
-        (tester) async {
-      await pumpScreen(tester);
+    testWidgets(
+      'the start button starts a trip and switches to the trip view',
+      (tester) async {
+        await pumpScreen(tester);
 
-      await tester.tap(find.byKey(const Key('manual-start-trip-button')));
-      await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('manual-start-trip-button')));
+        await tester.pumpAndSettle();
 
-      expect(detection.manualStartCalls, 1);
-      expect(recorder.startedWithConfidence, [1.0]);
-      expect(containerOf(tester).read(tripStateMachineProvider).hasActiveTrip,
-          isTrue);
-      expect(find.text('Active Trip'), findsOneWidget);
-      expect(find.text('Pause Trip'), findsOneWidget);
-    });
+        expect(detection.manualStartCalls, 1);
+        expect(recorder.startedWithConfidence, [1.0]);
+        expect(
+          containerOf(tester).read(tripStateMachineProvider).hasActiveTrip,
+          isTrue,
+        );
+        expect(find.text('Active Trip'), findsOneWidget);
+        expect(find.text('Pause Trip'), findsOneWidget);
+      },
+    );
 
-    testWidgets('a failed start is reported and leaves the screen idle',
-        (tester) async {
+    testWidgets('a failed start is reported and leaves the screen idle', (
+      tester,
+    ) async {
       detection.throwOnManualStart = true;
       await pumpScreen(tester);
 
@@ -132,10 +139,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byType(SnackBar), findsOneWidget);
-      expect(
-        find.textContaining('Could not start the trip'),
-        findsOneWidget,
-      );
+      expect(find.textContaining('Could not start the trip'), findsOneWidget);
       expect(find.text('No trip in progress'), findsOneWidget);
     });
   });
@@ -164,14 +168,17 @@ void main() {
       await pumpScreen(tester, initialTripState: activeTrip);
       expect(find.text('0 m'), findsOneWidget);
 
-      final fake = containerOf(tester).read(tripRecorderServiceProvider.notifier)
-          as FakeTripRecorderService;
-      fake.publish(const TripMetrics(
-        distanceMeters: 2400,
-        durationSeconds: 605,
-        routePointCount: 30,
-        avgSpeedKmh: 14.3,
-      ));
+      final fake = containerOf(
+        tester,
+      ).read(tripRecorderServiceProvider.notifier) as FakeTripRecorderService;
+      fake.publish(
+        const TripMetrics(
+          distanceMeters: 2400,
+          durationSeconds: 605,
+          routePointCount: 30,
+          avgSpeedKmh: 14.3,
+        ),
+      );
       await tester.pumpAndSettle();
 
       expect(find.text('2.40 km'), findsOneWidget);
@@ -211,8 +218,9 @@ void main() {
       expect(find.text('Active'), findsOneWidget);
     });
 
-    testWidgets('confirming the stop ends the recording and leaves the screen',
-        (tester) async {
+    testWidgets('confirming the stop ends the recording and leaves the screen', (
+      tester,
+    ) async {
       final observer = RecordingNavigatorObserver();
       await pumpAppWidget(
         tester,
@@ -243,7 +251,10 @@ void main() {
     testWidgets('renders with no location fix and no route', (tester) async {
       await pumpScreen(
         tester,
-        initialTripState: TripState.active(tripId: 1, startTime: DateTime.now()),
+        initialTripState: TripState.active(
+          tripId: 1,
+          startTime: DateTime.now(),
+        ),
       );
 
       expect(find.byType(TripMapView), findsOneWidget);
@@ -256,7 +267,12 @@ void main() {
         tester,
         initialTripState: TripState.active(tripId: 1, startTime: now),
         routePoints: [
-          RoutePoint(tripId: 1, latitude: 48.85, longitude: 2.35, timestamp: now),
+          RoutePoint(
+            tripId: 1,
+            latitude: 48.85,
+            longitude: 2.35,
+            timestamp: now,
+          ),
           RoutePoint(
             tripId: 1,
             latitude: 48.86,

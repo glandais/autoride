@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
+
 import '../../domain/models/onboarding_state.dart';
 import '../../data/services/onboarding_service.dart';
 import '../../../../core/permissions/services/permission_handler_service.dart';
@@ -69,7 +70,9 @@ class Onboarding extends _$Onboarding {
   Future<void> requestLocationPermission() async {
     _log.info('Requesting foreground location permission (locationWhenInUse)');
     try {
-      final permissionHandler = ref.read(permissionHandlerServiceProvider.notifier);
+      final permissionHandler = ref.read(
+        permissionHandlerServiceProvider.notifier,
+      );
       final status = await permissionHandler.requestPermission(
         AppPermission.locationWhenInUse,
       );
@@ -84,9 +87,13 @@ class Onboarding extends _$Onboarding {
         await nextPage();
       }
     } on PermissionPermanentlyDeniedException {
-      _log.warning('Foreground permission permanently denied, opening settings');
+      _log.warning(
+        'Foreground permission permanently denied, opening settings',
+      );
       if (!ref.mounted) return;
-      await ref.read(permissionHandlerServiceProvider.notifier).openAppSettings();
+      await ref
+          .read(permissionHandlerServiceProvider.notifier)
+          .openAppSettings();
       state = state.copyWith(locationPermissionGranted: false);
     } catch (e) {
       _log.error('Foreground permission request failed', e);
@@ -101,7 +108,9 @@ class Onboarding extends _$Onboarding {
   Future<void> requestBackgroundPermission() async {
     _log.info('Requesting background location permission (locationAlways)');
     try {
-      final permissionHandler = ref.read(permissionHandlerServiceProvider.notifier);
+      final permissionHandler = ref.read(
+        permissionHandlerServiceProvider.notifier,
+      );
 
       // Ensure foreground permission is granted first (required for background)
       final foregroundStatus = await permissionHandler.checkPermission(
@@ -115,13 +124,17 @@ class Onboarding extends _$Onboarding {
           );
           if (!ref.mounted) return;
           if (!requested.isGranted) {
-            _log.warning('Foreground permission denied, skipping background request');
+            _log.warning(
+              'Foreground permission denied, skipping background request',
+            );
             state = state.copyWith(backgroundPermissionGranted: false);
             await nextPage();
             return;
           }
         } on PermissionPermanentlyDeniedException {
-          _log.warning('Foreground permission permanently denied, opening settings');
+          _log.warning(
+            'Foreground permission permanently denied, opening settings',
+          );
           if (!ref.mounted) return;
           await permissionHandler.openAppSettings();
           state = state.copyWith(backgroundPermissionGranted: false);
@@ -140,9 +153,13 @@ class Onboarding extends _$Onboarding {
       _log.info('Background permission result: granted=${status.isGranted}');
       state = state.copyWith(backgroundPermissionGranted: status.isGranted);
     } on PermissionPermanentlyDeniedException {
-      _log.warning('Background permission permanently denied, opening settings');
+      _log.warning(
+        'Background permission permanently denied, opening settings',
+      );
       if (!ref.mounted) return;
-      await ref.read(permissionHandlerServiceProvider.notifier).openAppSettings();
+      await ref
+          .read(permissionHandlerServiceProvider.notifier)
+          .openAppSettings();
       state = state.copyWith(backgroundPermissionGranted: false);
     } catch (e) {
       _log.error('Background permission request failed', e);
@@ -177,8 +194,9 @@ class Onboarding extends _$Onboarding {
   Future<void> requestNotificationPermission() async {
     _log.info('Requesting notification permission');
     try {
-      final permissionHandler =
-          ref.read(permissionHandlerServiceProvider.notifier);
+      final permissionHandler = ref.read(
+        permissionHandlerServiceProvider.notifier,
+      );
       final status = await permissionHandler.requestPermission(
         AppPermission.notification,
       );
@@ -203,8 +221,9 @@ class Onboarding extends _$Onboarding {
   /// grant it is not treated as having refused.
   Future<void> refreshPermissionStatuses() async {
     try {
-      final permissionHandler =
-          ref.read(permissionHandlerServiceProvider.notifier);
+      final permissionHandler = ref.read(
+        permissionHandlerServiceProvider.notifier,
+      );
 
       final foreground = await permissionHandler.checkPermission(
         AppPermission.locationWhenInUse,

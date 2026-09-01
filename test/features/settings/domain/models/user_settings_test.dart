@@ -20,7 +20,10 @@ void main() {
       expect(settings.batteryMode, equals(BatteryOptimizationMode.balanced));
 
       // Location defaults
-      expect(settings.locationAccuracy, equals(LocationAccuracyPreference.medium));
+      expect(
+        settings.locationAccuracy,
+        equals(LocationAccuracyPreference.medium),
+      );
       expect(settings.distanceFilterMeters, equals(15));
       expect(settings.backgroundLocationEnabled, isTrue);
 
@@ -93,7 +96,10 @@ void main() {
       expect(settings.detection.autoStartEnabled, isFalse);
       expect(settings.detection.sensitivity, equals(CyclingSensitivity.high));
       expect(settings.batteryMode, equals(BatteryOptimizationMode.performance));
-      expect(settings.locationAccuracy, equals(LocationAccuracyPreference.high));
+      expect(
+        settings.locationAccuracy,
+        equals(LocationAccuracyPreference.high),
+      );
       expect(settings.distanceUnit, equals(DistanceUnit.imperial));
       expect(settings.speedUnit, equals(SpeedUnit.mph));
       expect(settings.themeMode, equals(ThemeMode.dark));
@@ -113,7 +119,9 @@ void main() {
     });
 
     test('should convert distance correctly for imperial', () {
-      const imperialSettings = UserSettings(distanceUnit: DistanceUnit.imperial);
+      const imperialSettings = UserSettings(
+        distanceUnit: DistanceUnit.imperial,
+      );
 
       // 1000 meters ≈ 0.621 miles
       expect(imperialSettings.convertDistance(1000), closeTo(0.621, 0.01));
@@ -163,7 +171,9 @@ void main() {
 
     test('should provide correct distance unit labels', () {
       const metricSettings = UserSettings(distanceUnit: DistanceUnit.metric);
-      const imperialSettings = UserSettings(distanceUnit: DistanceUnit.imperial);
+      const imperialSettings = UserSettings(
+        distanceUnit: DistanceUnit.imperial,
+      );
 
       expect(metricSettings.distanceUnitLabel, equals('km'));
       expect(imperialSettings.distanceUnitLabel, equals('mi'));
@@ -191,7 +201,10 @@ void main() {
       );
 
       expect(lowSettings.geolocatorAccuracy, equals(LocationAccuracy.low));
-      expect(mediumSettings.geolocatorAccuracy, equals(LocationAccuracy.medium));
+      expect(
+        mediumSettings.geolocatorAccuracy,
+        equals(LocationAccuracy.medium),
+      );
       expect(highSettings.geolocatorAccuracy, equals(LocationAccuracy.high));
     });
 
@@ -226,9 +239,15 @@ void main() {
     });
 
     test('should provide correct sensitivity multipliers', () {
-      const lowSettings = DetectionSettings(sensitivity: CyclingSensitivity.low);
-      const mediumSettings = DetectionSettings(sensitivity: CyclingSensitivity.medium);
-      const highSettings = DetectionSettings(sensitivity: CyclingSensitivity.high);
+      const lowSettings = DetectionSettings(
+        sensitivity: CyclingSensitivity.low,
+      );
+      const mediumSettings = DetectionSettings(
+        sensitivity: CyclingSensitivity.medium,
+      );
+      const highSettings = DetectionSettings(
+        sensitivity: CyclingSensitivity.high,
+      );
 
       // Low: 0.8 (more lenient, easier to trigger)
       expect(lowSettings.sensitivityMultiplier, closeTo(0.8, 0.01));
@@ -246,7 +265,10 @@ void main() {
         stationaryTimeoutSeconds: 300,
       );
 
-      expect(settings.minimumTripDuration, equals(const Duration(seconds: 120)));
+      expect(
+        settings.minimumTripDuration,
+        equals(const Duration(seconds: 120)),
+      );
       expect(settings.stationaryTimeout, equals(const Duration(seconds: 300)));
     });
 
@@ -263,8 +285,14 @@ void main() {
 
       expect(deserialized.autoStartEnabled, equals(original.autoStartEnabled));
       expect(deserialized.sensitivity, equals(original.sensitivity));
-      expect(deserialized.minimumTripDurationSeconds, equals(original.minimumTripDurationSeconds));
-      expect(deserialized.stationaryTimeoutSeconds, equals(original.stationaryTimeoutSeconds));
+      expect(
+        deserialized.minimumTripDurationSeconds,
+        equals(original.minimumTripDurationSeconds),
+      );
+      expect(
+        deserialized.stationaryTimeoutSeconds,
+        equals(original.stationaryTimeoutSeconds),
+      );
     });
   });
 }

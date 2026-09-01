@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import '../../../../core/theme/app_spacing.dart';
 
 /// Slider widget with label and value display for settings
@@ -46,8 +47,8 @@ class SettingSlider extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    final displayValue = valueFormatter?.call(value) ??
-        '${value.toInt()}${unit ?? ''}';
+    final displayValue =
+        valueFormatter?.call(value) ?? '${value.toInt()}${unit ?? ''}';
 
     return Padding(
       padding: const EdgeInsets.symmetric(
@@ -61,10 +62,7 @@ class SettingSlider extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                title,
-                style: theme.textTheme.bodyLarge,
-              ),
+              Text(title, style: theme.textTheme.bodyLarge),
               Text(
                 displayValue,
                 style: theme.textTheme.bodyLarge?.copyWith(
@@ -93,13 +91,17 @@ class SettingSlider extends StatelessWidget {
               Text(
                 '${min.toInt()}${unit ?? ''}',
                 style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.textTheme.bodySmall?.color?.withValues(alpha: 0.6),
+                  color: theme.textTheme.bodySmall?.color?.withValues(
+                    alpha: 0.6,
+                  ),
                 ),
               ),
               Text(
                 '${max.toInt()}${unit ?? ''}',
                 style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.textTheme.bodySmall?.color?.withValues(alpha: 0.6),
+                  color: theme.textTheme.bodySmall?.color?.withValues(
+                    alpha: 0.6,
+                  ),
                 ),
               ),
             ],

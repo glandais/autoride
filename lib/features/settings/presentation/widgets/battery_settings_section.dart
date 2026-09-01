@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../../domain/models/user_settings.dart';
 import '../../data/services/settings_service.dart';
 import 'setting_section.dart';
@@ -7,10 +8,7 @@ import 'setting_radio_group.dart';
 
 /// Battery optimization settings section
 class BatterySettingsSection extends ConsumerWidget {
-  const BatterySettingsSection({
-    required this.settings,
-    super.key,
-  });
+  const BatterySettingsSection({required this.settings, super.key});
 
   final UserSettings settings;
 
@@ -41,9 +39,9 @@ class BatterySettingsSection extends ConsumerWidget {
             ),
           ],
           onChanged: (value) {
-            ref.read(settingsServiceProvider.notifier).updatePartial(
-                  (s) => s.copyWith(batteryMode: value),
-                );
+            ref
+                .read(settingsServiceProvider.notifier)
+                .updatePartial((s) => s.copyWith(batteryMode: value));
           },
         ),
       ],

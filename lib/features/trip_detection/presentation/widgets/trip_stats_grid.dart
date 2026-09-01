@@ -11,10 +11,7 @@ import 'package:autoride/core/theme/app_spacing.dart';
 /// - Average speed
 /// - Maximum speed
 class TripStatsGrid extends StatelessWidget {
-  const TripStatsGrid({
-    required this.metrics,
-    super.key,
-  });
+  const TripStatsGrid({required this.metrics, super.key});
 
   /// Trip metrics to display
   final TripMetrics metrics;

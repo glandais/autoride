@@ -23,32 +23,40 @@ class PlatformConfigValidator {
     // this is off, whatever the permissions say.
     final serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
-      issues.add(const ConfigValidationIssue(
-        severity: ConfigIssueSeverity.warning,
-        message: 'Device location services are disabled',
-        suggestion: 'Enable location in the OS settings before tracking.',
-      ));
+      issues.add(
+        const ConfigValidationIssue(
+          severity: ConfigIssueSeverity.warning,
+          message: 'Device location services are disabled',
+          suggestion: 'Enable location in the OS settings before tracking.',
+        ),
+      );
     }
 
-    issues.addAll(await _checkPermission(
-      Permission.locationWhenInUse,
-      label: 'Foreground location',
-      severityWhenMissing: ConfigIssueSeverity.warning,
-    ));
+    issues.addAll(
+      await _checkPermission(
+        Permission.locationWhenInUse,
+        label: 'Foreground location',
+        severityWhenMissing: ConfigIssueSeverity.warning,
+      ),
+    );
 
-    issues.addAll(await _checkPermission(
-      Permission.locationAlways,
-      label: 'Background location',
-      severityWhenMissing: ConfigIssueSeverity.info,
-    ));
+    issues.addAll(
+      await _checkPermission(
+        Permission.locationAlways,
+        label: 'Background location',
+        severityWhenMissing: ConfigIssueSeverity.info,
+      ),
+    );
 
     // POST_NOTIFICATIONS (Android 13+) / iOS notification authorization. The
     // foreground service and every trip alert depend on it.
-    issues.addAll(await _checkPermission(
-      Permission.notification,
-      label: 'Notifications',
-      severityWhenMissing: ConfigIssueSeverity.warning,
-    ));
+    issues.addAll(
+      await _checkPermission(
+        Permission.notification,
+        label: 'Notifications',
+        severityWhenMissing: ConfigIssueSeverity.warning,
+      ),
+    );
 
     return issues;
   }
@@ -136,8 +144,4 @@ class ConfigValidationIssue {
   final String? suggestion;
 }
 
-enum ConfigIssueSeverity {
-  error,
-  warning,
-  info,
-}
+enum ConfigIssueSeverity { error, warning, info }

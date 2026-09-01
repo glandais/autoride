@@ -36,10 +36,7 @@ class TripRepository {
         if (trip.routePoints.isNotEmpty) {
           final batch = txn.batch();
           for (final point in trip.routePoints) {
-            batch.insert(
-              'route_points',
-              point.copyWith(tripId: id).toMap(),
-            );
+            batch.insert('route_points', point.copyWith(tripId: id).toMap());
           }
           await batch.commit(noResult: true);
         }
@@ -222,7 +219,9 @@ class TripRepository {
   /// Get total distance across all trips
   Future<double> getTotalDistance() async {
     try {
-      final result = await _db.rawQuery('SELECT SUM(distance) as total FROM trips');
+      final result = await _db.rawQuery(
+        'SELECT SUM(distance) as total FROM trips',
+      );
       return (result.first['total'] as num?)?.toDouble() ?? 0.0;
     } catch (e) {
       throw TripRepositoryException('Failed to get total distance: $e');

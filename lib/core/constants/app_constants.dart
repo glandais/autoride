@@ -79,54 +79,59 @@ class AppConstants {
   // Cycling Detection Thresholds (T008)
 
   // Acceleration thresholds (m/s²)
-  static const double cyclingAccelerationMin = 10.0;  // Minimum for cycling
-  static const double cyclingAccelerationMax = 20.0;  // Maximum typical cycling
+  static const double cyclingAccelerationMin = 10.0; // Minimum for cycling
+  static const double cyclingAccelerationMax = 20.0; // Maximum typical cycling
   // TODO(T041): no consumer — walking is currently rejected implicitly by the
   // cycling acceleration band rather than by an explicit walking ceiling.
-  static const double walkingAccelerationMax = 12.0;  // Walking typically <12
+  static const double walkingAccelerationMax = 12.0; // Walking typically <12
 
   // Rotation thresholds (rad/s)
-  static const double cyclingRotationMin = 0.5;   // Minimum rotation for cycling
-  static const double cyclingRotationMax = 3.0;   // Maximum typical rotation
+  static const double cyclingRotationMin = 0.5; // Minimum rotation for cycling
+  static const double cyclingRotationMax = 3.0; // Maximum typical rotation
 
   // Stationary thresholds (T007, used in T014)
   // Max deviation of raw accelerometer magnitude from gravity while stationary.
   // A resting device reads ~`standardGravity`; |magnitude - gravity| must stay
   // within this tolerance to be considered stationary.
-  static const double stationaryAccelerationMax = 1.0;  // m/s² - max deviation from gravity
-  static const double stationaryRotationMax = 0.2;      // rad/s - max for stationary
+  static const double stationaryAccelerationMax =
+      1.0; // m/s² - max deviation from gravity
+  static const double stationaryRotationMax = 0.2; // rad/s - max for stationary
 
   // Pedaling frequency (Hz)
-  static const double pedalingFrequencyMin = 0.5;   // 30 RPM minimum
-  static const double pedalingFrequencyMax = 2.0;   // 120 RPM maximum
+  static const double pedalingFrequencyMin = 0.5; // 30 RPM minimum
+  static const double pedalingFrequencyMax = 2.0; // 120 RPM maximum
   static const double pedalingFrequencyTypical = 1.2; // 72 RPM typical
 
   // Speed validation (km/h) - extending existing
   static const double cyclingSpeedTypical = 18.0; // Typical commuting speed
 
   // Pattern analysis
-  static const int minSamplesForPattern = 100;  // ~2 seconds at 50Hz
-  static const int pedalingCycleSamples = 50;   // ~1 second for one pedal cycle
+  static const int minSamplesForPattern = 100; // ~2 seconds at 50Hz
+  static const int pedalingCycleSamples = 50; // ~1 second for one pedal cycle
 
   // Confidence thresholds
   // TODO(T041): consumed only by CyclingPatternDetector, which has no live
   // entry point yet; the running trip-start path uses
   // `tripStartConfidenceThreshold` instead.
-  static const double minConfidenceForDetection = 0.6;  // Minimum to trigger
-  static const double highConfidenceThreshold = 0.8;    // High confidence
+  static const double minConfidenceForDetection = 0.6; // Minimum to trigger
+  static const double highConfidenceThreshold = 0.8; // High confidence
 
   // Activity classification weights
-  static const double motionScoreWeight = 0.4;     // 40% weight
-  static const double speedScoreWeight = 0.35;     // 35% weight
+  static const double motionScoreWeight = 0.4; // 40% weight
+  static const double speedScoreWeight = 0.35; // 35% weight
   static const double frequencyScoreWeight = 0.25; // 25% weight
 
   // Trip State Machine Configuration (T012)
-  static const int detectionTimeoutSeconds = 30; // Max time in Detecting before timeout
+  static const int detectionTimeoutSeconds =
+      30; // Max time in Detecting before timeout
   // TODO(T041): no consumer — the stop detector gates the pause on
   // `minPauseDurationSeconds` + consecutive stationary detections instead.
-  static const int stationaryThresholdSeconds = 10; // Stationary time before pause
-  static const int maxPauseDurationSeconds = 300; // 5 min - max pause before auto-stop
-  static const int resumeMovementThresholdSeconds = 5; // Movement time before resume
+  static const int stationaryThresholdSeconds =
+      10; // Stationary time before pause
+  static const int maxPauseDurationSeconds =
+      300; // 5 min - max pause before auto-stop
+  static const int resumeMovementThresholdSeconds =
+      5; // Movement time before resume
 
   // Trip Start Detection Configuration (T013)
 
@@ -164,15 +169,16 @@ class AppConstants {
   static const int tripStartGpsGracePeriodSeconds = 10;
 
   // Weighting for confidence calculation
-  static const double tripStartMotionWeight = 0.6;    // 60% when GPS available
-  static const double tripStartSpeedWeight = 0.4;     // 40% when GPS available
+  static const double tripStartMotionWeight = 0.6; // 60% when GPS available
+  static const double tripStartSpeedWeight = 0.4; // 40% when GPS available
   // When GPS unavailable, motion weight = 1.0 (100%)
 
   // Trip Stop Detection Configuration (T014)
 
   // Minimum pause duration before considering pause state (seconds)
   // Brief stops (< this value) keep trip active
-  static const int minPauseDurationSeconds = 30; // 30s - traffic lights, intersections
+  static const int minPauseDurationSeconds =
+      30; // 30s - traffic lights, intersections
 
   // Maximum pause duration before auto-stop (seconds)
   // Note: maxPauseDurationSeconds already defined above = 300 (5 min)
@@ -233,8 +239,12 @@ class AppConstants {
   // TODO(T041): unused — the onboarding widgets and provider still hardcode the
   // page count (5) and the 300 ms page transition.
   static const int onboardingPageCount = 5;
-  static const Duration onboardingAnimationDuration = Duration(milliseconds: 300);
-  static const Duration onboardingPageTransitionDuration = Duration(milliseconds: 250);
+  static const Duration onboardingAnimationDuration = Duration(
+    milliseconds: 300,
+  );
+  static const Duration onboardingPageTransitionDuration = Duration(
+    milliseconds: 250,
+  );
 
   // Notification Configuration (T025)
 

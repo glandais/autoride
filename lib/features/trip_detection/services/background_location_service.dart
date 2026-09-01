@@ -1,7 +1,9 @@
 import 'dart:ui';
+
 import 'package:flutter/widgets.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
+
 import '../../../core/constants/app_constants.dart';
 
 part 'background_location_service.g.dart';
@@ -103,14 +105,8 @@ class BackgroundLocationService extends _$BackgroundLocationService {
   /// The notification belongs to the service (same id and channel as
   /// `AppConstants.foregroundNotificationId`), so it is updated from the
   /// isolate rather than through flutter_local_notifications.
-  void updateNotification({
-    required String title,
-    required String content,
-  }) {
-    service.invoke('updateNotification', {
-      'title': title,
-      'content': content,
-    });
+  void updateNotification({required String title, required String content}) {
+    service.invoke('updateNotification', {'title': title, 'content': content});
   }
 
   Future<bool> _isServiceRunning() async {

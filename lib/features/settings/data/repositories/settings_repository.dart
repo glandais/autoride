@@ -1,5 +1,7 @@
 import 'dart:convert';
+
 import 'package:shared_preferences/shared_preferences.dart';
+
 import '../../domain/models/user_settings.dart';
 
 /// Repository for managing user settings persistence with SharedPreferences
@@ -34,9 +36,7 @@ class SettingsRepository {
   /// Automatically updates lastModified timestamp
   Future<void> saveSettings(UserSettings settings) async {
     // Update lastModified timestamp before saving
-    final updatedSettings = settings.copyWith(
-      lastModified: DateTime.now(),
-    );
+    final updatedSettings = settings.copyWith(lastModified: DateTime.now());
 
     final json = updatedSettings.toJson();
     final jsonString = jsonEncode(json);

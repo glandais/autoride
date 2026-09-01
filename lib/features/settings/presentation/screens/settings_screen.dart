@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../../data/services/settings_service.dart';
 import '../widgets/detection_settings_section.dart';
 import '../widgets/battery_settings_section.dart';
@@ -86,9 +87,8 @@ class SettingsScreen extends ConsumerWidget {
             ],
           ),
         ),
-        loading: () => const LoadingView.fullScreen(
-          message: 'Loading settings...',
-        ),
+        loading: () =>
+            const LoadingView.fullScreen(message: 'Loading settings...'),
         error: (error, stack) => ErrorView.generic(
           message: ErrorHandler.getErrorMessage(error),
           onRetry: () => ref.refresh(settingsServiceProvider),
@@ -98,10 +98,7 @@ class SettingsScreen extends ConsumerWidget {
   }
 
   /// Handle reset settings action from app bar
-  Future<void> _handleResetSettings(
-    BuildContext context,
-    WidgetRef ref,
-  ) async {
+  Future<void> _handleResetSettings(BuildContext context, WidgetRef ref) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -116,9 +113,7 @@ class SettingsScreen extends ConsumerWidget {
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.warning,
-            ),
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.warning),
             child: const Text('Reset'),
           ),
         ],
@@ -130,9 +125,7 @@ class SettingsScreen extends ConsumerWidget {
 
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Settings reset to defaults'),
-          ),
+          const SnackBar(content: Text('Settings reset to defaults')),
         );
       }
     }

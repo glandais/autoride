@@ -74,10 +74,8 @@ class AutoDetectionController extends _$AutoDetectionController {
     final next = AutoDetectionState(
       // Settings default to "on", but only once they are actually loaded:
       // detection must not start on a guess.
-      enabled: settings.value?.detection.automaticDetectionEnabled ??
-          false,
-      permissionGranted:
-          permission.value == LocationPermissionStatus.granted,
+      enabled: settings.value?.detection.automaticDetectionEnabled ?? false,
+      permissionGranted: permission.value == LocationPermissionStatus.granted,
       onboardingComplete: onboarding.value == false,
     );
 
@@ -145,10 +143,9 @@ class AutoDetectionController extends _$AutoDetectionController {
     ref.read(tripStateMachineProvider.notifier).startDetecting();
 
     try {
-      await ref.read(tripRecorderServiceProvider.notifier).startRecording(
-            confidenceScore: 1.0,
-            activity: ActivityType.cycling,
-          );
+      await ref
+          .read(tripRecorderServiceProvider.notifier)
+          .startRecording(confidenceScore: 1.0, activity: ActivityType.cycling);
     } catch (e, stackTrace) {
       _logger.error('Manual trip start failed', e, stackTrace);
       ref.read(tripStateMachineProvider.notifier).stopTrip();
@@ -236,7 +233,9 @@ class AutoDetectionController extends _$AutoDetectionController {
     _lastNotificationContent = content;
     _lastNotificationAt = now;
 
-    ref.read(backgroundLocationServiceProvider.notifier).updateNotification(
+    ref
+        .read(backgroundLocationServiceProvider.notifier)
+        .updateNotification(
           title: 'AutoRide - Trip in progress',
           content: content,
         );

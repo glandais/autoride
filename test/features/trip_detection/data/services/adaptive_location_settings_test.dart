@@ -40,14 +40,22 @@ void main() {
     });
 
     test('the documented per-mode distance filters are the ones applied', () {
-      expect(PowerModeConfig.normal.distanceFilter,
-          AppConstants.distanceFilterCycling); // 15 m
-      expect(PowerModeConfig.medium.distanceFilter,
-          AppConstants.distanceFilterMoving); // 20 m
-      expect(PowerModeConfig.low.distanceFilter,
-          AppConstants.distanceFilterLowPower); // 30 m
-      expect(PowerModeConfig.critical.distanceFilter,
-          AppConstants.distanceFilterCriticalPower); // 50 m
+      expect(
+        PowerModeConfig.normal.distanceFilter,
+        AppConstants.distanceFilterCycling,
+      ); // 15 m
+      expect(
+        PowerModeConfig.medium.distanceFilter,
+        AppConstants.distanceFilterMoving,
+      ); // 20 m
+      expect(
+        PowerModeConfig.low.distanceFilter,
+        AppConstants.distanceFilterLowPower,
+      ); // 30 m
+      expect(
+        PowerModeConfig.critical.distanceFilter,
+        AppConstants.distanceFilterCriticalPower,
+      ); // 50 m
     });
 
     test('lower power modes are never more expensive than higher ones', () {

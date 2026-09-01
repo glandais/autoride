@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import '../../../../core/theme/app_spacing.dart';
 
 /// Radio button group for enum selections in settings
@@ -57,7 +58,9 @@ class SettingRadioGroup<T> extends StatelessWidget {
               }
             },
             child: Column(
-              children: options.map((option) => _buildRadioOption(context, option)).toList(),
+              children: options
+                  .map((option) => _buildRadioOption(context, option))
+                  .toList(),
             ),
           ),
         ],
@@ -80,9 +83,7 @@ class SettingRadioGroup<T> extends StatelessWidget {
         child: Row(
           children: [
             // Radio button (managed by RadioGroup ancestor)
-            Radio<T>(
-              value: option.value,
-            ),
+            Radio<T>(value: option.value),
 
             // Icon (optional)
             if (option.icon != null) ...[
@@ -104,7 +105,9 @@ class SettingRadioGroup<T> extends StatelessWidget {
                   Text(
                     option.label,
                     style: theme.textTheme.bodyMedium?.copyWith(
-                      fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                      fontWeight: isSelected
+                          ? FontWeight.w600
+                          : FontWeight.normal,
                       color: isSelected ? theme.colorScheme.primary : null,
                     ),
                   ),
@@ -113,7 +116,9 @@ class SettingRadioGroup<T> extends StatelessWidget {
                     Text(
                       option.description!,
                       style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.textTheme.bodySmall?.color?.withValues(alpha: 0.7),
+                        color: theme.textTheme.bodySmall?.color?.withValues(
+                          alpha: 0.7,
+                        ),
                       ),
                     ),
                   ],

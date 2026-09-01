@@ -1,5 +1,7 @@
 import 'dart:async';
+
 import 'package:riverpod_annotation/riverpod_annotation.dart';
+
 import '../../domain/models/activity_confidence.dart';
 import '../../domain/models/location_data.dart';
 import '../../domain/models/trip.dart';
@@ -78,6 +80,7 @@ class TripRecorderService extends _$TripRecorderService {
   // State
   Trip? _activeTrip;
   final List<RoutePoint> _routePointBuffer = [];
+
   /// Held as the subscription's `close` tear-off (`ProviderSubscription` is not
   /// exported by `riverpod_annotation`).
   ///
@@ -124,10 +127,12 @@ class TripRecorderService extends _$TripRecorderService {
     // container rather than on `ref` for the reason documented on
     // [_closeLocationSubscription].
     _closeStateMachineSubscription?.call();
-    _closeStateMachineSubscription = ref.container.listen(
-      tripStateMachineProvider,
-      (previous, next) => _handleStateChange(previous, next),
-    ).close;
+    _closeStateMachineSubscription = ref.container
+        .listen(
+          tripStateMachineProvider,
+          (previous, next) => _handleStateChange(previous, next),
+        )
+        .close;
 
     // Cleanup on dispose
     ref.onDispose(() {
@@ -301,7 +306,8 @@ class TripRecorderService extends _$TripRecorderService {
     final totalDuration = endTime.difference(_activeTrip!.startTime).inSeconds;
     final activeDuration = totalDuration - _totalPauseDurationSeconds;
     final avgSpeed = activeDuration > 0
-        ? (_totalDistanceMeters / activeDuration) * 3.6 // m/s to km/h
+        ? (_totalDistanceMeters / activeDuration) *
+              3.6 // m/s to km/h
         : null;
 
     // Update trip with final metrics
@@ -333,13 +339,15 @@ class TripRecorderService extends _$TripRecorderService {
     _stateMachine!.stopTrip();
 
     // Reset UI metrics
-    state = const AsyncValue.data(TripMetrics(
-      distanceMeters: 0.0,
-      durationSeconds: 0,
-      avgSpeedKmh: null,
-      maxSpeedKmh: null,
-      routePointCount: 0,
-    ));
+    state = const AsyncValue.data(
+      TripMetrics(
+        distanceMeters: 0.0,
+        durationSeconds: 0,
+        avgSpeedKmh: null,
+        maxSpeedKmh: null,
+        routePointCount: 0,
+      ),
+    );
 
     return finalTrip;
   }
@@ -368,22 +376,24 @@ class TripRecorderService extends _$TripRecorderService {
   /// untestable) and opened a second, unmanaged GPS subscription (audit #5).
   void _startLocationStream() {
     _closeLocationSubscription?.call();
-    _closeLocationSubscription = ref.container.listen(
-      locationStreamProvider(),
-      (previous, next) => next.when(
-        data: _handleLocationUpdate,
-        error: (error, stackTrace) {
-          // Surface GPS errors instead of dropping them silently. Recording
-          // continues; the metrics ticker keeps elapsed time advancing.
-          _logger.error(
-            'Location stream error during recording',
-            error,
-            stackTrace,
-          );
-        },
-        loading: () {},
-      ),
-    ).close;
+    _closeLocationSubscription = ref.container
+        .listen(
+          locationStreamProvider(),
+          (previous, next) => next.when(
+            data: _handleLocationUpdate,
+            error: (error, stackTrace) {
+              // Surface GPS errors instead of dropping them silently. Recording
+              // continues; the metrics ticker keeps elapsed time advancing.
+              _logger.error(
+                'Location stream error during recording',
+                error,
+                stackTrace,
+              );
+            },
+            loading: () {},
+          ),
+        )
+        .close;
   }
 
   /// Stop location stream subscription
@@ -435,10 +445,7 @@ class TripRecorderService extends _$TripRecorderService {
     }
 
     // Create route point
-    final routePoint = RoutePoint.fromLocationData(
-      location,
-      _activeTrip!.id!,
-    );
+    final routePoint = RoutePoint.fromLocationData(location, _activeTrip!.id!);
 
     // Add to buffer
     _routePointBuffer.add(routePoint);
@@ -530,15 +537,18 @@ class TripRecorderService extends _$TripRecorderService {
     }
 
     final avgSpeed = activeDuration > 0
-        ? (_totalDistanceMeters / activeDuration) * 3.6 // m/s to km/h
+        ? (_totalDistanceMeters / activeDuration) *
+              3.6 // m/s to km/h
         : null;
 
-    state = AsyncValue.data(TripMetrics(
-      distanceMeters: _totalDistanceMeters,
-      durationSeconds: activeDuration,
-      avgSpeedKmh: avgSpeed,
-      maxSpeedKmh: _maxSpeedKmh > 0 ? _maxSpeedKmh : null,
-      routePointCount: _routePointBuffer.length,
-    ));
+    state = AsyncValue.data(
+      TripMetrics(
+        distanceMeters: _totalDistanceMeters,
+        durationSeconds: activeDuration,
+        avgSpeedKmh: avgSpeed,
+        maxSpeedKmh: _maxSpeedKmh > 0 ? _maxSpeedKmh : null,
+        routePointCount: _routePointBuffer.length,
+      ),
+    );
   }
 }

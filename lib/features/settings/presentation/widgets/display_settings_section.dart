@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../../domain/models/user_settings.dart' as models;
 import '../providers/settings_provider.dart';
 import 'setting_section.dart';
@@ -7,10 +8,7 @@ import 'setting_radio_group.dart';
 
 /// Display and appearance preferences section
 class DisplaySettingsSection extends ConsumerWidget {
-  const DisplaySettingsSection({
-    required this.settings,
-    super.key,
-  });
+  const DisplaySettingsSection({required this.settings, super.key});
 
   final models.UserSettings settings;
 
@@ -67,9 +65,7 @@ class DisplaySettingsSection extends ConsumerWidget {
             ),
           ],
           onChanged: (value) {
-            ref
-                .read(displaySettingsProvider.notifier)
-                .updateSpeedUnit(value);
+            ref.read(displaySettingsProvider.notifier).updateSpeedUnit(value);
           },
         ),
 
@@ -98,9 +94,7 @@ class DisplaySettingsSection extends ConsumerWidget {
             ),
           ],
           onChanged: (value) {
-            ref
-                .read(displaySettingsProvider.notifier)
-                .updateThemeMode(value);
+            ref.read(displaySettingsProvider.notifier).updateThemeMode(value);
           },
         ),
       ],

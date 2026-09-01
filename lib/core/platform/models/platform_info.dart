@@ -53,9 +53,4 @@ extension PlatformInfoExtensions on PlatformInfo {
   bool get isIos17Plus => iosVersionAtLeast(17);
 }
 
-enum PlatformType {
-  android,
-  ios,
-  web,
-  other,
-}
+enum PlatformType { android, ios, web, other }

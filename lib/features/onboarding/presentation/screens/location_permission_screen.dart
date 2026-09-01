@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../../../../core/theme/app_spacing.dart';
 import '../providers/onboarding_provider.dart';
 import '../widgets/onboarding_action_button.dart';
@@ -19,11 +20,7 @@ class LocationPermissionScreen extends ConsumerWidget {
           const SizedBox(height: AppSpacing.xxl),
 
           // Icon
-          Icon(
-            Icons.location_on,
-            size: 100,
-            color: theme.colorScheme.primary,
-          ),
+          Icon(Icons.location_on, size: 100, color: theme.colorScheme.primary),
           const SizedBox(height: AppSpacing.xl),
 
           // Title
@@ -49,10 +46,7 @@ class LocationPermissionScreen extends ConsumerWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'Why we need this:',
-                    style: theme.textTheme.titleMedium,
-                  ),
+                  Text('Why we need this:', style: theme.textTheme.titleMedium),
                   const SizedBox(height: AppSpacing.md),
                   const _ReasonItem(
                     icon: Icons.route,
@@ -84,10 +78,7 @@ class LocationPermissionScreen extends ConsumerWidget {
             ),
             child: Row(
               children: [
-                Icon(
-                  Icons.privacy_tip,
-                  color: theme.colorScheme.primary,
-                ),
+                Icon(Icons.privacy_tip, color: theme.colorScheme.primary),
                 const SizedBox(width: AppSpacing.sm),
                 Expanded(
                   child: Text(
@@ -107,8 +98,12 @@ class LocationPermissionScreen extends ConsumerWidget {
                 : 'Allow Location Access',
             onPressed: state.locationPermissionGranted
                 ? () => ref.read(onboardingProvider.notifier).nextPage()
-                : () => ref.read(onboardingProvider.notifier).requestLocationPermission(),
-            icon: state.locationPermissionGranted ? Icons.check : Icons.location_on,
+                : () => ref
+                      .read(onboardingProvider.notifier)
+                      .requestLocationPermission(),
+            icon: state.locationPermissionGranted
+                ? Icons.check
+                : Icons.location_on,
           ),
         ],
       ),
@@ -117,10 +112,7 @@ class LocationPermissionScreen extends ConsumerWidget {
 }
 
 class _ReasonItem extends StatelessWidget {
-  const _ReasonItem({
-    required this.icon,
-    required this.text,
-  });
+  const _ReasonItem({required this.icon, required this.text});
 
   final IconData icon;
   final String text;
@@ -131,18 +123,9 @@ class _ReasonItem extends StatelessWidget {
 
     return Row(
       children: [
-        Icon(
-          icon,
-          size: AppSpacing.iconMd,
-          color: theme.colorScheme.primary,
-        ),
+        Icon(icon, size: AppSpacing.iconMd, color: theme.colorScheme.primary),
         const SizedBox(width: AppSpacing.sm),
-        Expanded(
-          child: Text(
-            text,
-            style: theme.textTheme.bodyMedium,
-          ),
-        ),
+        Expanded(child: Text(text, style: theme.textTheme.bodyMedium)),
       ],
     );
   }

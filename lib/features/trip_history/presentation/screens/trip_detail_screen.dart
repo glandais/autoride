@@ -18,10 +18,7 @@ import 'package:autoride/core/utils/error_handler.dart';
 /// - Route map visualization
 /// - Confirm/Delete actions
 class TripDetailScreen extends ConsumerWidget {
-  const TripDetailScreen({
-    required this.tripId,
-    super.key,
-  });
+  const TripDetailScreen({required this.tripId, super.key});
 
   final int tripId;
 
@@ -49,10 +46,7 @@ class TripDetailScreen extends ConsumerWidget {
               children: [
                 // Route map
                 if (trip.routePoints.isNotEmpty) ...[
-                  TripRouteMap(
-                    routePoints: trip.routePoints,
-                    height: 300,
-                  ),
+                  TripRouteMap(routePoints: trip.routePoints, height: 300),
                 ] else ...[
                   Container(
                     height: 300,
@@ -102,9 +96,8 @@ class TripDetailScreen extends ConsumerWidget {
             ),
           );
         },
-        loading: () => const LoadingView.fullScreen(
-          message: 'Loading trip details...',
-        ),
+        loading: () =>
+            const LoadingView.fullScreen(message: 'Loading trip details...'),
         error: (error, stack) {
           // Handle trip not found error
           if (error is TripNotFoundException) {
@@ -182,9 +175,8 @@ class TripDetailScreen extends ConsumerWidget {
 
         if (context.mounted) {
           Navigator.pop(context); // Go back to history screen
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Trip deleted')),
-          );
+          ScaffoldMessenger.of(context)
+              .showSnackBar(const SnackBar(content: Text('Trip deleted')));
         }
       } catch (e) {
         if (context.mounted) {
@@ -224,10 +216,7 @@ class _MetadataSection extends StatelessWidget {
           label: 'Start Time',
           value: _formatDateTime(trip.startTime),
         ),
-        _MetadataRow(
-          label: 'End Time',
-          value: _formatDateTime(trip.endTime),
-        ),
+        _MetadataRow(label: 'End Time', value: _formatDateTime(trip.endTime)),
         _MetadataRow(
           label: 'Detection Confidence',
           value: '${(trip.confidenceScore * 100).toStringAsFixed(0)}%',
@@ -236,7 +225,9 @@ class _MetadataSection extends StatelessWidget {
         _MetadataRow(
           label: 'Status',
           value: trip.userConfirmed ? 'Confirmed' : 'Unconfirmed',
-          valueColor: trip.userConfirmed ? AppColors.success : AppColors.warning,
+          valueColor: trip.userConfirmed
+              ? AppColors.success
+              : AppColors.warning,
         ),
       ],
     );
@@ -257,7 +248,7 @@ class _MetadataSection extends StatelessWidget {
       'Sep',
       'Oct',
       'Nov',
-      'Dec'
+      'Dec',
     ];
 
     final month = months[dateTime.month];

@@ -44,13 +44,12 @@ void main() {
     GeolocatorPlatform.instance = originalGeolocator;
   });
 
-  PermissionHandlerService serviceOn({
-    PlatformInfo platform = _android10,
-  }) {
+  PermissionHandlerService serviceOn({PlatformInfo platform = _android10}) {
     final container = ProviderContainer(
       overrides: [
-        platformInfoServiceProvider
-            .overrideWith(() => _FakePlatformInfoService(platform)),
+        platformInfoServiceProvider.overrideWith(
+          () => _FakePlatformInfoService(platform),
+        ),
       ],
     );
     addTearDown(container.dispose);
@@ -84,8 +83,9 @@ void main() {
     test('translates a granted platform status', () async {
       handler.statuses[Permission.locationWhenInUse] = PermissionStatus.granted;
 
-      final status = await serviceOn()
-          .checkPermission(AppPermission.locationWhenInUse);
+      final status = await serviceOn().checkPermission(
+        AppPermission.locationWhenInUse,
+      );
 
       expect(status.permission, equals(AppPermission.locationWhenInUse));
       expect(status.isGranted, isTrue);
@@ -97,8 +97,9 @@ void main() {
       handler.statuses[Permission.notification] =
           PermissionStatus.permanentlyDenied;
 
-      final status =
-          await serviceOn().checkPermission(AppPermission.notification);
+      final status = await serviceOn().checkPermission(
+        AppPermission.notification,
+      );
 
       expect(status.isPermanentlyDenied, isTrue);
       expect(status.needsSettings, isTrue);
@@ -150,17 +151,20 @@ void main() {
   // ---------------------------------------------------------------------------
 
   group('PermissionHandlerService.requestPermission', () {
-    test('returns the granted result for a foreground location grant',
-        () async {
-      handler.requestResults[Permission.locationWhenInUse] =
-          PermissionStatus.granted;
+    test(
+      'returns the granted result for a foreground location grant',
+      () async {
+        handler.requestResults[Permission.locationWhenInUse] =
+            PermissionStatus.granted;
 
-      final status = await serviceOn()
-          .requestPermission(AppPermission.locationWhenInUse);
+        final status = await serviceOn().requestPermission(
+          AppPermission.locationWhenInUse,
+        );
 
-      expect(status.isGranted, isTrue);
-      expect(handler.requested, equals([Permission.locationWhenInUse]));
-    });
+        expect(status.isGranted, isTrue);
+        expect(handler.requested, equals([Permission.locationWhenInUse]));
+      },
+    );
 
     test('throws when the location service itself is off', () async {
       geolocator.serviceEnabled = false;
@@ -172,17 +176,20 @@ void main() {
       expect(handler.requested, isEmpty);
     });
 
-    test('does not gate non-location permissions on the location service',
-        () async {
-      geolocator.serviceEnabled = false;
-      handler.requestResults[Permission.activityRecognition] =
-          PermissionStatus.granted;
+    test(
+      'does not gate non-location permissions on the location service',
+      () async {
+        geolocator.serviceEnabled = false;
+        handler.requestResults[Permission.activityRecognition] =
+            PermissionStatus.granted;
 
-      final status = await serviceOn()
-          .requestPermission(AppPermission.activityRecognition);
+        final status = await serviceOn().requestPermission(
+          AppPermission.activityRecognition,
+        );
 
-      expect(status.isGranted, isTrue);
-    });
+        expect(status.isGranted, isTrue);
+      },
+    );
 
     test('rejects a duplicate in-flight request', () async {
       final gate = Completer<void>();
@@ -191,8 +198,7 @@ void main() {
           PermissionStatus.granted;
       final service = serviceOn();
 
-      final first =
-          service.requestPermission(AppPermission.locationWhenInUse);
+      final first = service.requestPermission(AppPermission.locationWhenInUse);
       await pumpEventQueue();
 
       await expectLater(
@@ -239,8 +245,9 @@ void main() {
           PermissionStatus.denied;
       final service = serviceOn();
 
-      final quiet =
-          await service.requestPermission(AppPermission.activityRecognition);
+      final quiet = await service.requestPermission(
+        AppPermission.activityRecognition,
+      );
       expect(quiet.isDenied, isTrue);
 
       await expectLater(
@@ -347,7 +354,10 @@ void main() {
       ]);
 
       expect(results, hasLength(2));
-      expect(results[AppPermission.locationAlways]!.isPermanentlyDenied, isTrue);
+      expect(
+        results[AppPermission.locationAlways]!.isPermanentlyDenied,
+        isTrue,
+      );
       expect(results[AppPermission.activityRecognition]!.isGranted, isTrue);
     });
   });
@@ -374,8 +384,9 @@ void main() {
     });
 
     test('PermissionDeniedException has correct message', () {
-      const exception =
-          PermissionDeniedException(AppPermission.locationWhenInUse);
+      const exception = PermissionDeniedException(
+        AppPermission.locationWhenInUse,
+      );
 
       expect(
         exception.toString(),
@@ -385,8 +396,9 @@ void main() {
     });
 
     test('PermissionPermanentlyDeniedException has correct message', () {
-      const exception =
-          PermissionPermanentlyDeniedException(AppPermission.locationAlways);
+      const exception = PermissionPermanentlyDeniedException(
+        AppPermission.locationAlways,
+      );
 
       expect(exception.toString(), contains('permanently denied'));
       expect(exception.toString(), contains('Background Location'));
@@ -394,8 +406,9 @@ void main() {
     });
 
     test('PermissionRequestInProgressException has correct message', () {
-      const exception =
-          PermissionRequestInProgressException(AppPermission.notification);
+      const exception = PermissionRequestInProgressException(
+        AppPermission.notification,
+      );
 
       expect(exception.toString(), contains('already in progress'));
       expect(exception, isA<PermissionException>());
@@ -484,8 +497,7 @@ class _FakePermissionHandler extends PermissionHandlerPlatform {
   @override
   Future<bool> shouldShowRequestPermissionRationale(
     Permission permission,
-  ) async =>
-      false;
+  ) async => false;
 
   @override
   Future<ServiceStatus> checkServiceStatus(Permission permission) async =>

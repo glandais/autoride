@@ -1,6 +1,8 @@
 import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
+
 import '../../../../core/constants/app_constants.dart';
 import '../../domain/models/activity_confidence.dart';
 import '../../domain/models/location_data.dart';
@@ -113,14 +115,16 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
 
     // Start listening to the motion stream through its provider so overrides
     // apply and a single shared sensor subscription is used (audit #5).
-    _closeMotionSubscription = ref.container.listen(
-      motionDataStreamProvider,
-      (previous, next) => next.when(
-        data: (motion) => unawaited(_onMotionData(motion)),
-        error: _onMotionStreamError,
-        loading: () {},
-      ),
-    ).close;
+    _closeMotionSubscription = ref.container
+        .listen(
+          motionDataStreamProvider,
+          (previous, next) => next.when(
+            data: (motion) => unawaited(_onMotionData(motion)),
+            error: _onMotionStreamError,
+            loading: () {},
+          ),
+        )
+        .close;
 
     // GPS is NOT subscribed here. It is gated on motion (audit #3): the gate
     // opens on the first moving/cycling sample and closes again after
@@ -190,17 +194,19 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
   void _openGpsGate() {
     if (_closeLocationSubscription != null) return;
 
-    _closeLocationSubscription = ref.container.listen(
-      locationStreamProvider(),
-      (previous, next) => next.when(
-        data: _onLocationData,
-        error: (error, stackTrace) {
-          // GPS unavailable - continue with motion-only detection
-          _lastLocation = null;
-        },
-        loading: () {},
-      ),
-    ).close;
+    _closeLocationSubscription = ref.container
+        .listen(
+          locationStreamProvider(),
+          (previous, next) => next.when(
+            data: _onLocationData,
+            error: (error, stackTrace) {
+              // GPS unavailable - continue with motion-only detection
+              _lastLocation = null;
+            },
+            loading: () {},
+          ),
+        )
+        .close;
   }
 
   /// Cancel the location subscription and forget the last fix, so detection
@@ -353,7 +359,9 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
       try {
         // Trigger trip recording (T015)
         // This will create trip in database and update state machine
-        await ref.read(tripRecorderServiceProvider.notifier).startRecording(
+        await ref
+            .read(tripRecorderServiceProvider.notifier)
+            .startRecording(
               confidenceScore: confidence,
               activity: ActivityType.cycling,
             );

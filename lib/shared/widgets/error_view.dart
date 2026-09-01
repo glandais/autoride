@@ -2,13 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:autoride/core/theme/app_colors.dart';
 import 'package:autoride/core/theme/app_spacing.dart';
 
-enum ErrorType {
-  notFound,
-  network,
-  permission,
-  database,
-  unknown,
-}
+enum ErrorType { notFound, network, permission, database, unknown }
 
 class ErrorView extends StatelessWidget {
   const ErrorView({
@@ -41,7 +35,8 @@ class ErrorView extends StatelessWidget {
     return ErrorView(
       type: ErrorType.network,
       title: title ?? 'Connection Error',
-      message: message ?? 'Please check your internet connection and try again.',
+      message:
+          message ?? 'Please check your internet connection and try again.',
       onRetry: onRetry,
       retryLabel: 'Retry',
     );
@@ -75,10 +70,7 @@ class ErrorView extends StatelessWidget {
     );
   }
 
-  factory ErrorView.generic({
-    required String message,
-    VoidCallback? onRetry,
-  }) {
+  factory ErrorView.generic({required String message, VoidCallback? onRetry}) {
     return ErrorView(
       type: ErrorType.unknown,
       title: 'Error',
@@ -105,18 +97,14 @@ class ErrorView extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Icon(
-              _getIcon(),
-              size: 64,
-              color: AppColors.error,
-            ),
+            Icon(_getIcon(), size: 64, color: AppColors.error),
             const SizedBox(height: AppSpacing.md),
             if (title != null)
               Text(
                 title!,
                 style: theme.textTheme.titleLarge?.copyWith(
-                      color: AppColors.error,
-                    ),
+                  color: AppColors.error,
+                ),
                 textAlign: TextAlign.center,
               ),
             if (title != null) const SizedBox(height: AppSpacing.sm),
@@ -124,8 +112,8 @@ class ErrorView extends StatelessWidget {
               Text(
                 message!,
                 style: theme.textTheme.bodyMedium?.copyWith(
-                      color: theme.textTheme.bodySmall?.color,
-                    ),
+                  color: theme.textTheme.bodySmall?.color,
+                ),
                 textAlign: TextAlign.center,
               ),
             if (onRetry != null) ...[

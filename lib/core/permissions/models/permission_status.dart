@@ -1,5 +1,6 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 import 'package:permission_handler/permission_handler.dart' as ph;
+
 import '../exceptions/permission_exceptions.dart';
 
 part 'permission_status.freezed.dart';

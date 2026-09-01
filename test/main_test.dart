@@ -43,8 +43,9 @@ void main() {
           detection: detection,
           initialTripState: initialTripState,
         ),
-        locationStreamProvider
-            .overrideWith((ref, settings) => const Stream<LocationData>.empty()),
+        locationStreamProvider.overrideWith(
+          (ref, settings) => const Stream<LocationData>.empty(),
+        ),
         activeRoutePointsProvider.overrideWith((ref) async => []),
       ],
     );
@@ -58,8 +59,9 @@ void main() {
   }
 
   group('HomeShell - navigation', () {
-    testWidgets('opens on history and can reach the Trip tab while idle',
-        (tester) async {
+    testWidgets('opens on history and can reach the Trip tab while idle', (
+      tester,
+    ) async {
       await pumpShell(tester);
 
       expect(find.byType(TripHistoryScreen), findsOneWidget);
@@ -72,11 +74,15 @@ void main() {
       expect(find.byKey(const Key('manual-start-trip-button')), findsOneWidget);
     });
 
-    testWidgets('labels the Trip tab "Active Trip" while recording',
-        (tester) async {
+    testWidgets('labels the Trip tab "Active Trip" while recording', (
+      tester,
+    ) async {
       await pumpShell(
         tester,
-        initialTripState: TripState.active(tripId: 1, startTime: DateTime.now()),
+        initialTripState: TripState.active(
+          tripId: 1,
+          startTime: DateTime.now(),
+        ),
       );
 
       // Once as the tab label, once as the tracking screen's own title after
@@ -91,8 +97,9 @@ void main() {
   });
 
   group('HomeShell - session survives tab switching (T041)', () {
-    testWidgets('a running trip is still running after a tab round trip',
-        (tester) async {
+    testWidgets('a running trip is still running after a tab round trip', (
+      tester,
+    ) async {
       final container = await pumpShell(tester);
 
       await tapTab(tester, 'Trip');

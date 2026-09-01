@@ -9,7 +9,10 @@ void main() {
 
       expect(config.sensorSamplingRate, equals(50));
       expect(config.distanceFilter, equals(15));
-      expect(config.locationUpdateInterval, equals(const Duration(seconds: 30)));
+      expect(
+        config.locationUpdateInterval,
+        equals(const Duration(seconds: 30)),
+      );
       expect(config.locationAccuracy, equals(LocationAccuracy.medium));
     });
 
@@ -18,7 +21,10 @@ void main() {
 
       expect(config.sensorSamplingRate, equals(20));
       expect(config.distanceFilter, equals(50));
-      expect(config.locationUpdateInterval, equals(const Duration(seconds: 90)));
+      expect(
+        config.locationUpdateInterval,
+        equals(const Duration(seconds: 90)),
+      );
       expect(config.locationAccuracy, equals(LocationAccuracy.low));
     });
 

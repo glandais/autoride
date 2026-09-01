@@ -5,21 +5,21 @@ part 'activity_confidence.freezed.dart';
 
 /// Activity types that can be detected
 enum ActivityType {
-  stationary,   // Not moving
-  walking,      // Walking or slow movement
-  cycling,      // Cycling (target activity)
-  driving,      // In vehicle
-  running,      // Running or fast movement
-  unknown,      // Insufficient data
+  stationary, // Not moving
+  walking, // Walking or slow movement
+  cycling, // Cycling (target activity)
+  driving, // In vehicle
+  running, // Running or fast movement
+  unknown, // Insufficient data
 }
 
 /// Confidence level for activity classification
 enum ConfidenceLevel {
-  veryLow,   // 0-0.4
-  low,       // 0.4-0.6
-  medium,    // 0.6-0.8
-  high,      // 0.8-0.9
-  veryHigh,  // 0.9-1.0
+  veryLow, // 0-0.4
+  low, // 0.4-0.6
+  medium, // 0.6-0.8
+  high, // 0.8-0.9
+  veryHigh, // 0.9-1.0
 }
 
 /// Activity classification with confidence scores
@@ -29,9 +29,9 @@ sealed class ActivityConfidence with _$ActivityConfidence {
 
   const factory ActivityConfidence({
     required ActivityType activity,
-    required double confidence,  // 0.0-1.0
-    required double motionScore,  // Motion pattern score
-    required double speedScore,   // GPS speed validation score
+    required double confidence, // 0.0-1.0
+    required double motionScore, // Motion pattern score
+    required double speedScore, // GPS speed validation score
     required double frequencyScore, // Pedaling frequency score
     Map<ActivityType, double>? allScores, // Scores for all activities
   }) = _ActivityConfidence;
@@ -59,8 +59,8 @@ sealed class ActivityConfidence with _$ActivityConfidence {
     // per-activity cycling score in CyclingPatternDetector.
     final combinedConfidence =
         (motionScore * AppConstants.motionScoreWeight) +
-            (speedScore * AppConstants.speedScoreWeight) +
-            (frequencyScore * AppConstants.frequencyScoreWeight);
+        (speedScore * AppConstants.speedScoreWeight) +
+        (frequencyScore * AppConstants.frequencyScoreWeight);
 
     return ActivityConfidence(
       activity: bestActivity,

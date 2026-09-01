@@ -66,7 +66,8 @@ void main() {
       expect(AppConstants.speedScoreWeight, equals(0.35));
       expect(AppConstants.frequencyScoreWeight, equals(0.25));
 
-      const total = AppConstants.motionScoreWeight +
+      const total =
+          AppConstants.motionScoreWeight +
           AppConstants.speedScoreWeight +
           AppConstants.frequencyScoreWeight;
       expect(total, closeTo(1.0, 0.01));

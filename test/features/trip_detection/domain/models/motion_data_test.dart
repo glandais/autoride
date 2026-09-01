@@ -211,16 +211,18 @@ void main() {
         final accelValue = 11.0 + 2.0 * sin(2 * pi * 1.0 * t); // 1 Hz
         final stamp = baseTime.add(Duration(milliseconds: (t * 1000).round()));
 
-        samples.add(MotionData(
-          accelerometer: AccelerometerData(
-            x: accelValue * 0.5,
-            y: accelValue * 0.5,
-            z: accelValue,
+        samples.add(
+          MotionData(
+            accelerometer: AccelerometerData(
+              x: accelValue * 0.5,
+              y: accelValue * 0.5,
+              z: accelValue,
+              timestamp: stamp,
+            ),
+            gyroscope: GyroscopeData(x: 1.0, y: 0.5, z: 0.5, timestamp: stamp),
             timestamp: stamp,
           ),
-          gyroscope: GyroscopeData(x: 1.0, y: 0.5, z: 0.5, timestamp: stamp),
-          timestamp: stamp,
-        ));
+        );
       }
 
       final window = MotionWindow(

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../../../../core/theme/app_spacing.dart';
 import '../providers/onboarding_provider.dart';
 import '../widgets/onboarding_action_button.dart';
@@ -115,17 +116,9 @@ class _SetupItem extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
       child: Row(
         children: [
-          Icon(
-            icon,
-            color: enabled ? Colors.green : theme.colorScheme.outline,
-          ),
+          Icon(icon, color: enabled ? Colors.green : theme.colorScheme.outline),
           const SizedBox(width: AppSpacing.md),
-          Expanded(
-            child: Text(
-              label,
-              style: theme.textTheme.bodyLarge,
-            ),
-          ),
+          Expanded(child: Text(label, style: theme.textTheme.bodyLarge)),
           Icon(
             enabled ? Icons.check_circle : Icons.cancel,
             color: enabled ? Colors.green : theme.colorScheme.outline,

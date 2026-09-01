@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import '../../../../core/theme/app_spacing.dart';
 
 class OnboardingActionButton extends StatelessWidget {
@@ -22,9 +23,7 @@ class OnboardingActionButton extends StatelessWidget {
       child: ElevatedButton(
         onPressed: onPressed,
         style: ElevatedButton.styleFrom(
-          padding: const EdgeInsets.symmetric(
-            vertical: AppSpacing.md,
-          ),
+          padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,

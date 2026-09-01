@@ -21,7 +21,9 @@ class NotificationService extends _$NotificationService {
 
   Future<void> _initializeNotifications() async {
     // Android initialization
-    const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
+    const androidSettings = AndroidInitializationSettings(
+      '@mipmap/ic_launcher',
+    );
 
     // iOS initialization
     const iosSettings = DarwinInitializationSettings(
@@ -67,12 +69,14 @@ class NotificationService extends _$NotificationService {
 
     await _notifications
         .resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>()
+          AndroidFlutterLocalNotificationsPlugin
+        >()
         ?.createNotificationChannel(trackingChannel);
 
     await _notifications
         .resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>()
+          AndroidFlutterLocalNotificationsPlugin
+        >()
         ?.createNotificationChannel(eventsChannel);
   }
 
@@ -105,7 +109,7 @@ class NotificationService extends _$NotificationService {
       // Note: Navigation from notification requires app-level navigation service
       // or deep linking, which is beyond scope of T025
     } else if (response.notificationResponseType ==
-               NotificationResponseType.selectedNotification) {
+        NotificationResponseType.selectedNotification) {
       // User tapped notification body during active trip
       // TODO: Navigate to tracking screen
       // Note: Navigation from notification requires app-level navigation service
@@ -188,8 +192,12 @@ class NotificationService extends _$NotificationService {
     await _notifications.show(
       id: AppConstants.foregroundNotificationId,
       title: 'AutoRide - Trip in Progress',
-      body: 'Distance: $distanceKm km • Duration: $durationStr • Speed: $speedKmh km/h',
-      notificationDetails: NotificationDetails(android: androidDetails, iOS: iosDetails),
+      body:
+          'Distance: $distanceKm km • Duration: $durationStr • Speed: $speedKmh km/h',
+      notificationDetails: NotificationDetails(
+        android: androidDetails,
+        iOS: iosDetails,
+      ),
     );
   }
 
@@ -224,7 +232,10 @@ class NotificationService extends _$NotificationService {
       id: AppConstants.tripStartNotificationId,
       title: 'Trip Started',
       body: 'Your cycling trip is now being tracked',
-      notificationDetails: NotificationDetails(android: androidDetails, iOS: iosDetails),
+      notificationDetails: NotificationDetails(
+        android: androidDetails,
+        iOS: iosDetails,
+      ),
     );
 
     // Auto-dismiss after 5 seconds
@@ -248,9 +259,7 @@ class NotificationService extends _$NotificationService {
     final distanceKm = (distance / 1000).toStringAsFixed(1);
     final hours = duration.inHours;
     final minutes = duration.inMinutes.remainder(60);
-    final durationStr = hours > 0
-        ? '${hours}h ${minutes}m'
-        : '${minutes}m';
+    final durationStr = hours > 0 ? '${hours}h ${minutes}m' : '${minutes}m';
     final avgSpeedKmh = avgSpeed.toStringAsFixed(1);
 
     final androidDetails = AndroidNotificationDetails(
@@ -283,8 +292,12 @@ class NotificationService extends _$NotificationService {
     await _notifications.show(
       id: AppConstants.tripStopNotificationId,
       title: 'Trip Completed',
-      body: 'Distance: $distanceKm km • Duration: $durationStr • Avg Speed: $avgSpeedKmh km/h',
-      notificationDetails: NotificationDetails(android: androidDetails, iOS: iosDetails),
+      body:
+          'Distance: $distanceKm km • Duration: $durationStr • Avg Speed: $avgSpeedKmh km/h',
+      notificationDetails: NotificationDetails(
+        android: androidDetails,
+        iOS: iosDetails,
+      ),
     );
   }
 
@@ -296,8 +309,10 @@ class NotificationService extends _$NotificationService {
   // Request notification permissions (Android 13+, iOS)
   Future<bool> requestPermissions() async {
     // Android
-    final androidImpl = _notifications.resolvePlatformSpecificImplementation<
-        AndroidFlutterLocalNotificationsPlugin>();
+    final androidImpl = _notifications
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
 
     if (androidImpl != null) {
       final granted = await androidImpl.requestNotificationsPermission();
@@ -307,8 +322,10 @@ class NotificationService extends _$NotificationService {
     }
 
     // iOS
-    final iosImpl = _notifications.resolvePlatformSpecificImplementation<
-        IOSFlutterLocalNotificationsPlugin>();
+    final iosImpl = _notifications
+        .resolvePlatformSpecificImplementation<
+          IOSFlutterLocalNotificationsPlugin
+        >();
 
     if (iosImpl != null) {
       final granted = await iosImpl.requestPermissions(

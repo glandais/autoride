@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../../domain/models/user_settings.dart';
 import '../../data/services/settings_service.dart';
 import 'setting_section.dart';
@@ -13,10 +14,7 @@ import '../../../../core/permissions/services/permission_handler_service.dart';
 
 /// Location settings section for GPS configuration
 class LocationSettingsSection extends ConsumerWidget {
-  const LocationSettingsSection({
-    required this.settings,
-    super.key,
-  });
+  const LocationSettingsSection({required this.settings, super.key});
 
   final UserSettings settings;
 
@@ -48,9 +46,9 @@ class LocationSettingsSection extends ConsumerWidget {
             ),
           ],
           onChanged: (value) {
-            ref.read(settingsServiceProvider.notifier).updatePartial(
-                  (s) => s.copyWith(locationAccuracy: value),
-                );
+            ref
+                .read(settingsServiceProvider.notifier)
+                .updatePartial((s) => s.copyWith(locationAccuracy: value));
           },
         ),
 
@@ -65,7 +63,9 @@ class LocationSettingsSection extends ConsumerWidget {
           unit: 'm',
           divisions: 9,
           onChanged: (value) {
-            ref.read(settingsServiceProvider.notifier).updatePartial(
+            ref
+                .read(settingsServiceProvider.notifier)
+                .updatePartial(
                   (s) => s.copyWith(distanceFilterMeters: value.toInt()),
                 );
           },
@@ -89,8 +89,9 @@ class LocationSettingsSection extends ConsumerWidget {
 
                 if (shouldRequest == true) {
                   // Request background location permission
-                  final service =
-                      ref.read(permissionHandlerServiceProvider.notifier);
+                  final service = ref.read(
+                    permissionHandlerServiceProvider.notifier,
+                  );
 
                   try {
                     final status = await service.requestPermission(
@@ -100,8 +101,11 @@ class LocationSettingsSection extends ConsumerWidget {
                     if (status.isGranted) {
                       // Update setting
                       if (context.mounted) {
-                        ref.read(settingsServiceProvider.notifier).updatePartial(
-                              (s) => s.copyWith(backgroundLocationEnabled: true),
+                        ref
+                            .read(settingsServiceProvider.notifier)
+                            .updatePartial(
+                              (s) =>
+                                  s.copyWith(backgroundLocationEnabled: true),
                             );
                       }
                     } else if (status.isPermanentlyDenied) {
@@ -121,7 +125,9 @@ class LocationSettingsSection extends ConsumerWidget {
                 }
               } else {
                 // Just disable the setting
-                ref.read(settingsServiceProvider.notifier).updatePartial(
+                ref
+                    .read(settingsServiceProvider.notifier)
+                    .updatePartial(
                       (s) => s.copyWith(backgroundLocationEnabled: false),
                     );
               }

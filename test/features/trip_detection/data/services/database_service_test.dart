@@ -168,8 +168,11 @@ void main() {
       final tripId = await db.insert('trips', trip.toMap());
       expect(tripId, greaterThan(0));
 
-      final result =
-          await db.query('trips', where: 'id = ?', whereArgs: [tripId]);
+      final result = await db.query(
+        'trips',
+        where: 'id = ?',
+        whereArgs: [tripId],
+      );
       expect(result, hasLength(1));
       expect(result.first['distance'], equals(5000.0));
       expect(result.first['detected_activity'], equals('cycling'));
@@ -191,8 +194,11 @@ void main() {
       final pointId = await db.insert('route_points', point.toMap());
       expect(pointId, greaterThan(0));
 
-      final result = await db
-          .query('route_points', where: 'trip_id = ?', whereArgs: [tripId]);
+      final result = await db.query(
+        'route_points',
+        where: 'trip_id = ?',
+        whereArgs: [tripId],
+      );
       expect(result, hasLength(1));
       expect(result.first['latitude'], equals(48.8566));
       expect(result.first['longitude'], equals(2.3522));
@@ -211,14 +217,22 @@ void main() {
       );
 
       expect(
-        await db.query('route_points', where: 'trip_id = ?', whereArgs: [tripId]),
+        await db.query(
+          'route_points',
+          where: 'trip_id = ?',
+          whereArgs: [tripId],
+        ),
         hasLength(1),
       );
 
       await db.delete('trips', where: 'id = ?', whereArgs: [tripId]);
 
       expect(
-        await db.query('route_points', where: 'trip_id = ?', whereArgs: [tripId]),
+        await db.query(
+          'route_points',
+          where: 'trip_id = ?',
+          whereArgs: [tripId],
+        ),
         isEmpty,
       );
     });
@@ -253,7 +267,11 @@ void main() {
 
       await service.onUpgrade(db, 1, AppConstants.databaseVersion);
 
-      final rows = await db.query('trips', where: 'id = ?', whereArgs: [tripId]);
+      final rows = await db.query(
+        'trips',
+        where: 'id = ?',
+        whereArgs: [tripId],
+      );
       expect(rows, hasLength(1));
 
       final columns = await db.rawQuery('PRAGMA table_info(trips)');
@@ -281,14 +299,14 @@ void main() {
 }
 
 Map<String, Object?> _tripMap() => {
-      'start_time': DateTime.now().millisecondsSinceEpoch,
-      'end_time': DateTime.now().millisecondsSinceEpoch,
-      'distance': 5000.0,
-      'duration': 3600,
-      'detected_activity': 'cycling',
-      'confidence_score': 0.92,
-      'user_confirmed': 0,
-    };
+  'start_time': DateTime.now().millisecondsSinceEpoch,
+  'end_time': DateTime.now().millisecondsSinceEpoch,
+  'distance': 5000.0,
+  'duration': 3600,
+  'detected_activity': 'cycling',
+  'confidence_score': 0.92,
+  'user_confirmed': 0,
+};
 
 Future<int> _countTrips(Database db) async {
   final rows = await db.rawQuery('SELECT COUNT(*) AS c FROM trips');

@@ -32,9 +32,10 @@ class LocationPermissionService extends _$LocationPermissionService {
 
     return switch (permission) {
       LocationPermission.denied => LocationPermissionStatus.denied,
-      LocationPermission.deniedForever => LocationPermissionStatus.deniedForever,
-      LocationPermission.whileInUse || LocationPermission.always =>
-        LocationPermissionStatus.granted,
+      LocationPermission.deniedForever =>
+        LocationPermissionStatus.deniedForever,
+      LocationPermission.whileInUse ||
+      LocationPermission.always => LocationPermissionStatus.granted,
       _ => LocationPermissionStatus.notDetermined,
     };
   }
@@ -54,9 +55,10 @@ class LocationPermissionService extends _$LocationPermissionService {
 
     final status = switch (permission) {
       LocationPermission.denied => LocationPermissionStatus.denied,
-      LocationPermission.deniedForever => LocationPermissionStatus.deniedForever,
-      LocationPermission.whileInUse || LocationPermission.always =>
-        LocationPermissionStatus.granted,
+      LocationPermission.deniedForever =>
+        LocationPermissionStatus.deniedForever,
+      LocationPermission.whileInUse ||
+      LocationPermission.always => LocationPermissionStatus.granted,
       _ => LocationPermissionStatus.notDetermined,
     };
 
@@ -92,9 +94,11 @@ class LocationPermissionService extends _$LocationPermissionService {
 
     final status = switch (permission) {
       LocationPermission.always => LocationPermissionStatus.granted,
-      LocationPermission.whileInUse => LocationPermissionStatus.denied, // Needs always for background
+      LocationPermission.whileInUse =>
+        LocationPermissionStatus.denied, // Needs always for background
       LocationPermission.denied => LocationPermissionStatus.denied,
-      LocationPermission.deniedForever => LocationPermissionStatus.deniedForever,
+      LocationPermission.deniedForever =>
+        LocationPermissionStatus.deniedForever,
       _ => LocationPermissionStatus.notDetermined,
     };
 

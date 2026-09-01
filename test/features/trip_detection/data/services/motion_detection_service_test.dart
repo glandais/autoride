@@ -13,8 +13,12 @@ import 'package:autoride/features/trip_detection/domain/models/motion_data.dart'
 MotionData _cyclingSample(int index) {
   final timestamp = DateTime(2026, 1, 1).add(Duration(milliseconds: index));
   return MotionData(
-    accelerometer:
-        AccelerometerData(x: 3.0, y: 3.0, z: 10.0, timestamp: timestamp),
+    accelerometer: AccelerometerData(
+      x: 3.0,
+      y: 3.0,
+      z: 10.0,
+      timestamp: timestamp,
+    ),
     gyroscope: GyroscopeData(x: 1.0, y: 0.5, z: 0.5, timestamp: timestamp),
     timestamp: timestamp,
   );
@@ -79,8 +83,9 @@ void main() {
       motionController = StreamController<MotionData>.broadcast();
       container = ProviderContainer(
         overrides: [
-          motionDataStreamProvider
-              .overrideWith((ref) => motionController.stream),
+          motionDataStreamProvider.overrideWith(
+            (ref) => motionController.stream,
+          ),
         ],
       );
     });
@@ -97,26 +102,27 @@ void main() {
       await pumpEventQueue();
     }
 
-    test('emits a motion state once a full analysis window is buffered',
-        () async {
-      container.listen(motionDetectionServiceProvider, (_, _) {});
-      await pumpEventQueue();
-
-      await feed(AppConstants.pedalingCycleSamples);
-
-      final state = container.read(motionDetectionServiceProvider);
-      expect(state.hasValue, isTrue);
-      expect(state.value, MotionState.cycling);
-
-      final window = container
-          .read(motionDetectionServiceProvider.notifier)
-          .getCurrentWindow();
-      expect(window, isNotNull);
-      expect(window!.samples, hasLength(AppConstants.pedalingCycleSamples));
-    });
-
     test(
-        'L-003 regression: CurrentMotionState mirrors the service without '
+      'emits a motion state once a full analysis window is buffered',
+      () async {
+        container.listen(motionDetectionServiceProvider, (_, _) {});
+        await pumpEventQueue();
+
+        await feed(AppConstants.pedalingCycleSamples);
+
+        final state = container.read(motionDetectionServiceProvider);
+        expect(state.hasValue, isTrue);
+        expect(state.value, MotionState.cycling);
+
+        final window = container
+            .read(motionDetectionServiceProvider.notifier)
+            .getCurrentWindow();
+        expect(window, isNotNull);
+        expect(window!.samples, hasLength(AppConstants.pedalingCycleSamples));
+      },
+    );
+
+    test('L-003 regression: CurrentMotionState mirrors the service without '
         'starting a second loop over the shared buffer', () async {
       container.listen(motionDetectionServiceProvider, (_, _) {});
       container.listen(currentMotionStateProvider, (_, _) {});

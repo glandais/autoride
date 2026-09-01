@@ -58,24 +58,15 @@ class TripControlButtons extends StatelessWidget {
         // Secondary button: Stop Trip
         OutlinedButton.icon(
           onPressed: onStop,
-          icon: const Icon(
-            Icons.stop_circle,
-            size: 24,
-          ),
-          label: const Text(
-            'Stop Trip',
-            style: TextStyle(fontSize: 16),
-          ),
+          icon: const Icon(Icons.stop_circle, size: 24),
+          label: const Text('Stop Trip', style: TextStyle(fontSize: 16)),
           style: OutlinedButton.styleFrom(
             padding: const EdgeInsets.symmetric(
               vertical: AppSpacing.md,
               horizontal: AppSpacing.lg,
             ),
             foregroundColor: theme.colorScheme.error,
-            side: BorderSide(
-              color: theme.colorScheme.error,
-              width: 2,
-            ),
+            side: BorderSide(color: theme.colorScheme.error, width: 2),
           ),
         ),
       ],

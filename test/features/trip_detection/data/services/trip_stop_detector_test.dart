@@ -104,9 +104,11 @@ void main() {
     }) {
       final start = from ?? DateTime.now();
       var resumed = false;
-      for (var second = 0;
-          second <= AppConstants.resumeMovementThresholdSeconds;
-          second++) {
+      for (
+        var second = 0;
+        second <= AppConstants.resumeMovementThresholdSeconds;
+        second++
+      ) {
         resumed = detector.shouldResumeTrip(
           motion,
           location,
@@ -149,8 +151,7 @@ void main() {
       expect(state.consecutiveStationaryDetections, equals(0));
     });
 
-    test('regression: gravity-inclusive resting data is detected as stationary',
-        () async {
+    test('regression: gravity-inclusive resting data is detected as stationary', () async {
       // Guards against the bug where stationary detection compared raw
       // gravity-inclusive magnitude (~9.8) against a gravity-removed threshold
       // (1.0), so auto-pause/stop never triggered on real devices.
@@ -183,25 +184,32 @@ void main() {
       // so sustained movement resumes the trip.
       final moving = createCyclingMotion();
       expect(
-        resumesAfterSustainedMovement(detector, moving, createCyclingLocation()),
+        resumesAfterSustainedMovement(
+          detector,
+          moving,
+          createCyclingLocation(),
+        ),
         isTrue,
       );
     });
 
-    test('should detect stationary state with low motion and GPS speed', () async {
-      final container = createContainer();
-      addTearDown(container.dispose);
+    test(
+      'should detect stationary state with low motion and GPS speed',
+      () async {
+        final container = createContainer();
+        addTearDown(container.dispose);
 
-      final detector = container.read(tripStopDetectorProvider.notifier);
-      final motion = createStationaryMotion();
-      final location = createStationaryLocation();
+        final detector = container.read(tripStopDetectorProvider.notifier);
+        final motion = createStationaryMotion();
+        final location = createStationaryLocation();
 
-      await detector.analyzeForTripStop(motion, location);
+        await detector.analyzeForTripStop(motion, location);
 
-      final state = container.read(tripStopDetectorProvider);
-      expect(state.isStationary, isTrue);
-      expect(state.consecutiveStationaryDetections, greaterThan(0));
-    });
+        final state = container.read(tripStopDetectorProvider);
+        expect(state.isStationary, isTrue);
+        expect(state.consecutiveStationaryDetections, greaterThan(0));
+      },
+    );
 
     test('should pause trip after 30 seconds of stationary', () async {
       final container = createContainer();
@@ -221,7 +229,8 @@ void main() {
       final pauseStart = DateTime.now().subtract(const Duration(seconds: 35));
       detector.state = state.copyWith(
         pauseStartTime: pauseStart,
-        consecutiveStationaryDetections: AppConstants.minConsecutiveStationaryDetections,
+        consecutiveStationaryDetections:
+            AppConstants.minConsecutiveStationaryDetections,
       );
 
       final decision = await detector.analyzeForTripStop(motion, location);
@@ -245,7 +254,8 @@ void main() {
       final pauseStart = DateTime.now().subtract(const Duration(minutes: 6));
       detector.state = detector.state.copyWith(
         pauseStartTime: pauseStart,
-        consecutiveStationaryDetections: AppConstants.minConsecutiveStationaryDetections,
+        consecutiveStationaryDetections:
+            AppConstants.minConsecutiveStationaryDetections,
       );
 
       final decision = await detector.analyzeForTripStop(motion, location);
@@ -263,10 +273,14 @@ void main() {
       final location = createCyclingLocation();
 
       // Simulate paused state first
-      await detector.analyzeForTripStop(createStationaryMotion(), createStationaryLocation());
+      await detector.analyzeForTripStop(
+        createStationaryMotion(),
+        createStationaryLocation(),
+      );
       detector.state = detector.state.copyWith(
         pauseDuration: const Duration(seconds: 35),
-        consecutiveStationaryDetections: AppConstants.minConsecutiveStationaryDetections,
+        consecutiveStationaryDetections:
+            AppConstants.minConsecutiveStationaryDetections,
       );
 
       // A single movement sample is not enough; sustained movement resumes.
@@ -298,20 +312,32 @@ void main() {
         now: start.add(const Duration(milliseconds: 20)),
       );
       expect(
-        container.read(tripStopDetectorProvider).consecutiveStationaryDetections,
+        container
+            .read(tripStopDetectorProvider)
+            .consecutiveStationaryDetections,
         equals(1),
         reason: 'counters advance once per interval, not per 50Hz sample',
       );
 
       // Second detection
-      await feedCountedReadings(detector, motion, location,
-          count: 1, from: start);
+      await feedCountedReadings(
+        detector,
+        motion,
+        location,
+        count: 1,
+        from: start,
+      );
       state = container.read(tripStopDetectorProvider);
       expect(state.consecutiveStationaryDetections, equals(2));
 
       // Third detection
-      await feedCountedReadings(detector, motion, location,
-          count: 1, from: start.add(AppConstants.detectionEvaluationInterval));
+      await feedCountedReadings(
+        detector,
+        motion,
+        location,
+        count: 1,
+        from: start.add(AppConstants.detectionEvaluationInterval),
+      );
       state = container.read(tripStopDetectorProvider);
       expect(
         state.consecutiveStationaryDetections,
@@ -329,7 +355,10 @@ void main() {
       final location = createCyclingLocation();
 
       // Start pause
-      await detector.analyzeForTripStop(stationaryMotion, createStationaryLocation());
+      await detector.analyzeForTripStop(
+        stationaryMotion,
+        createStationaryLocation(),
+      );
       var state = container.read(tripStopDetectorProvider);
       expect(state.isStationary, isTrue);
       expect(state.consecutiveStationaryDetections, greaterThan(0));
@@ -362,7 +391,10 @@ void main() {
       final decision = await detector.analyzeForTripStop(motion, null);
 
       // Should still work with motion-only detection
-      expect(decision, isIn([StopDecision.continueTrip, StopDecision.pauseTrip]));
+      expect(
+        decision,
+        isIn([StopDecision.continueTrip, StopDecision.pauseTrip]),
+      );
     });
 
     test('traffic light scenario: 15s stop should not pause', () async {
@@ -379,7 +411,8 @@ void main() {
       // Simulate 15 seconds (below 30s threshold)
       detector.state = detector.state.copyWith(
         pauseDuration: const Duration(seconds: 15),
-        consecutiveStationaryDetections: AppConstants.minConsecutiveStationaryDetections,
+        consecutiveStationaryDetections:
+            AppConstants.minConsecutiveStationaryDetections,
       );
 
       final decision = await detector.analyzeForTripStop(motion, location);
@@ -398,13 +431,17 @@ void main() {
       final cyclingLocation = createCyclingLocation();
 
       // Pause for 2 minutes (exceeds 30s, below 5 min)
-      await detector.analyzeForTripStop(stationaryMotion, createStationaryLocation());
+      await detector.analyzeForTripStop(
+        stationaryMotion,
+        createStationaryLocation(),
+      );
 
       // Set pause start time to 2 minutes ago
       final pauseStart = DateTime.now().subtract(const Duration(minutes: 2));
       detector.state = detector.state.copyWith(
         pauseStartTime: pauseStart,
-        consecutiveStationaryDetections: AppConstants.minConsecutiveStationaryDetections,
+        consecutiveStationaryDetections:
+            AppConstants.minConsecutiveStationaryDetections,
       );
 
       final pauseDecision = await detector.analyzeForTripStop(
@@ -415,11 +452,7 @@ void main() {
 
       // Resume with sustained movement
       expect(
-        resumesAfterSustainedMovement(
-          detector,
-          cyclingMotion,
-          cyclingLocation,
-        ),
+        resumesAfterSustainedMovement(detector, cyclingMotion, cyclingLocation),
         isTrue,
       );
     });
@@ -439,7 +472,8 @@ void main() {
       final pauseStart = DateTime.now().subtract(const Duration(minutes: 10));
       detector.state = detector.state.copyWith(
         pauseStartTime: pauseStart,
-        consecutiveStationaryDetections: AppConstants.minConsecutiveStationaryDetections,
+        consecutiveStationaryDetections:
+            AppConstants.minConsecutiveStationaryDetections,
       );
 
       final decision = await detector.analyzeForTripStop(motion, location);
@@ -463,9 +497,7 @@ void main() {
       );
     }
 
-    test(
-        'hysteresis: single transient GPS speed spike does NOT reset accumulated pause',
-        () async {
+    test('hysteresis: single transient GPS speed spike does NOT reset accumulated pause', () async {
       final container = createContainer();
       addTearDown(container.dispose);
 
@@ -474,7 +506,10 @@ void main() {
 
       // Start a pause and pretend we've already been stationary long enough to
       // be near the auto-stop threshold (6 minutes ago > maxPauseDurationSeconds).
-      await detector.analyzeForTripStop(stationaryMotion, createStationaryLocation());
+      await detector.analyzeForTripStop(
+        stationaryMotion,
+        createStationaryLocation(),
+      );
       final pauseStart = DateTime.now().subtract(const Duration(minutes: 6));
       detector.state = detector.state.copyWith(
         pauseStartTime: pauseStart,
@@ -491,19 +526,28 @@ void main() {
 
       final state = container.read(tripStopDetectorProvider);
       // Pause timer is preserved (not zeroed) and the auto-stop is still reached.
-      expect(state.isStationary, isTrue,
-          reason: 'transient spike should not flip out of paused state');
-      expect(state.pauseStartTime, isNotNull,
-          reason: 'pause timer must not be reset by a single noisy sample');
-      expect(state.consecutiveStationaryDetections,
-          greaterThanOrEqualTo(AppConstants.minConsecutiveStationaryDetections));
-      expect(decision, equals(StopDecision.stopTrip),
-          reason: 'auto-stop must still trigger despite the noisy reading');
+      expect(
+        state.isStationary,
+        isTrue,
+        reason: 'transient spike should not flip out of paused state',
+      );
+      expect(
+        state.pauseStartTime,
+        isNotNull,
+        reason: 'pause timer must not be reset by a single noisy sample',
+      );
+      expect(
+        state.consecutiveStationaryDetections,
+        greaterThanOrEqualTo(AppConstants.minConsecutiveStationaryDetections),
+      );
+      expect(
+        decision,
+        equals(StopDecision.stopTrip),
+        reason: 'auto-stop must still trigger despite the noisy reading',
+      );
     });
 
-    test(
-        'hysteresis: sustained movement (N consecutive samples) DOES reset the pause',
-        () async {
+    test('hysteresis: sustained movement (N consecutive samples) DOES reset the pause', () async {
       final container = createContainer();
       addTearDown(container.dispose);
 
@@ -513,7 +557,10 @@ void main() {
       final cyclingLocation = createCyclingLocation();
 
       // Accumulate a pause near the auto-stop threshold.
-      await detector.analyzeForTripStop(stationaryMotion, createStationaryLocation());
+      await detector.analyzeForTripStop(
+        stationaryMotion,
+        createStationaryLocation(),
+      );
       final pauseStart = DateTime.now().subtract(const Duration(minutes: 6));
       detector.state = detector.state.copyWith(
         pauseStartTime: pauseStart,
@@ -532,10 +579,16 @@ void main() {
         count: AppConstants.tripStopMovementHysteresisSamples - 1,
         from: movementStart,
       );
-      expect(container.read(tripStopDetectorProvider).pauseStartTime, isNotNull,
-          reason: 'pause should still be accumulating before hysteresis is met');
-      expect(decision, equals(StopDecision.stopTrip),
-          reason: 'auto-stop still applies while movement is unconfirmed');
+      expect(
+        container.read(tripStopDetectorProvider).pauseStartTime,
+        isNotNull,
+        reason: 'pause should still be accumulating before hysteresis is met',
+      );
+      expect(
+        decision,
+        equals(StopDecision.stopTrip),
+        reason: 'auto-stop still applies while movement is unconfirmed',
+      );
 
       // The Nth counted movement reading confirms sustained movement and
       // resets the pause.
@@ -552,8 +605,11 @@ void main() {
 
       final state = container.read(tripStopDetectorProvider);
       expect(state.isStationary, isFalse);
-      expect(state.pauseStartTime, isNull,
-          reason: 'sustained movement must reset the pause timer');
+      expect(
+        state.pauseStartTime,
+        isNull,
+        reason: 'sustained movement must reset the pause timer',
+      );
       expect(state.consecutiveStationaryDetections, equals(0));
       expect(state.consecutiveMovementDetections, equals(0));
       expect(resetDecision, equals(StopDecision.continueTrip));

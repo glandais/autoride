@@ -83,8 +83,8 @@ class _TripMapViewState extends State<TripMapView> {
             widget.currentLocation!.longitude,
           )
         : polylinePoints.isNotEmpty
-            ? polylinePoints.last
-            : const LatLng(0, 0); // Fallback to 0,0 (unlikely)
+        ? polylinePoints.last
+        : const LatLng(0, 0); // Fallback to 0,0 (unlikely)
 
     return FlutterMap(
       mapController: widget.controller,

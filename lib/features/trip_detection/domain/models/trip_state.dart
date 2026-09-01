@@ -12,9 +12,8 @@ sealed class TripState with _$TripState {
 
   /// Motion detected, analyzing if it's cycling
   /// [detectionStartTime] when detection phase started
-  const factory TripState.detecting({
-    required DateTime detectionStartTime,
-  }) = _Detecting;
+  const factory TripState.detecting({required DateTime detectionStartTime}) =
+      _Detecting;
 
   /// Active trip in progress
   /// [tripId] database ID of the trip
@@ -39,25 +38,25 @@ sealed class TripState with _$TripState {
 extension TripStateExtensions on TripState {
   /// Whether a trip is currently active (Active or Paused)
   bool get hasActiveTrip => map(
-        idle: (_) => false,
-        detecting: (_) => false,
-        active: (_) => true,
-        paused: (_) => true,
-      );
+    idle: (_) => false,
+    detecting: (_) => false,
+    active: (_) => true,
+    paused: (_) => true,
+  );
 
   /// Whether system is currently recording location data
   bool get isRecording => map(
-        idle: (_) => false,
-        detecting: (_) => false,
-        active: (_) => true,
-        paused: (_) => false,
-      );
+    idle: (_) => false,
+    detecting: (_) => false,
+    active: (_) => true,
+    paused: (_) => false,
+  );
 
   /// Get current trip ID if available
   int? get currentTripId => map(
-        idle: (_) => null,
-        detecting: (_) => null,
-        active: (state) => state.tripId,
-        paused: (state) => state.tripId,
-      );
+    idle: (_) => null,
+    detecting: (_) => null,
+    active: (state) => state.tripId,
+    paused: (state) => state.tripId,
+  );
 }

@@ -107,7 +107,8 @@ void main() {
         idle: () => fail('Should be Detecting'),
         detecting: (_) => expect(true, isTrue), // State is Detecting
         active: (_, _) => fail('Should be Detecting'),
-        paused: (tripId, startTime, pauseStartTime) => fail('Should be Detecting'),
+        paused: (tripId, startTime, pauseStartTime) =>
+            fail('Should be Detecting'),
       );
       expect(state.hasActiveTrip, isFalse);
       expect(state.isRecording, isFalse);
@@ -124,7 +125,8 @@ void main() {
       state.when(
         idle: () => fail('Should be Active'),
         detecting: (_) => fail('Should be Active'),
-        active: (id, startTime) => expect(id, equals(testTripId)), // State is Active
+        active: (id, startTime) =>
+            expect(id, equals(testTripId)), // State is Active
         paused: (tripId, startTime, pauseStartTime) => fail('Should be Active'),
       );
       expect(state.hasActiveTrip, isTrue);
@@ -144,7 +146,8 @@ void main() {
         idle: () => fail('Should be Paused'),
         detecting: (_) => fail('Should be Paused'),
         active: (_, _) => fail('Should be Paused'),
-        paused: (tripId, startTime, pauseStartTime) => expect(true, isTrue), // State is Paused
+        paused: (tripId, startTime, pauseStartTime) =>
+            expect(true, isTrue), // State is Paused
       );
       expect(state.hasActiveTrip, isTrue);
       expect(state.isRecording, isFalse);
@@ -163,7 +166,8 @@ void main() {
       state.when(
         idle: () => fail('Should be Active'),
         detecting: (_) => fail('Should be Active'),
-        active: (id, startTime) => expect(id, equals(testTripId)), // State is Active
+        active: (id, startTime) =>
+            expect(id, equals(testTripId)), // State is Active
         paused: (tripId, startTime, pauseStartTime) => fail('Should be Active'),
       );
       expect(state.currentTripId, equals(testTripId));
@@ -278,9 +282,7 @@ void main() {
   group('TripState Extensions', () {
     test('hasActiveTrip should be true for Active and Paused', () {
       const idle = TripState.idle();
-      final detecting = TripState.detecting(
-        detectionStartTime: DateTime.now(),
-      );
+      final detecting = TripState.detecting(detectionStartTime: DateTime.now());
       final active = TripState.active(tripId: 1, startTime: DateTime.now());
       final paused = TripState.paused(
         tripId: 1,
@@ -296,9 +298,7 @@ void main() {
 
     test('isRecording should only be true for Active', () {
       const idle = TripState.idle();
-      final detecting = TripState.detecting(
-        detectionStartTime: DateTime.now(),
-      );
+      final detecting = TripState.detecting(detectionStartTime: DateTime.now());
       final active = TripState.active(tripId: 1, startTime: DateTime.now());
       final paused = TripState.paused(
         tripId: 1,

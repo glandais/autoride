@@ -45,13 +45,15 @@ extension TripStartStateExtensions on TripStartState {
   /// to consider detections as consecutive
   bool isWithinDetectionWindow(DateTime now, Duration windowDuration) {
     if (lastDetectionTime == null) return true;
-    return now.difference(lastDetectionTime!).inSeconds <= windowDuration.inSeconds;
+    return now.difference(lastDetectionTime!).inSeconds <=
+        windowDuration.inSeconds;
   }
 
   /// Check if cooldown period has expired
   bool isCooldownExpired(DateTime now, Duration cooldownDuration) {
     if (!cooldownActive || cooldownStartTime == null) return true;
-    return now.difference(cooldownStartTime!).inSeconds >= cooldownDuration.inSeconds;
+    return now.difference(cooldownStartTime!).inSeconds >=
+        cooldownDuration.inSeconds;
   }
 
   /// Reset detection state (clears consecutive detections and confidence)
@@ -75,9 +77,6 @@ extension TripStartStateExtensions on TripStartState {
 
   /// Deactivate cooldown
   TripStartState deactivateCooldown() {
-    return copyWith(
-      cooldownActive: false,
-      cooldownStartTime: null,
-    );
+    return copyWith(cooldownActive: false, cooldownStartTime: null);
   }
 }

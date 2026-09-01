@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+
 import 'app_colors.dart';
 import 'app_spacing.dart';
 import 'app_text_styles.dart';
@@ -153,7 +154,8 @@ class AppTheme {
       foregroundColor: AppColors.textPrimaryDark,
       elevation: 0,
       centerTitle: true,
-      systemOverlayStyle: SystemUiOverlayStyle.light, // Light icons on dark background
+      systemOverlayStyle:
+          SystemUiOverlayStyle.light, // Light icons on dark background
       titleTextStyle: AppTextStyles.titleLarge.copyWith(
         color: AppColors.textPrimaryDark,
       ),

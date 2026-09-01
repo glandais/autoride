@@ -29,7 +29,9 @@ Future<void> openLegalUrl(BuildContext context, String url) async {
   } catch (e) {
     messenger.showSnackBar(
       SnackBar(
-        content: Text('Could not open the page: ${ErrorHandler.getErrorMessage(e)}'),
+        content: Text(
+          'Could not open the page: ${ErrorHandler.getErrorMessage(e)}',
+        ),
       ),
     );
   }

@@ -4,11 +4,7 @@ part 'detection_settings.freezed.dart';
 part 'detection_settings.g.dart';
 
 /// Cycling detection sensitivity levels
-enum CyclingSensitivity {
-  low,
-  medium,
-  high,
-}
+enum CyclingSensitivity { low, medium, high }
 
 /// Detection-specific settings for trip tracking
 @freezed
@@ -63,6 +59,5 @@ extension DetectionSettingsExtensions on DetectionSettings {
       Duration(seconds: minimumTripDurationSeconds);
 
   /// Get stationary timeout as Duration object
-  Duration get stationaryTimeout =>
-      Duration(seconds: stationaryTimeoutSeconds);
+  Duration get stationaryTimeout => Duration(seconds: stationaryTimeoutSeconds);
 }

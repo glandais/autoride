@@ -1,5 +1,6 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 import 'package:sensors_plus/sensors_plus.dart';
+
 import 'dart:math';
 
 import '../../../../core/constants/app_constants.dart';
@@ -120,10 +121,10 @@ extension MotionDataExtensions on MotionData {
 
 /// Motion state enumeration
 enum MotionState {
-  stationary,   // Device not moving
-  moving,       // Device moving (could be walking, cycling, driving)
-  cycling,      // Detected cycling pattern (requires T008 for accuracy)
-  unknown,      // Insufficient data
+  stationary, // Device not moving
+  moving, // Device moving (could be walking, cycling, driving)
+  cycling, // Detected cycling pattern (requires T008 for accuracy)
+  unknown, // Insufficient data
 }
 
 /// Motion window for pattern analysis
@@ -223,9 +224,7 @@ extension MotionWindowExtensions on MotionWindow {
 
   /// Check for periodic acceleration patterns (pedaling motion)
   bool _hasPeriodicAcceleration() {
-    final magnitudes = samples
-        .map((s) => s.accelerometer.magnitude)
-        .toList();
+    final magnitudes = samples.map((s) => s.accelerometer.magnitude).toList();
 
     // Count peaks
     int peakCount = 0;

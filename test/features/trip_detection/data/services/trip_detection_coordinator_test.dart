@@ -274,19 +274,23 @@ class _FastGateCoordinator extends TripDetectionCoordinator {
 
 /// Name of the current union case (the generated union classes are private).
 String _stateName(TripState state) => state.map(
-      idle: (_) => 'idle',
-      detecting: (_) => 'detecting',
-      active: (_) => 'active',
-      paused: (_) => 'paused',
-    );
+  idle: (_) => 'idle',
+  detecting: (_) => 'detecting',
+  active: (_) => 'active',
+  paused: (_) => 'paused',
+);
 
 /// Motion sample with a unique timestamp so every emission notifies listeners
 /// (Riverpod skips notifications for values that compare equal).
 MotionData _motionSample(int index) {
   final timestamp = DateTime(2026, 1, 1).add(Duration(milliseconds: index));
   return MotionData(
-    accelerometer:
-        AccelerometerData(x: 3.0, y: 3.0, z: 10.0, timestamp: timestamp),
+    accelerometer: AccelerometerData(
+      x: 3.0,
+      y: 3.0,
+      z: 10.0,
+      timestamp: timestamp,
+    ),
     gyroscope: GyroscopeData(x: 1.0, y: 0.5, z: 0.5, timestamp: timestamp),
     timestamp: timestamp,
   );
@@ -297,8 +301,12 @@ MotionData _motionSample(int index) {
 MotionData _stationarySample(int index) {
   final timestamp = DateTime(2026, 1, 1).add(Duration(milliseconds: index));
   return MotionData(
-    accelerometer:
-        AccelerometerData(x: 0.0, y: 0.0, z: 9.8, timestamp: timestamp),
+    accelerometer: AccelerometerData(
+      x: 0.0,
+      y: 0.0,
+      z: 9.8,
+      timestamp: timestamp,
+    ),
     gyroscope: GyroscopeData(x: 0.0, y: 0.0, z: 0.0, timestamp: timestamp),
     timestamp: timestamp,
   );
@@ -348,24 +356,28 @@ void main() {
   List<Override> baseOverrides({
     Override? location,
     List<Override> extra = const [],
-  }) =>
-      [
-        motionDataStreamProvider.overrideWith((ref) => motionController.stream),
-        location ??
-            locationStreamProvider
-                .overrideWith((ref, settings) => locationController.stream),
-        tripStateMachineProvider.overrideWith(_TestTripStateMachine.new),
-        tripRecorderServiceProvider
-            .overrideWith(() => _SpyTripRecorderService(recorder)),
-        tripStartDetectorProvider
-            .overrideWith(() => _FakeTripStartDetector(startDetector)),
-        tripStopDetectorProvider
-            .overrideWith(() => _FakeTripStopDetector(stopDetector)),
-        notificationServiceProvider.overrideWith(_MockNotificationService.new),
-        locationPermissionServiceProvider
-            .overrideWith(_MockLocationPermissionService.new),
-        ...extra,
-      ];
+  }) => [
+    motionDataStreamProvider.overrideWith((ref) => motionController.stream),
+    location ??
+        locationStreamProvider.overrideWith(
+          (ref, settings) => locationController.stream,
+        ),
+    tripStateMachineProvider.overrideWith(_TestTripStateMachine.new),
+    tripRecorderServiceProvider.overrideWith(
+      () => _SpyTripRecorderService(recorder),
+    ),
+    tripStartDetectorProvider.overrideWith(
+      () => _FakeTripStartDetector(startDetector),
+    ),
+    tripStopDetectorProvider.overrideWith(
+      () => _FakeTripStopDetector(stopDetector),
+    ),
+    notificationServiceProvider.overrideWith(_MockNotificationService.new),
+    locationPermissionServiceProvider.overrideWith(
+      _MockLocationPermissionService.new,
+    ),
+    ...extra,
+  ];
 
   setUp(() {
     gpsSubscribed = false;
@@ -383,8 +395,10 @@ void main() {
     stopDetector = _StopDetectorScript();
 
     container = ProviderContainer(overrides: baseOverrides());
-    coordinatorSubscription =
-        container.listen(tripDetectionCoordinatorProvider, (_, _) {});
+    coordinatorSubscription = container.listen(
+      tripDetectionCoordinatorProvider,
+      (_, _) {},
+    );
   });
 
   tearDown(() async {
@@ -414,8 +428,9 @@ void main() {
 
   group('TripDetectionCoordinator - build', () {
     test('initializes in idle state', () async {
-      final state =
-          await container.read(tripDetectionCoordinatorProvider.future);
+      final state = await container.read(
+        tripDetectionCoordinatorProvider.future,
+      );
 
       state.when(
         idle: () => expect(true, isTrue),
@@ -440,22 +455,21 @@ void main() {
 
       coordinator.stopListening();
 
-      expect(
-        container.read(tripDetectionCoordinatorProvider).hasValue,
-        isTrue,
-      );
+      expect(container.read(tripDetectionCoordinatorProvider).hasValue, isTrue);
       expect(container.read(tripStateMachineProvider).hasActiveTrip, isFalse);
     });
 
-    test('repeated stopListening calls are safe (idempotent cleanup)',
-        () async {
-      final coordinator = await readCoordinator();
+    test(
+      'repeated stopListening calls are safe (idempotent cleanup)',
+      () async {
+        final coordinator = await readCoordinator();
 
-      coordinator.stopListening();
-      coordinator.stopListening();
+        coordinator.stopListening();
+        coordinator.stopListening();
 
-      expect(container.read(tripStateMachineProvider).hasActiveTrip, isFalse);
-    });
+        expect(container.read(tripStateMachineProvider).hasActiveTrip, isFalse);
+      },
+    );
   });
 
   group('TripDetectionCoordinator - decision routing', () {
@@ -484,32 +498,39 @@ void main() {
       expect(startDetector.seenLocations.last!.speed, 5.0);
     });
 
-    test('positive start detection starts recording with the confidence score',
-        () async {
-      startDetector
-        ..verdict = true
-        ..reportedConfidence = 0.83;
-      await startedCoordinator();
+    test(
+      'positive start detection starts recording with the confidence score',
+      () async {
+        startDetector
+          ..verdict = true
+          ..reportedConfidence = 0.83;
+        await startedCoordinator();
 
-      await pushMotion(1);
+        await pushMotion(1);
 
-      expect(recorder.startedWithConfidence, [0.83]);
-      expect(recorder.startedWithActivity, [ActivityType.cycling]);
-      expect(container.read(tripStateMachineProvider).currentTripId, 1);
-    });
+        expect(recorder.startedWithConfidence, [0.83]);
+        expect(recorder.startedWithActivity, [ActivityType.cycling]);
+        expect(container.read(tripStateMachineProvider).currentTripId, 1);
+      },
+    );
 
-    test('a failing startRecording resets to idle and surfaces the error',
-        () async {
-      startDetector.verdict = true;
-      recorder.throwOnStart = true;
-      await startedCoordinator();
+    test(
+      'a failing startRecording resets to idle and surfaces the error',
+      () async {
+        startDetector.verdict = true;
+        recorder.throwOnStart = true;
+        await startedCoordinator();
 
-      await pushMotion(1);
+        await pushMotion(1);
 
-      expect(_stateName(container.read(tripStateMachineProvider)), 'idle');
-      expect(startDetector.resetCalls, greaterThan(0));
-      expect(container.read(tripDetectionCoordinatorProvider).hasError, isTrue);
-    });
+        expect(_stateName(container.read(tripStateMachineProvider)), 'idle');
+        expect(startDetector.resetCalls, greaterThan(0));
+        expect(
+          container.read(tripDetectionCoordinatorProvider).hasError,
+          isTrue,
+        );
+      },
+    );
 
     test('active + pauseTrip decision pauses the trip', () async {
       startDetector.verdict = true;
@@ -537,21 +558,23 @@ void main() {
       expect(_stateName(container.read(tripStateMachineProvider)), 'idle');
     });
 
-    test('paused + resume verdict resumes the trip and resets the detector',
-        () async {
-      startDetector.verdict = true;
-      await startedCoordinator();
-      await pushMotion(1);
+    test(
+      'paused + resume verdict resumes the trip and resets the detector',
+      () async {
+        startDetector.verdict = true;
+        await startedCoordinator();
+        await pushMotion(1);
 
-      container.read(tripStateMachineProvider.notifier).pauseTrip();
-      expect(_stateName(container.read(tripStateMachineProvider)), 'paused');
+        container.read(tripStateMachineProvider.notifier).pauseTrip();
+        expect(_stateName(container.read(tripStateMachineProvider)), 'paused');
 
-      stopDetector.resumeVerdict = true;
-      await pushMotion(2);
+        stopDetector.resumeVerdict = true;
+        await pushMotion(2);
 
-      expect(_stateName(container.read(tripStateMachineProvider)), 'active');
-      expect(stopDetector.resetCalls, greaterThan(0));
-    });
+        expect(_stateName(container.read(tripStateMachineProvider)), 'active');
+        expect(stopDetector.resetCalls, greaterThan(0));
+      },
+    );
 
     test('paused + no resume + stopTrip decision finalizes the trip', () async {
       startDetector.verdict = true;
@@ -572,55 +595,67 @@ void main() {
     // L-001: the coordinator used to suspend its streams the moment a trip
     // started, so nothing ever drove `_analyzeForTripStop` again — auto-pause
     // and auto-stop were unreachable in the shipped app.
-    test('motion keeps flowing after a trip starts, so auto-pause fires',
-        () async {
-      startDetector.verdict = true;
-      await startedCoordinator();
-      await pushMotion(1); // starts the trip
-      expect(_stateName(container.read(tripStateMachineProvider)), 'active');
+    test(
+      'motion keeps flowing after a trip starts, so auto-pause fires',
+      () async {
+        startDetector.verdict = true;
+        await startedCoordinator();
+        await pushMotion(1); // starts the trip
+        expect(_stateName(container.read(tripStateMachineProvider)), 'active');
 
-      // No restart, no manual intervention: a stationary run during the trip
-      // reaches the stop detector and pauses it.
-      stopDetector.decision = StopDecision.pauseTrip;
-      motionController.add(_stationarySample(2));
-      await pumpEventQueue();
+        // No restart, no manual intervention: a stationary run during the trip
+        // reaches the stop detector and pauses it.
+        stopDetector.decision = StopDecision.pauseTrip;
+        motionController.add(_stationarySample(2));
+        await pumpEventQueue();
 
-      expect(_stateName(container.read(tripStateMachineProvider)), 'paused');
-    });
+        expect(_stateName(container.read(tripStateMachineProvider)), 'paused');
+      },
+    );
 
-    test('a trip that auto-stops returns the coordinator to detecting',
-        () async {
-      startDetector.verdict = true;
-      await startedCoordinator();
-      await pushMotion(1);
+    test(
+      'a trip that auto-stops returns the coordinator to detecting',
+      () async {
+        startDetector.verdict = true;
+        await startedCoordinator();
+        await pushMotion(1);
 
-      stopDetector.decision = StopDecision.stopTrip;
-      await pushMotion(2);
-      expect(_stateName(container.read(tripStateMachineProvider)), 'idle');
+        stopDetector.decision = StopDecision.stopTrip;
+        await pushMotion(2);
+        expect(_stateName(container.read(tripStateMachineProvider)), 'idle');
 
-      // The restart is scheduled 100 ms out.
-      await Future<void>.delayed(const Duration(milliseconds: 150));
-      await pumpEventQueue();
+        // The restart is scheduled 100 ms out.
+        await Future<void>.delayed(const Duration(milliseconds: 150));
+        await pumpEventQueue();
 
-      startDetector.verdict = false;
-      await pushMotion(3);
-      expect(_stateName(container.read(tripStateMachineProvider)), 'detecting');
-    });
+        startDetector.verdict = false;
+        await pushMotion(3);
+        expect(
+          _stateName(container.read(tripStateMachineProvider)),
+          'detecting',
+        );
+      },
+    );
 
-    test('a motion stream error tears the session down and is surfaced',
-        () async {
-      await startedCoordinator();
+    test(
+      'a motion stream error tears the session down and is surfaced',
+      () async {
+        await startedCoordinator();
 
-      motionController.addError(StateError('sensor failure'));
-      await pumpEventQueue();
+        motionController.addError(StateError('sensor failure'));
+        await pumpEventQueue();
 
-      expect(container.read(tripDetectionCoordinatorProvider).hasError, isTrue);
+        expect(
+          container.read(tripDetectionCoordinatorProvider).hasError,
+          isTrue,
+        );
 
-      // Session released: further samples are ignored.
-      final before = startDetector.seenLocations.length;
-      await pushMotion(1);
-      expect(startDetector.seenLocations.length, before);
-    });
+        // Session released: further samples are ignored.
+        final before = startDetector.seenLocations.length;
+        await pushMotion(1);
+        expect(startDetector.seenLocations.length, before);
+      },
+    );
   });
 
   group('TripDetectionCoordinator - session ownership (audit #2)', () {
@@ -643,36 +678,38 @@ void main() {
 
     // The user turning "Automatic detection" off mid-ride must not strand the
     // ride: the teardown waits for the trip to finish.
-    test('stopListening during a trip is deferred until the trip ends',
-        () async {
-      startDetector.verdict = true;
-      final coordinator = await startedCoordinator();
-      await pushMotion(1);
-      expect(_stateName(container.read(tripStateMachineProvider)), 'active');
+    test(
+      'stopListening during a trip is deferred until the trip ends',
+      () async {
+        startDetector.verdict = true;
+        final coordinator = await startedCoordinator();
+        await pushMotion(1);
+        expect(_stateName(container.read(tripStateMachineProvider)), 'active');
 
-      coordinator.stopListening();
-      await pumpEventQueue();
+        coordinator.stopListening();
+        await pumpEventQueue();
 
-      // Still analyzing: auto-pause/auto-stop keep working.
-      stopDetector.decision = StopDecision.pauseTrip;
-      await pushMotion(2);
-      expect(_stateName(container.read(tripStateMachineProvider)), 'paused');
+        // Still analyzing: auto-pause/auto-stop keep working.
+        stopDetector.decision = StopDecision.pauseTrip;
+        await pushMotion(2);
+        expect(_stateName(container.read(tripStateMachineProvider)), 'paused');
 
-      // The trip ends -> the deferred stop is honoured.
-      stopDetector
-        ..resumeVerdict = false
-        ..decision = StopDecision.stopTrip;
-      await pushMotion(3);
-      expect(recorder.stopCalls, 1);
+        // The trip ends -> the deferred stop is honoured.
+        stopDetector
+          ..resumeVerdict = false
+          ..decision = StopDecision.stopTrip;
+        await pushMotion(3);
+        expect(recorder.stopCalls, 1);
 
-      await Future<void>.delayed(const Duration(milliseconds: 150));
-      await pumpEventQueue();
+        await Future<void>.delayed(const Duration(milliseconds: 150));
+        await pumpEventQueue();
 
-      final before = startDetector.seenLocations.length;
-      await pushMotion(4);
-      expect(startDetector.seenLocations.length, before);
-      expect(gpsSubscribed, isFalse);
-    });
+        final before = startDetector.seenLocations.length;
+        await pushMotion(4);
+        expect(startDetector.seenLocations.length, before);
+        expect(gpsSubscribed, isFalse);
+      },
+    );
 
     test('a manual stop also honours a deferred stopListening', () async {
       startDetector.verdict = true;
@@ -683,7 +720,9 @@ void main() {
       await pumpEventQueue();
 
       // Stopped from the UI, not by the stop detector.
-      await container.read(tripRecorderServiceProvider.notifier).stopRecording();
+      await container
+          .read(tripRecorderServiceProvider.notifier)
+          .stopRecording();
       await pumpEventQueue();
 
       final before = startDetector.seenLocations.length;
@@ -691,19 +730,21 @@ void main() {
       expect(startDetector.seenLocations.length, before);
     });
 
-    test('stopListening releases the session so the provider can dispose',
-        () async {
-      final coordinator = await startedCoordinator();
+    test(
+      'stopListening releases the session so the provider can dispose',
+      () async {
+        final coordinator = await startedCoordinator();
 
-      coordinator.stopListening();
-      coordinatorSubscription.close();
-      await pumpEventQueue();
+        coordinator.stopListening();
+        coordinatorSubscription.close();
+        await pumpEventQueue();
 
-      expect(
-        container.read(tripDetectionCoordinatorProvider.notifier),
-        isNot(same(coordinator)),
-      );
-    });
+        expect(
+          container.read(tripDetectionCoordinatorProvider.notifier),
+          isNot(same(coordinator)),
+        );
+      },
+    );
   });
 
   // ===========================================================================
@@ -720,13 +761,18 @@ void main() {
     setUp(() {
       container.dispose();
       container = ProviderContainer(
-        overrides: baseOverrides(extra: [
-          tripDetectionCoordinatorProvider
-              .overrideWith(_FastGateCoordinator.new),
-        ]),
+        overrides: baseOverrides(
+          extra: [
+            tripDetectionCoordinatorProvider.overrideWith(
+              _FastGateCoordinator.new,
+            ),
+          ],
+        ),
       );
-      coordinatorSubscription =
-          container.listen(tripDetectionCoordinatorProvider, (_, _) {});
+      coordinatorSubscription = container.listen(
+        tripDetectionCoordinatorProvider,
+        (_, _) {},
+      );
     });
 
     /// Lets the fast inactivity timeout elapse.
@@ -765,21 +811,23 @@ void main() {
       expect(gpsSubscribeCount, 1);
     });
 
-    test('the gate closes after gpsInactivityTimeout of stationary motion',
-        () async {
-      await startedCoordinator();
-      await pushMotion(1);
-      expect(gpsSubscribed, isTrue);
+    test(
+      'the gate closes after gpsInactivityTimeout of stationary motion',
+      () async {
+        await startedCoordinator();
+        await pushMotion(1);
+        expect(gpsSubscribed, isTrue);
 
-      motionController.add(_stationarySample(2));
-      await pumpEventQueue();
-      // Still open: the timeout has not elapsed yet.
-      expect(gpsSubscribed, isTrue);
+        motionController.add(_stationarySample(2));
+        await pumpEventQueue();
+        // Still open: the timeout has not elapsed yet.
+        expect(gpsSubscribed, isTrue);
 
-      await waitOutInactivity();
+        await waitOutInactivity();
 
-      expect(gpsSubscribed, isFalse);
-    });
+        expect(gpsSubscribed, isFalse);
+      },
+    );
 
     test('movement before the timeout elapses keeps the gate open', () async {
       await startedCoordinator();
@@ -794,26 +842,27 @@ void main() {
       expect(gpsSubscribeCount, 1);
     });
 
-    test('closing the gate drops the last fix so detection is motion-only',
-        () async {
-      await startedCoordinator();
-      await pushMotion(1);
-      locationController.add(_location(index: 1));
-      await pumpEventQueue();
-      await pushMotion(2);
-      expect(startDetector.seenLocations.last, isNotNull);
+    test(
+      'closing the gate drops the last fix so detection is motion-only',
+      () async {
+        await startedCoordinator();
+        await pushMotion(1);
+        locationController.add(_location(index: 1));
+        await pumpEventQueue();
+        await pushMotion(2);
+        expect(startDetector.seenLocations.last, isNotNull);
 
-      motionController.add(_stationarySample(3));
-      await pumpEventQueue();
-      await waitOutInactivity();
-      motionController.add(_stationarySample(4));
-      await pumpEventQueue();
+        motionController.add(_stationarySample(3));
+        await pumpEventQueue();
+        await waitOutInactivity();
+        motionController.add(_stationarySample(4));
+        await pumpEventQueue();
 
-      expect(startDetector.seenLocations.last, isNull);
-    });
+        expect(startDetector.seenLocations.last, isNull);
+      },
+    );
 
-    test('an active trip keeps GPS on regardless of stationary motion',
-        () async {
+    test('an active trip keeps GPS on regardless of stationary motion', () async {
       startDetector.verdict = true;
       await startedCoordinator();
       await pushMotion(1); // starts the trip
@@ -852,9 +901,9 @@ void main() {
     /// battery -> settings -> location chain is autoDispose, so a stale
     /// reference kept across a gate close would be a disposed notifier.
     void setPowerMode(PowerModeConfig config) {
-      (container.read(batteryOptimizerProvider.notifier)
-              as _FakeBatteryOptimizer)
-          .setMode(config);
+      (container.read(
+        batteryOptimizerProvider.notifier,
+      ) as _FakeBatteryOptimizer).setMode(config);
     }
 
     setUp(() {
@@ -866,8 +915,9 @@ void main() {
           // Mirrors production `locationStream`: the settings come from the
           // adaptive provider, so the stream is rebuilt on a power-mode change.
           location: locationStreamProvider.overrideWith((ref, settings) {
-            observedSettings
-                .add(settings ?? ref.watch(adaptiveLocationSettingsProvider));
+            observedSettings.add(
+              settings ?? ref.watch(adaptiveLocationSettingsProvider),
+            );
             return locationController.stream;
           }),
           extra: [
@@ -875,23 +925,31 @@ void main() {
           ],
         ),
       );
-      coordinatorSubscription =
-          container.listen(tripDetectionCoordinatorProvider, (_, _) {});
+      coordinatorSubscription = container.listen(
+        tripDetectionCoordinatorProvider,
+        (_, _) {},
+      );
     });
 
-    test('the gated stream is configured from the current power mode',
-        () async {
-      await startedCoordinator();
-      await pushMotion(1); // opens the gate
+    test(
+      'the gated stream is configured from the current power mode',
+      () async {
+        await startedCoordinator();
+        await pushMotion(1); // opens the gate
 
-      expect(observedSettings, hasLength(1));
-      expect(observedSettings.single.accuracy,
-          PowerModeConfig.normal.locationAccuracy);
-      expect(observedSettings.single.distanceFilter,
-          PowerModeConfig.normal.distanceFilter);
-      // Never a timeLimit on the continuous stream (L-009).
-      expect(observedSettings.single.timeLimit, isNull);
-    });
+        expect(observedSettings, hasLength(1));
+        expect(
+          observedSettings.single.accuracy,
+          PowerModeConfig.normal.locationAccuracy,
+        );
+        expect(
+          observedSettings.single.distanceFilter,
+          PowerModeConfig.normal.distanceFilter,
+        );
+        // Never a timeLimit on the continuous stream (L-009).
+        expect(observedSettings.single.timeLimit, isNull);
+      },
+    );
 
     test('a power-mode change re-subscribes with new settings without losing '
         'the session', () async {
@@ -903,10 +961,14 @@ void main() {
       await pumpEventQueue();
 
       expect(observedSettings, hasLength(2));
-      expect(observedSettings.last.accuracy,
-          PowerModeConfig.critical.locationAccuracy);
-      expect(observedSettings.last.distanceFilter,
-          PowerModeConfig.critical.distanceFilter);
+      expect(
+        observedSettings.last.accuracy,
+        PowerModeConfig.critical.locationAccuracy,
+      );
+      expect(
+        observedSettings.last.distanceFilter,
+        PowerModeConfig.critical.distanceFilter,
+      );
 
       // Same coordinator, still gated on, still receiving fixes.
       expect(
@@ -930,8 +992,9 @@ void main() {
 
       // Resume listening so the trip's GPS gate is open (the state the stop
       // detector runs in); that is when a power-mode change is disruptive.
-      final coordinator =
-          container.read(tripDetectionCoordinatorProvider.notifier);
+      final coordinator = container.read(
+        tripDetectionCoordinatorProvider.notifier,
+      );
       await coordinator.startListening();
       await pumpEventQueue();
       expect(gpsSubscribed, isTrue);
@@ -943,8 +1006,10 @@ void main() {
       expect(container.read(tripStateMachineProvider).currentTripId, 1);
       expect(recorder.stopCalls, 0);
       expect(gpsSubscribed, isTrue);
-      expect(observedSettings.last.distanceFilter,
-          PowerModeConfig.low.distanceFilter);
+      expect(
+        observedSettings.last.distanceFilter,
+        PowerModeConfig.low.distanceFilter,
+      );
     });
   });
 }

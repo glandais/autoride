@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
+
 import 'battery_optimizer.dart';
 
 part 'adaptive_location_settings.g.dart';

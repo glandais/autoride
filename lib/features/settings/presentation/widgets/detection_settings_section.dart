@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../../domain/models/user_settings.dart';
 import '../../domain/models/detection_settings.dart';
 import '../providers/settings_provider.dart';
@@ -10,10 +11,7 @@ import 'setting_radio_group.dart';
 
 /// Detection settings section for configuring trip detection behavior
 class DetectionSettingsSection extends ConsumerWidget {
-  const DetectionSettingsSection({
-    required this.settings,
-    super.key,
-  });
+  const DetectionSettingsSection({required this.settings, super.key});
 
   final UserSettings settings;
 
@@ -28,7 +26,8 @@ class DetectionSettingsSection extends ConsumerWidget {
         // no code ever read.)
         SettingTile(
           title: 'Automatic detection',
-          subtitle: 'Watch for motion and start tracking cycling trips on '
+          subtitle:
+              'Watch for motion and start tracking cycling trips on '
               'their own',
           trailing: Switch(
             value: settings.detection.automaticDetectionEnabled,

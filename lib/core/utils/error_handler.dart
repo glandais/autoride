@@ -3,14 +3,7 @@ import 'package:autoride/features/trip_history/presentation/providers/trip_detai
 import 'package:autoride/shared/widgets/error_view.dart';
 import 'package:autoride/core/permissions/exceptions/permission_exceptions.dart';
 
-enum AppErrorType {
-  notFound,
-  network,
-  permission,
-  database,
-  timeout,
-  unknown,
-}
+enum AppErrorType { notFound, network, permission, database, timeout, unknown }
 
 class ErrorHandler {
   ErrorHandler._();

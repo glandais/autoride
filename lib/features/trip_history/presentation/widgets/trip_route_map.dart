@@ -12,11 +12,7 @@ import 'package:autoride/core/theme/app_colors.dart';
 /// - End marker (red)
 /// - Auto-zoom to fit route bounds
 class TripRouteMap extends StatefulWidget {
-  const TripRouteMap({
-    required this.routePoints,
-    this.height = 250,
-    super.key,
-  });
+  const TripRouteMap({required this.routePoints, this.height = 250, super.key});
 
   final List<RoutePoint> routePoints;
   final double height;
@@ -75,10 +71,7 @@ class _TripRouteMapState extends State<TripRouteMap> {
 
     // Fit to bounds
     _mapController.fitCamera(
-      CameraFit.bounds(
-        bounds: bounds,
-        padding: const EdgeInsets.all(50),
-      ),
+      CameraFit.bounds(bounds: bounds, padding: const EdgeInsets.all(50)),
     );
   }
 
@@ -92,9 +85,7 @@ class _TripRouteMapState extends State<TripRouteMap> {
         height: widget.height,
         child: Container(
           color: Colors.grey[200],
-          child: const Center(
-            child: Text('No route data available'),
-          ),
+          child: const Center(child: Text('No route data available')),
         ),
       );
     }
@@ -147,7 +138,9 @@ class _TripRouteMapState extends State<TripRouteMap> {
                 Polyline(
                   points: polylinePoints,
                   strokeWidth: 4.0,
-                  color: isDark ? AppColors.primaryDark : AppColors.primaryLight,
+                  color: isDark
+                      ? AppColors.primaryDark
+                      : AppColors.primaryLight,
                   borderStrokeWidth: 2.0,
                   borderColor: theme.colorScheme.surface.withValues(alpha: 0.8),
                 ),
@@ -209,11 +202,7 @@ class _TripRouteMapState extends State<TripRouteMap> {
                       ),
                     ],
                   ),
-                  child: const Icon(
-                    Icons.stop,
-                    color: Colors.white,
-                    size: 20,
-                  ),
+                  child: const Icon(Icons.stop, color: Colors.white, size: 20),
                 ),
               ),
             ],

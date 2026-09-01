@@ -1,4 +1,5 @@
 import 'package:riverpod_annotation/riverpod_annotation.dart';
+
 import '../../domain/models/detection_settings.dart';
 import '../../domain/models/user_settings.dart';
 import '../../data/services/settings_service.dart';
@@ -19,7 +20,9 @@ class DetectionSettingsNotifier extends _$DetectionSettingsNotifier {
   /// This is the setting the app root watches: turning it on starts the
   /// detection coordinator (permissions permitting), turning it off stops it.
   Future<void> updateAutomaticDetection(bool enabled) async {
-    await ref.read(settingsServiceProvider.notifier).updatePartial(
+    await ref
+        .read(settingsServiceProvider.notifier)
+        .updatePartial(
           (settings) => settings.copyWith(
             detection: settings.detection.copyWith(
               automaticDetectionEnabled: enabled,
@@ -30,7 +33,9 @@ class DetectionSettingsNotifier extends _$DetectionSettingsNotifier {
 
   /// Update auto-start detection enabled state
   Future<void> updateAutoStart(bool enabled) async {
-    await ref.read(settingsServiceProvider.notifier).updatePartial(
+    await ref
+        .read(settingsServiceProvider.notifier)
+        .updatePartial(
           (settings) => settings.copyWith(
             detection: settings.detection.copyWith(autoStartEnabled: enabled),
           ),
@@ -39,7 +44,9 @@ class DetectionSettingsNotifier extends _$DetectionSettingsNotifier {
 
   /// Update cycling detection sensitivity
   Future<void> updateSensitivity(CyclingSensitivity sensitivity) async {
-    await ref.read(settingsServiceProvider.notifier).updatePartial(
+    await ref
+        .read(settingsServiceProvider.notifier)
+        .updatePartial(
           (settings) => settings.copyWith(
             detection: settings.detection.copyWith(sensitivity: sensitivity),
           ),
@@ -48,7 +55,9 @@ class DetectionSettingsNotifier extends _$DetectionSettingsNotifier {
 
   /// Update minimum trip duration
   Future<void> updateMinimumDuration(int seconds) async {
-    await ref.read(settingsServiceProvider.notifier).updatePartial(
+    await ref
+        .read(settingsServiceProvider.notifier)
+        .updatePartial(
           (settings) => settings.copyWith(
             detection: settings.detection.copyWith(
               minimumTripDurationSeconds: seconds,
@@ -59,7 +68,9 @@ class DetectionSettingsNotifier extends _$DetectionSettingsNotifier {
 
   /// Update stationary timeout
   Future<void> updateStationaryTimeout(int seconds) async {
-    await ref.read(settingsServiceProvider.notifier).updatePartial(
+    await ref
+        .read(settingsServiceProvider.notifier)
+        .updatePartial(
           (settings) => settings.copyWith(
             detection: settings.detection.copyWith(
               stationaryTimeoutSeconds: seconds,
@@ -80,23 +91,23 @@ class DisplaySettingsNotifier extends _$DisplaySettingsNotifier {
 
   /// Update distance unit preference
   Future<void> updateDistanceUnit(DistanceUnit unit) async {
-    await ref.read(settingsServiceProvider.notifier).updatePartial(
-          (settings) => settings.copyWith(distanceUnit: unit),
-        );
+    await ref
+        .read(settingsServiceProvider.notifier)
+        .updatePartial((settings) => settings.copyWith(distanceUnit: unit));
   }
 
   /// Update speed unit preference
   Future<void> updateSpeedUnit(SpeedUnit unit) async {
-    await ref.read(settingsServiceProvider.notifier).updatePartial(
-          (settings) => settings.copyWith(speedUnit: unit),
-        );
+    await ref
+        .read(settingsServiceProvider.notifier)
+        .updatePartial((settings) => settings.copyWith(speedUnit: unit));
   }
 
   /// Update theme mode
   Future<void> updateThemeMode(ThemeMode mode) async {
-    await ref.read(settingsServiceProvider.notifier).updatePartial(
-          (settings) => settings.copyWith(themeMode: mode),
-        );
+    await ref
+        .read(settingsServiceProvider.notifier)
+        .updatePartial((settings) => settings.copyWith(themeMode: mode));
   }
 }
 
@@ -113,9 +124,9 @@ class BatterySettingsNotifier extends _$BatterySettingsNotifier {
 
   /// Update battery optimization mode
   Future<void> updateBatteryMode(BatteryOptimizationMode mode) async {
-    await ref.read(settingsServiceProvider.notifier).updatePartial(
-          (settings) => settings.copyWith(batteryMode: mode),
-        );
+    await ref
+        .read(settingsServiceProvider.notifier)
+        .updatePartial((settings) => settings.copyWith(batteryMode: mode));
   }
 }
 
@@ -128,22 +139,30 @@ class LocationSettingsNotifier extends _$LocationSettingsNotifier {
   }
 
   /// Update location accuracy preference
-  Future<void> updateLocationAccuracy(LocationAccuracyPreference accuracy) async {
-    await ref.read(settingsServiceProvider.notifier).updatePartial(
+  Future<void> updateLocationAccuracy(
+    LocationAccuracyPreference accuracy,
+  ) async {
+    await ref
+        .read(settingsServiceProvider.notifier)
+        .updatePartial(
           (settings) => settings.copyWith(locationAccuracy: accuracy),
         );
   }
 
   /// Update distance filter
   Future<void> updateDistanceFilter(int meters) async {
-    await ref.read(settingsServiceProvider.notifier).updatePartial(
+    await ref
+        .read(settingsServiceProvider.notifier)
+        .updatePartial(
           (settings) => settings.copyWith(distanceFilterMeters: meters),
         );
   }
 
   /// Update background location enabled
   Future<void> updateBackgroundLocation(bool enabled) async {
-    await ref.read(settingsServiceProvider.notifier).updatePartial(
+    await ref
+        .read(settingsServiceProvider.notifier)
+        .updatePartial(
           (settings) => settings.copyWith(backgroundLocationEnabled: enabled),
         );
   }
@@ -159,21 +178,27 @@ class NotificationSettingsNotifier extends _$NotificationSettingsNotifier {
 
   /// Update trip notifications enabled
   Future<void> updateTripNotifications(bool enabled) async {
-    await ref.read(settingsServiceProvider.notifier).updatePartial(
+    await ref
+        .read(settingsServiceProvider.notifier)
+        .updatePartial(
           (settings) => settings.copyWith(tripNotificationsEnabled: enabled),
         );
   }
 
   /// Update ongoing notification display
   Future<void> updateOngoingNotification(bool show) async {
-    await ref.read(settingsServiceProvider.notifier).updatePartial(
+    await ref
+        .read(settingsServiceProvider.notifier)
+        .updatePartial(
           (settings) => settings.copyWith(showOngoingNotification: show),
         );
   }
 
   /// Update sound on trip events
   Future<void> updateTripSounds(bool enabled) async {
-    await ref.read(settingsServiceProvider.notifier).updatePartial(
+    await ref
+        .read(settingsServiceProvider.notifier)
+        .updatePartial(
           (settings) => settings.copyWith(soundOnTripStartStop: enabled),
         );
   }

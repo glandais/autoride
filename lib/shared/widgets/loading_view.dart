@@ -3,21 +3,11 @@ import 'package:autoride/core/theme/app_spacing.dart';
 
 /// Reusable loading indicator widget with optional message
 class LoadingView extends StatelessWidget {
-  const LoadingView({
-    super.key,
-    this.message,
-    this.inline = false,
-  });
+  const LoadingView({super.key, this.message, this.inline = false});
 
-  const LoadingView.inline({
-    super.key,
-    this.message,
-  }) : inline = true;
+  const LoadingView.inline({super.key, this.message}) : inline = true;
 
-  const LoadingView.fullScreen({
-    super.key,
-    this.message,
-  }) : inline = false;
+  const LoadingView.fullScreen({super.key, this.message}) : inline = false;
 
   final String? message;
   final bool inline;

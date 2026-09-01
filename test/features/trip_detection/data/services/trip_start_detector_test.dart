@@ -188,45 +188,46 @@ void main() {
     });
 
     test(
-        'regression: a burst of samples inside one interval is NOT a trip start',
-        () async {
-      // Guards L-022: detections used to be counted per 50Hz sample, so
-      // `tripStartMinConsecutiveDetections = 3` meant ~60ms of motion and a
-      // single bump or hand movement could start a trip.
-      final container = createContainer();
-      addTearDown(container.dispose);
+      'regression: a burst of samples inside one interval is NOT a trip start',
+      () async {
+        // Guards L-022: detections used to be counted per 50Hz sample, so
+        // `tripStartMinConsecutiveDetections = 3` meant ~60ms of motion and a
+        // single bump or hand movement could start a trip.
+        final container = createContainer();
+        addTearDown(container.dispose);
 
-      final detector = container.read(tripStartDetectorProvider.notifier);
-      final motion = createCyclingMotion();
-      final location = createCyclingLocation();
+        final detector = container.read(tripStartDetectorProvider.notifier);
+        final motion = createCyclingMotion();
+        final location = createCyclingLocation();
 
-      // 50 samples at 50Hz = 1 second's worth of data delivered as a burst
-      // inside a single evaluation interval.
-      final start = DateTime.now();
-      for (int i = 0; i < 50; i++) {
-        await detector.analyzeForTripStart(
-          motion,
-          location,
-          now: start.add(Duration(milliseconds: i * 20)),
+        // 50 samples at 50Hz = 1 second's worth of data delivered as a burst
+        // inside a single evaluation interval.
+        final start = DateTime.now();
+        for (int i = 0; i < 50; i++) {
+          await detector.analyzeForTripStart(
+            motion,
+            location,
+            now: start.add(Duration(milliseconds: i * 20)),
+          );
+        }
+
+        final state = container.read(tripStartDetectorProvider);
+        expect(
+          state.confidence,
+          greaterThanOrEqualTo(AppConstants.tripStartConfidenceThreshold),
+          reason: 'confidence still tracks every sample',
         );
-      }
+        expect(
+          state.consecutiveDetections,
+          lessThan(AppConstants.tripStartMinConsecutiveDetections),
+          reason:
+              'counters advance once per evaluation interval, not per sample',
+        );
+        expect(detector.shouldStartTrip(), isFalse);
+      },
+    );
 
-      final state = container.read(tripStartDetectorProvider);
-      expect(
-        state.confidence,
-        greaterThanOrEqualTo(AppConstants.tripStartConfidenceThreshold),
-        reason: 'confidence still tracks every sample',
-      );
-      expect(
-        state.consecutiveDetections,
-        lessThan(AppConstants.tripStartMinConsecutiveDetections),
-        reason: 'counters advance once per evaluation interval, not per sample',
-      );
-      expect(detector.shouldStartTrip(), isFalse);
-    });
-
-    test('should reset consecutive count if detection window exceeded',
-        () async {
+    test('should reset consecutive count if detection window exceeded', () async {
       final container = createContainer();
 
       final detector = container.read(tripStartDetectorProvider.notifier);

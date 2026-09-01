@@ -27,17 +27,10 @@ Stream<T> streamFromProvider<T>(
 ) {
   final controller = StreamController<T>();
 
-  final subscription = ref.listen<AsyncValue<T>>(
-    provider,
-    (previous, next) {
-      if (controller.isClosed) return;
-      next.when(
-        data: controller.add,
-        error: controller.addError,
-        loading: () {},
-      );
-    },
-  );
+  final subscription = ref.listen<AsyncValue<T>>(provider, (previous, next) {
+    if (controller.isClosed) return;
+    next.when(data: controller.add, error: controller.addError, loading: () {});
+  });
 
   ref.onDispose(() {
     subscription.close();

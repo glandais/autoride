@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import '../../core/theme/app_spacing.dart';
 
 /// Status badge for displaying trip state (active/paused/detecting)

@@ -27,9 +27,7 @@ part 'trip_tracking_screen.g.dart';
 
 /// Provider to load route points for the active trip
 @riverpod
-Future<List<RoutePoint>> activeRoutePoints(
-  Ref ref,
-) async {
+Future<List<RoutePoint>> activeRoutePoints(Ref ref) async {
   final tripState = ref.watch(tripStateMachineProvider);
 
   // Only load if there's an active trip
@@ -103,10 +101,7 @@ class _TripTrackingScreenState extends ConsumerState<TripTrackingScreen> {
     }
 
     if (location != null && mounted) {
-      _mapController.move(
-        LatLng(location.latitude, location.longitude),
-        15.0,
-      );
+      _mapController.move(LatLng(location.latitude, location.longitude), 15.0);
     }
   }
 
@@ -129,14 +124,17 @@ class _TripTrackingScreenState extends ConsumerState<TripTrackingScreen> {
 
   Future<void> _handleManualStart() async {
     try {
-      await ref.read(autoDetectionControllerProvider.notifier)
+      await ref
+          .read(autoDetectionControllerProvider.notifier)
           .startTripManually();
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Could not start the trip: '
-              '${ErrorHandler.getErrorMessage(e)}'),
+          content: Text(
+            'Could not start the trip: '
+            '${ErrorHandler.getErrorMessage(e)}',
+          ),
         ),
       );
     }
@@ -197,7 +195,8 @@ class _TripTrackingScreenState extends ConsumerState<TripTrackingScreen> {
 
     final metricsAsync = ref.watch(tripRecorderServiceProvider);
     // Fed by the recorder's own GPS subscription — no extra receiver time.
-    final currentLocation = ref.watch(locationStreamProvider()).value ??
+    final currentLocation =
+        ref.watch(locationStreamProvider()).value ??
         ref.watch(locationServiceProvider).value;
     final routePointsAsync = ref.watch(activeRoutePointsProvider);
 
@@ -241,11 +240,11 @@ class _TripTrackingScreenState extends ConsumerState<TripTrackingScreen> {
                       followLocation: _isFollowingLocation,
                       onMapMoved: _onMapMoved,
                     ),
-                    loading: () => const LoadingView.inline(
-                      message: 'Loading map...',
-                    ),
+                    loading: () =>
+                        const LoadingView.inline(message: 'Loading map...'),
                     error: (error, stack) => ErrorView.generic(
-                      message: 'Failed to load map: ${ErrorHandler.getErrorMessage(error)}',
+                      message:
+                          'Failed to load map: ${ErrorHandler.getErrorMessage(error)}',
                     ),
                   ),
 
@@ -285,7 +284,8 @@ class _TripTrackingScreenState extends ConsumerState<TripTrackingScreen> {
                         padding: const EdgeInsets.all(AppSpacing.md),
                         child: ErrorView.generic(
                           message: ErrorHandler.getErrorMessage(error),
-                          onRetry: () => ref.refresh(tripRecorderServiceProvider),
+                          onRetry: () =>
+                              ref.refresh(tripRecorderServiceProvider),
                         ),
                       ),
                     ),
@@ -313,10 +313,9 @@ class _TripTrackingScreenState extends ConsumerState<TripTrackingScreen> {
   Widget _buildIdleScreen(BuildContext context) {
     final theme = Theme.of(context);
     final detection = ref.watch(autoDetectionControllerProvider);
-    final isDetecting = ref.watch(tripStateMachineProvider).maybeMap(
-          detecting: (_) => true,
-          orElse: () => false,
-        );
+    final isDetecting = ref
+        .watch(tripStateMachineProvider)
+        .maybeMap(detecting: (_) => true, orElse: () => false);
 
     final statusLabel = isDetecting
         ? 'Analyzing motion…'

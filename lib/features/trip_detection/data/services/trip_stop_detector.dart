@@ -1,4 +1,5 @@
 import 'package:riverpod_annotation/riverpod_annotation.dart';
+
 import '../../domain/models/location_data.dart';
 import '../../domain/models/motion_data.dart';
 import '../../domain/models/trip_stop_state.dart';
@@ -138,7 +139,7 @@ class TripStopDetector extends _$TripStopDetector {
 
     final isMotionStationary =
         accelDeviation <= AppConstants.stationaryAccelerationMax &&
-            gyroMagnitude <= AppConstants.stationaryRotationMax;
+        gyroMagnitude <= AppConstants.stationaryRotationMax;
 
     // If GPS available, validate with speed
     if (location != null) {

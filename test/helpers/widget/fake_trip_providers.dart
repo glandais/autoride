@@ -116,8 +116,9 @@ class FakeTripRecorderService extends TripRecorderService {
   @override
   Future<TripMetrics> build() async {
     log.buildCalls++;
-    _closeStateMachineSubscription ??=
-        ref.container.listen(tripStateMachineProvider, (_, _) {}).close;
+    _closeStateMachineSubscription ??= ref.container
+        .listen(tripStateMachineProvider, (_, _) {})
+        .close;
     ref.onDispose(() {
       _closeStateMachineSubscription?.call();
       _closeStateMachineSubscription = null;
@@ -206,10 +207,9 @@ class FakeAutoDetectionController extends AutoDetectionController {
       throw StateError('forced manual start failure');
     }
     ref.read(tripStateMachineProvider.notifier).startDetecting();
-    await ref.read(tripRecorderServiceProvider.notifier).startRecording(
-          confidenceScore: 1.0,
-          activity: ActivityType.cycling,
-        );
+    await ref
+        .read(tripRecorderServiceProvider.notifier)
+        .startRecording(confidenceScore: 1.0, activity: ActivityType.cycling);
   }
 }
 
@@ -220,10 +220,10 @@ class FakeSettingsService extends SettingsService {
 
   @override
   Future<UserSettings> build() async => UserSettings(
-        detection: DetectionSettings(
-          automaticDetectionEnabled: automaticDetectionEnabled,
-        ),
-      );
+    detection: DetectionSettings(
+      automaticDetectionEnabled: automaticDetectionEnabled,
+    ),
+  );
 }
 
 class FakeOnboardingService extends OnboardingService {
@@ -263,19 +263,21 @@ List<Override> tripSurfaceOverrides({
   TripState initialTripState = const TripState.idle(),
   bool automaticDetectionEnabled = true,
   List<Trip> trips = const [],
-}) =>
-    [
-      tripStateMachineProvider
-          .overrideWith(() => FakeTripStateMachine(initialTripState)),
-      tripRecorderServiceProvider
-          .overrideWith(() => FakeTripRecorderService(recorder)),
-      autoDetectionControllerProvider
-          .overrideWith(() => FakeAutoDetectionController(detection)),
-      settingsServiceProvider.overrideWith(
-        () => FakeSettingsService(
-          automaticDetectionEnabled: automaticDetectionEnabled,
-        ),
-      ),
-      onboardingServiceProvider.overrideWith(FakeOnboardingService.new),
-      tripHistoryProvider.overrideWith(() => FakeTripHistory(trips)),
-    ];
+}) => [
+  tripStateMachineProvider.overrideWith(
+    () => FakeTripStateMachine(initialTripState),
+  ),
+  tripRecorderServiceProvider.overrideWith(
+    () => FakeTripRecorderService(recorder),
+  ),
+  autoDetectionControllerProvider.overrideWith(
+    () => FakeAutoDetectionController(detection),
+  ),
+  settingsServiceProvider.overrideWith(
+    () => FakeSettingsService(
+      automaticDetectionEnabled: automaticDetectionEnabled,
+    ),
+  ),
+  onboardingServiceProvider.overrideWith(FakeOnboardingService.new),
+  tripHistoryProvider.overrideWith(() => FakeTripHistory(trips)),
+];

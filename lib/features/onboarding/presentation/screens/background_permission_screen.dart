@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/utils/legal_links.dart';
@@ -51,14 +52,12 @@ class BackgroundPermissionScreen extends ConsumerWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'Benefits:',
-                    style: theme.textTheme.titleMedium,
-                  ),
+                  Text('Benefits:', style: theme.textTheme.titleMedium),
                   const SizedBox(height: AppSpacing.md),
                   const _BenefitItem(
                     icon: Icons.auto_mode,
-                    text: 'Completely automatic - no need to start/stop manually',
+                    text:
+                        'Completely automatic - no need to start/stop manually',
                   ),
                   const SizedBox(height: AppSpacing.sm),
                   const _BenefitItem(
@@ -85,10 +84,7 @@ class BackgroundPermissionScreen extends ConsumerWidget {
             ),
             child: Row(
               children: [
-                Icon(
-                  Icons.info_outline,
-                  color: theme.colorScheme.primary,
-                ),
+                Icon(Icons.info_outline, color: theme.colorScheme.primary),
                 const SizedBox(width: AppSpacing.sm),
                 Expanded(
                   child: Text(
@@ -119,10 +115,14 @@ class BackgroundPermissionScreen extends ConsumerWidget {
                 : 'Enable Automatic Tracking',
             onPressed: state.backgroundPermissionGranted
                 ? () => ref
-                    .read(onboardingProvider.notifier)
-                    .skipBackgroundPermission()
-                : () => ref.read(onboardingProvider.notifier).requestBackgroundPermission(),
-            icon: state.backgroundPermissionGranted ? Icons.check : Icons.auto_awesome,
+                      .read(onboardingProvider.notifier)
+                      .skipBackgroundPermission()
+                : () => ref
+                      .read(onboardingProvider.notifier)
+                      .requestBackgroundPermission(),
+            icon: state.backgroundPermissionGranted
+                ? Icons.check
+                : Icons.auto_awesome,
           ),
           const SizedBox(height: AppSpacing.sm),
 
@@ -130,7 +130,9 @@ class BackgroundPermissionScreen extends ConsumerWidget {
           if (!state.backgroundPermissionGranted)
             TextButton(
               onPressed: () {
-                ref.read(onboardingProvider.notifier).skipBackgroundPermission();
+                ref
+                    .read(onboardingProvider.notifier)
+                    .skipBackgroundPermission();
               },
               child: const Text('Skip for Now'),
             ),
@@ -190,7 +192,8 @@ class _BackgroundLocationDisclosure extends StatelessWidget {
           Align(
             alignment: Alignment.centerLeft,
             child: TextButton.icon(
-              onPressed: () => openLegalUrl(context, AppConstants.privacyPolicyUrl),
+              onPressed: () =>
+                  openLegalUrl(context, AppConstants.privacyPolicyUrl),
               icon: const Icon(Icons.open_in_new, size: 16),
               label: const Text('Privacy Policy'),
               style: TextButton.styleFrom(
@@ -207,10 +210,7 @@ class _BackgroundLocationDisclosure extends StatelessWidget {
 }
 
 class _BenefitItem extends StatelessWidget {
-  const _BenefitItem({
-    required this.icon,
-    required this.text,
-  });
+  const _BenefitItem({required this.icon, required this.text});
 
   final IconData icon;
   final String text;
@@ -221,18 +221,9 @@ class _BenefitItem extends StatelessWidget {
 
     return Row(
       children: [
-        Icon(
-          icon,
-          size: AppSpacing.iconMd,
-          color: theme.colorScheme.secondary,
-        ),
+        Icon(icon, size: AppSpacing.iconMd, color: theme.colorScheme.secondary),
         const SizedBox(width: AppSpacing.sm),
-        Expanded(
-          child: Text(
-            text,
-            style: theme.textTheme.bodyMedium,
-          ),
-        ),
+        Expanded(child: Text(text, style: theme.textTheme.bodyMedium)),
       ],
     );
   }

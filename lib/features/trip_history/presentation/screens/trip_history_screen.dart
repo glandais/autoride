@@ -58,7 +58,8 @@ class TripHistoryScreen extends ConsumerWidget {
                 final trip = trips[index];
 
                 // Show date header if this is the first trip of a new date
-                final showDateHeader = index == 0 ||
+                final showDateHeader =
+                    index == 0 ||
                     _getDateLabel(trip.startTime) !=
                         _getDateLabel(trips[index - 1].startTime);
 
@@ -74,9 +75,8 @@ class TripHistoryScreen extends ConsumerWidget {
                         ),
                         child: Text(
                           _getDateLabel(trip.startTime),
-                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                fontWeight: FontWeight.bold,
-                              ),
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(fontWeight: FontWeight.bold),
                         ),
                       ),
                     ],
@@ -86,12 +86,15 @@ class TripHistoryScreen extends ConsumerWidget {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (context) => TripDetailScreen(tripId: trip.id!),
+                            builder: (context) =>
+                                TripDetailScreen(tripId: trip.id!),
                           ),
                         );
                       },
                       onDelete: () async {
-                        final confirmed = await _showDeleteConfirmation(context);
+                        final confirmed = await _showDeleteConfirmation(
+                          context,
+                        );
                         if (confirmed == true) {
                           await ref
                               .read(tripHistoryProvider.notifier)
@@ -152,7 +155,7 @@ class TripHistoryScreen extends ConsumerWidget {
       'September',
       'October',
       'November',
-      'December'
+      'December',
     ];
     return '${months[date.month]} ${date.day}, ${date.year}';
   }
@@ -163,7 +166,9 @@ class TripHistoryScreen extends ConsumerWidget {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Delete Trip'),
-        content: const Text('Are you sure you want to delete this trip? This action cannot be undone.'),
+        content: const Text(
+          'Are you sure you want to delete this trip? This action cannot be undone.',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),

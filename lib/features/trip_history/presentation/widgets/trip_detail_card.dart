@@ -5,10 +5,7 @@ import 'package:autoride/core/theme/app_spacing.dart';
 
 /// Trip detail card displaying comprehensive trip statistics
 class TripDetailCard extends StatelessWidget {
-  const TripDetailCard({
-    required this.trip,
-    super.key,
-  });
+  const TripDetailCard({required this.trip, super.key});
 
   final Trip trip;
 
@@ -19,9 +16,8 @@ class TripDetailCard extends StatelessWidget {
       children: [
         Text(
           'Statistics',
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
+          style: Theme.of(context).textTheme.titleMedium
+              ?.copyWith(fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: AppSpacing.md),
 
