@@ -47,8 +47,19 @@ import 'package:autoride/features/trip_detection/domain/models/trip_stop_state.d
 /// providers (avoids the recorder<->machine circular dependency the production
 /// machine would create; see trip_recorder_service_test.dart for details).
 class _TestTripStateMachine extends TripStateMachine {
+  /// Drives `hasDetectionTimedOut` by hand. The production check measures
+  /// `DateTime.now()` against `detectionTimeoutSeconds`, which no test can wait
+  /// out; what the coordinator does *on* a timeout is the behaviour under test.
+  bool forceDetectionTimeout = false;
+
   @override
   TripState build() => const TripState.idle();
+
+  @override
+  bool hasDetectionTimedOut() {
+    return forceDetectionTimeout &&
+        state.maybeMap(detecting: (_) => true, orElse: () => false);
+  }
 
   @override
   void startDetecting() {
@@ -103,6 +114,10 @@ class _RecorderLog {
   final List<ActivityType> startedWithActivity = [];
   int stopCalls = 0;
   bool throwOnStart = false;
+
+  /// Makes `stopRecording` hand back a trip flagged `discarded`, as the real
+  /// recorder does for a ride shorter than `minTripDurationSeconds` (L-068).
+  bool discardOnStop = false;
 }
 
 class _SpyTripRecorderService extends TripRecorderService {
@@ -144,6 +159,7 @@ class _SpyTripRecorderService extends TripRecorderService {
       duration: 0,
       detectedActivity: ActivityType.cycling,
       confidenceScore: 0.9,
+      status: log.discardOnStop ? TripStatus.discarded : TripStatus.completed,
       routePoints: const [],
     );
   }
@@ -153,6 +169,12 @@ class _SpyTripRecorderService extends TripRecorderService {
 class _StartDetectorScript {
   bool verdict = false;
   double reportedConfidence = 0.9;
+
+  /// Streak the double reports in its state. The coordinator opens the
+  /// `Detecting` phase only once at least one detection has been counted
+  /// (L-075), so 0 — the default — models a sample that scored below the
+  /// confidence threshold.
+  int countedDetections = 0;
   final List<LocationData?> seenLocations = [];
   int resetCalls = 0;
   int cooldownCalls = 0;
@@ -173,7 +195,10 @@ class _FakeTripStartDetector extends TripStartDetector {
     DateTime? now,
   }) async {
     script.seenLocations.add(location);
-    state = state.copyWith(confidence: script.reportedConfidence);
+    state = state.copyWith(
+      confidence: script.reportedConfidence,
+      consecutiveDetections: script.countedDetections,
+    );
     return script.verdict;
   }
 
@@ -587,14 +612,19 @@ void main() {
   });
 
   group('TripDetectionCoordinator - decision routing', () {
-    test('idle: the first motion sample starts the detecting phase', () async {
-      await startedCoordinator();
+    test(
+      'idle: a motion sample with no detection is analysed but stays idle',
+      () async {
+        await startedCoordinator();
 
-      await pushMotion(1);
+        await pushMotion(1);
 
-      expect(_stateName(container.read(tripStateMachineProvider)), 'detecting');
-      expect(startDetector.seenLocations, isNotEmpty);
-    });
+        // L-075: `Detecting` used to be entered on the first motion sample of
+        // any kind, which put a merely-carried phone into a 30 s timeout cycle.
+        expect(_stateName(container.read(tripStateMachineProvider)), 'idle');
+        expect(startDetector.seenLocations, isNotEmpty);
+      },
+    );
 
     test('location updates are handed to the start detector', () async {
       await startedCoordinator();
@@ -764,7 +794,9 @@ void main() {
         await Future<void>.delayed(const Duration(milliseconds: 150));
         await pumpEventQueue();
 
-        startDetector.verdict = false;
+        startDetector
+          ..verdict = false
+          ..countedDetections = 1;
         await pushMotion(3);
         expect(
           _stateName(container.read(tripStateMachineProvider)),
@@ -796,6 +828,7 @@ void main() {
 
   group('TripDetectionCoordinator - session ownership (audit #2)', () {
     test('an active session survives losing its last listener', () async {
+      startDetector.countedDetections = 1;
       final coordinator = await startedCoordinator();
 
       // Simulate the tracking screen being unmounted / a tab switch.
@@ -1261,7 +1294,7 @@ void main() {
       final coordinator = await startedCoordinator();
       watchdog = coordinator as _WatchdogCoordinator;
 
-      await pushMotion(1); // detecting, no trip
+      await pushMotion(1); // analysed, but no trip started
       watchdog.advance(AppConstants.gpsLossStopTimeout * 3);
       await tick();
 
@@ -1362,6 +1395,153 @@ void main() {
 
       expect(recorder.startedWithConfidence, hasLength(1));
       expect(stopDetector.resetCalls, greaterThan(before));
+    });
+  });
+
+  // ==========================================================================
+  // L-075. The detector used to spend roughly half its time blind: `Detecting`
+  // was entered on the first motion sample of any kind, its 30 s timeout armed
+  // `tripStartCooldownPeriodSeconds` of unconditional "no" AND tore the streams
+  // down, and the cycle repeated for as long as anything moved the phone. These
+  // tests pin the two halves of the fix: a timeout costs nothing but the streak,
+  // and the cooldown is armed only where a trip really was started and thrown
+  // away.
+  // ==========================================================================
+  group('TripDetectionCoordinator - detection duty cycle (L-075)', () {
+    late _WatchdogCoordinator coordinator;
+
+    setUp(() {
+      container.dispose();
+      container = ProviderContainer(
+        overrides: baseOverrides(
+          startDetectorOverride: tripStartDetectorProvider.overrideWith(
+            () => _StreakStartDetector(startDetector),
+          ),
+          extra: [
+            tripDetectionCoordinatorProvider.overrideWith(
+              _WatchdogCoordinator.new,
+            ),
+          ],
+        ),
+      );
+      coordinatorSubscription = container.listen(
+        tripDetectionCoordinatorProvider,
+        (_, _) {},
+      );
+    });
+
+    _TestTripStateMachine machine() =>
+        container.read(tripStateMachineProvider.notifier)
+            as _TestTripStateMachine;
+
+    Future<void> begin() async {
+      coordinator = await startedCoordinator() as _WatchdogCoordinator;
+    }
+
+    Future<void> tick() async {
+      coordinator.tick();
+      await pumpEventQueue();
+    }
+
+    test(
+      'the detecting phase is entered on a counted detection, not on motion',
+      () async {
+        await begin();
+
+        // The streak detector counts every sample, so one sample is one
+        // detection and the phase opens; a sample the real detector scored
+        // below threshold would leave the machine idle (see the routing group).
+        await pushMotion(1);
+
+        expect(
+          _stateName(container.read(tripStateMachineProvider)),
+          'detecting',
+        );
+        expect(recorder.startedWithConfidence, isEmpty);
+      },
+    );
+
+    test('a detecting timeout returns to idle and arms no cooldown', () async {
+      await begin();
+      await pushMotion(1);
+      expect(_stateName(container.read(tripStateMachineProvider)), 'detecting');
+
+      machine().forceDetectionTimeout = true;
+      await tick();
+
+      expect(_stateName(container.read(tripStateMachineProvider)), 'idle');
+      // The streak is dropped...
+      expect(startDetector.resetCalls, greaterThan(0));
+      // ...but the detector is NOT blinded: this used to be 1, and the next
+      // `tripStartCooldownPeriodSeconds` of real cycling were ignored.
+      expect(startDetector.cooldownCalls, 0);
+    });
+
+    test(
+      'a cycling pattern right after a timeout starts a trip immediately',
+      () async {
+        await begin();
+        await pushMotion(1);
+        await pushMotion(2);
+
+        machine().forceDetectionTimeout = true;
+        await tick();
+        machine().forceDetectionTimeout = false;
+        expect(_stateName(container.read(tripStateMachineProvider)), 'idle');
+
+        // No `awaitSessionRestart()` here on purpose: the timeout no longer
+        // suspends the motion subscription, so the very next samples are seen.
+        // A full streak — the confirmation rule is untouched — starts the trip.
+        for (
+          var i = 3;
+          i <= 2 + AppConstants.tripStartMinConsecutiveDetections;
+          i++
+        ) {
+          await pushMotion(i);
+        }
+
+        expect(recorder.startedWithConfidence, hasLength(1));
+        expect(_stateName(container.read(tripStateMachineProvider)), 'active');
+      },
+    );
+
+    test('a discarded trip arms the start-detection cooldown', () async {
+      recorder.discardOnStop = true;
+      await begin();
+
+      for (
+        var i = 1;
+        i <= AppConstants.tripStartMinConsecutiveDetections;
+        i++
+      ) {
+        await pushMotion(i);
+      }
+      expect(_stateName(container.read(tripStateMachineProvider)), 'active');
+
+      stopDetector.decision = StopDecision.stopTrip;
+      await pushMotion(10);
+
+      expect(recorder.stopCalls, 1);
+      expect(startDetector.cooldownCalls, 1);
+    });
+
+    test('a completed trip does not arm the cooldown', () async {
+      await begin();
+
+      for (
+        var i = 1;
+        i <= AppConstants.tripStartMinConsecutiveDetections;
+        i++
+      ) {
+        await pushMotion(i);
+      }
+      expect(_stateName(container.read(tripStateMachineProvider)), 'active');
+
+      stopDetector.decision = StopDecision.stopTrip;
+      await pushMotion(10);
+
+      expect(recorder.stopCalls, 1);
+      expect(startDetector.cooldownCalls, 0);
     });
   });
 }

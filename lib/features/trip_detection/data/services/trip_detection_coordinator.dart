@@ -7,6 +7,7 @@ import '../../../../core/constants/app_constants.dart';
 import '../../domain/models/activity_confidence.dart';
 import '../../domain/models/location_data.dart';
 import '../../domain/models/motion_data.dart';
+import '../../domain/models/trip.dart';
 import '../../domain/models/trip_state.dart';
 import '../../domain/models/trip_stop_state.dart';
 import 'sensor_service.dart';
@@ -379,8 +380,9 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
     // Analyze based on current state
     await currentState.mapOrNull(
       idle: (_) async {
-        // In idle, start detection phase
-        ref.read(tripStateMachineProvider.notifier).startDetecting();
+        // In idle, look for a trip start. The transition into `Detecting` is
+        // made by `_analyzeForTripStart` itself, and only once the detector has
+        // actually counted a positive detection — see there.
         await _analyzeForTripStart(motion);
       },
       detecting: (_) async {
@@ -446,6 +448,19 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
     final shouldStart = await ref
         .read(tripStartDetectorProvider.notifier)
         .analyzeForTripStart(motion, _lastLocation);
+
+    // Enter `Detecting` only once the detector has counted at least one
+    // positive detection (L-075). It used to be entered on the *first motion
+    // sample of any kind*, so a phone merely being carried sat in `Detecting`
+    // permanently, hit `detectionTimeoutSeconds` every 30 s and paid the
+    // timeout's teardown each time. `startDetecting()` is idle-only, so this is
+    // idempotent — and it must also run on the sample that starts the trip,
+    // because `startTripWithId` transitions out of `Detecting` and nothing
+    // else.
+    final counted = ref.read(tripStartDetectorProvider).consecutiveDetections;
+    if (shouldStart || counted > 0) {
+      ref.read(tripStateMachineProvider.notifier).startDetecting();
+    }
 
     if (shouldStart) {
       // Get confidence score from detector
@@ -558,7 +573,9 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
     // This calculates final metrics and saves to database
     // Note: stopRecording() calls TripStateMachine.stopTrip() which triggers
     // trip completion notification (implemented in T025)
-    await ref.read(tripRecorderServiceProvider.notifier).stopRecording();
+    final finalTrip = await ref
+        .read(tripRecorderServiceProvider.notifier)
+        .stopRecording();
 
     // Reset both detectors. The START detector matters as much as the stop one:
     // its `consecutiveDetections` streak survives a recording, so without this
@@ -567,6 +584,17 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
     // sample, defeating the consecutive-detection rule entirely (L-074).
     ref.read(tripStopDetectorProvider.notifier).reset();
     ref.read(tripStartDetectorProvider.notifier).reset();
+
+    // THIS is a false start: a recording the recorder threw away because it was
+    // shorter than `minTripDurationSeconds` (L-068). Backing off for
+    // `tripStartCooldownPeriodSeconds` is worth its blind window here, because
+    // whatever motion just fooled the detector into starting a trip is still
+    // going on. The cooldown must follow `reset()`, which returns the detector
+    // to `initial()` — the two only compose in this order.
+    if (finalTrip?.status == TripStatus.discarded) {
+      _logger.info('Trip discarded as a false start — backing off');
+      ref.read(tripStartDetectorProvider.notifier).activateCooldown();
+    }
 
     // Update coordinator state
     final stateMachineState = ref.read(tripStateMachineProvider);
@@ -589,7 +617,24 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
     await startListening();
   }
 
-  /// Check if detection phase has timed out
+  /// Give up on a `Detecting` phase that has run for
+  /// `AppConstants.detectionTimeoutSeconds` without confirming a ride.
+  ///
+  /// Nothing *happened* here: no trip was started, so there is nothing to back
+  /// off from. The timeout therefore costs exactly one streak reset and a
+  /// return to idle — detection stays live and the very next cycling-shaped
+  /// sample can start a trip (L-075).
+  ///
+  /// It used to do two more things, and both made the detector blind for up to
+  /// 30 s at a time: it armed `tripStartCooldownPeriodSeconds` of cooldown
+  /// (during which `analyzeForTripStart` returns `false` unconditionally), and
+  /// it tore the motion/GPS subscriptions down to restart them 100 ms later.
+  /// Combined with entering `Detecting` on any motion sample at all, that gave
+  /// a roughly 50 % detection duty cycle for anyone whose phone was moving —
+  /// walking to the bike, riding in a car — and a real departure landing inside
+  /// a cooldown was missed for up to half a minute. The cooldown now lives
+  /// where a false start really occurs: a started-then-discarded trip, in
+  /// [_finalizeAndStopTrip].
   void _checkDetectionTimeout() {
     final stateMachine = ref.read(tripStateMachineProvider.notifier);
 
@@ -597,18 +642,8 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
       // Detection timed out - return to idle
       stateMachine.stopTrip();
 
-      // Clear the streak first, then activate the cooldown: `reset()` returns
-      // the state to `initial()`, so the two calls only compose in this order.
+      // Drop the (unconfirmed) streak so the next window starts clean.
       ref.read(tripStartDetectorProvider.notifier).reset();
-      ref.read(tripStartDetectorProvider.notifier).activateCooldown();
-
-      // Reset and restart listening (same session).
-      _suspendListening();
-      Future.delayed(const Duration(milliseconds: 100), () {
-        if (!_disposed) {
-          startListening();
-        }
-      });
     }
   }
 

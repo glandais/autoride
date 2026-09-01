@@ -235,7 +235,6 @@ See [CLAUDE.md](CLAUDE.md) for detailed development guidelines and best practice
 
 ### System
 - **permission_handler** - Runtime permission management
-- **wakelock_plus** - Prevent screen sleep during active trips
 - **battery_plus** - Battery level monitoring for power optimization
 
 ### Development Tools

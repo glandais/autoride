@@ -6,9 +6,6 @@ class AppConstants {
   // Detection thresholds
   static const double cyclingSpeedMin = 8.0; // km/h
   static const double cyclingSpeedMax = 40.0; // km/h
-  // TODO(T041): no consumer — the live detectors use `stationaryAccelerationMax`
-  // as the gravity-relative movement threshold.
-  static const double movementThreshold = 1.5; // m/s² acceleration
 
   // Acceleration convention
   // Accelerometer data from sensors_plus includes gravity, so a stationary
@@ -199,8 +196,12 @@ class AppConstants {
   static const double frequencyScoreWeight = 0.25; // 25% weight
 
   // Trip State Machine Configuration (T012)
-  static const int detectionTimeoutSeconds =
-      30; // Max time in Detecting before timeout
+  //
+  // How long the machine may sit in `Detecting` without confirming a ride. On
+  // expiry it returns to idle and the start detector's streak is dropped —
+  // nothing else: no cooldown, no stream teardown (L-075), so a real departure
+  // one second later is still caught.
+  static const int detectionTimeoutSeconds = 30;
   // (`stationaryThresholdSeconds` used to sit here with a TODO and no consumer;
   // removed in T041 — the stop detector gates the pause on
   // `minPauseDurationSeconds` + consecutive stationary detections.)
@@ -232,17 +233,17 @@ class AppConstants {
   // confidence and pause timers.
   static const Duration detectionEvaluationInterval = Duration(seconds: 1);
 
-  // Cooldown period after false start (seconds)
+  // Cooldown period after a false start (seconds).
+  //
+  // "False start" means a trip that really was started and then discarded for
+  // being shorter than `minTripDurationSeconds` — the only case where the
+  // detector has demonstrably been fooled and whatever fooled it is probably
+  // still happening. A `Detecting` phase that merely times out is NOT a false
+  // start and does not arm this (L-075).
   static const int tripStartCooldownPeriodSeconds = 30;
 
   // GPS speed range for cycling validation (km/h)
   // Note: cyclingSpeedMin and cyclingSpeedMax already defined above
-
-  // Grace period before GPS required (seconds)
-  // Allows motion-only detection for first N seconds (e.g., GPS lock delay)
-  // TODO(T041): no consumer — the detector already falls back to motion-only
-  // whenever `location` is null, without an explicit grace period.
-  static const int tripStartGpsGracePeriodSeconds = 10;
 
   // Weighting for confidence calculation
   static const double tripStartMotionWeight = 0.6; // 60% when GPS available
@@ -327,15 +328,6 @@ class AppConstants {
 
   // Onboarding Configuration (T021)
   static const String onboardingCompleteKey = 'onboarding_complete';
-  // TODO(T041): unused — the onboarding widgets and provider still hardcode the
-  // page count (5) and the 300 ms page transition.
-  static const int onboardingPageCount = 5;
-  static const Duration onboardingAnimationDuration = Duration(
-    milliseconds: 300,
-  );
-  static const Duration onboardingPageTransitionDuration = Duration(
-    milliseconds: 250,
-  );
 
   // Notification Configuration (T025)
 

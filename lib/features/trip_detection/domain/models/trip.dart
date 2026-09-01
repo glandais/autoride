@@ -22,9 +22,12 @@ enum TripStatus {
   /// Finalized but rejected (too short to be a real ride).
   ///
   /// The recorder and the startup recovery *delete* such trips rather than
-  /// keeping them (route points cascade), so nothing writes this value today.
-  /// It is kept in the schema so a row that ever carries it stays out of
-  /// history instead of silently reappearing there.
+  /// keeping them (route points cascade), so no database row ever carries this
+  /// value today. It is kept in the schema so a row that ever did would stay
+  /// out of history instead of silently reappearing there — and the finalized
+  /// `Trip` the recorder returns in memory does carry it, which is how
+  /// `TripDetectionCoordinator` tells a false start from a real ride and arms
+  /// the start-detection cooldown (L-075).
   discarded;
 
   /// Parse a persisted value, falling back to [TripStatus.completed].

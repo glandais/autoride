@@ -322,6 +322,103 @@ void main() {
       container.dispose();
     });
 
+    test('a reset with no cooldown lets the very next cycling burst confirm '
+        '(L-075)', () async {
+      final container = createContainer();
+
+      final detector = container.read(tripStartDetectorProvider.notifier);
+      final motion = createCyclingMotion();
+      final start = DateTime.now();
+
+      Future<bool> burst(DateTime from) async {
+        var started = false;
+        for (
+          int i = 0;
+          i < AppConstants.tripStartMinConsecutiveDetections;
+          i++
+        ) {
+          started = await detector.analyzeForTripStart(
+            motion,
+            null,
+            now: from.add(AppConstants.detectionEvaluationInterval * i),
+          );
+        }
+        return started;
+      }
+
+      expect(await burst(start), isTrue);
+
+      // What the coordinator does when a `Detecting` phase times out: drop
+      // the streak, and nothing else. No cooldown is armed, so the detector
+      // is immediately available again — a real departure one second later
+      // must not have to wait out `tripStartCooldownPeriodSeconds`.
+      detector.reset();
+      expect(container.read(tripStartDetectorProvider).cooldownActive, isFalse);
+
+      expect(await burst(start.add(const Duration(seconds: 1))), isTrue);
+
+      container.dispose();
+    });
+
+    test(
+      'an armed cooldown blocks detection until it expires (L-075)',
+      () async {
+        final container = createContainer();
+
+        final detector = container.read(tripStartDetectorProvider.notifier);
+        final motion = createCyclingMotion();
+
+        // What the coordinator does after a *discarded* trip: reset, then arm
+        // the cooldown. This is the one path that is still allowed to blind the
+        // detector, because a trip really was started and thrown away.
+        detector.reset();
+        detector.activateCooldown();
+        final armedAt = container
+            .read(tripStartDetectorProvider)
+            .cooldownStartTime!;
+
+        // Sustained cycling inside the cooldown confirms nothing.
+        for (
+          int i = 0;
+          i < AppConstants.tripStartMinConsecutiveDetections;
+          i++
+        ) {
+          expect(
+            await detector.analyzeForTripStart(
+              motion,
+              null,
+              now: armedAt.add(AppConstants.detectionEvaluationInterval * i),
+            ),
+            isFalse,
+          );
+        }
+        expect(
+          container.read(tripStartDetectorProvider).consecutiveDetections,
+          equals(0),
+        );
+
+        // Past the cooldown the same burst confirms again.
+        final after = armedAt.add(
+          const Duration(seconds: AppConstants.tripStartCooldownPeriodSeconds),
+        );
+        var started = false;
+        for (
+          int i = 0;
+          i < AppConstants.tripStartMinConsecutiveDetections;
+          i++
+        ) {
+          started = await detector.analyzeForTripStart(
+            motion,
+            null,
+            now: after.add(AppConstants.detectionEvaluationInterval * i),
+          );
+        }
+        expect(started, isTrue);
+
+        container.dispose();
+      },
+    );
+
     test('should reset state correctly', () async {
       final container = createContainer();
 

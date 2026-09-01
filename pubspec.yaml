@@ -35,7 +35,6 @@ dependencies:
   sqflite: ^2.3.0                # SQLite database for trips
   tflite_flutter: ^0.12.1        # TensorFlow Lite for activity recognition
   url_launcher: ^6.3.2         # Open the hosted privacy policy / terms in the browser
-  wakelock_plus: ^1.7.0          # Keep device awake during tracking
 
 dev_dependencies:
   # Code Generation
