@@ -460,6 +460,105 @@ void main() {
     });
   });
 
+  group('TripRepository - status filtering (L-068)', () {
+    /// The row shape the recorder writes when a ride starts: 0 m / 0 s and
+    /// `active`. Before L-068 these showed up in history as phantom trips.
+    Future<Trip> saveActiveTrip({DateTime? startTime}) {
+      final start = startTime ?? DateTime.now();
+      return repository.saveTrip(
+        Trip(
+          startTime: start,
+          endTime: start,
+          distance: 0.0,
+          duration: 0,
+          detectedActivity: ActivityType.cycling,
+          confidenceScore: 0.8,
+          status: TripStatus.active,
+        ),
+      );
+    }
+
+    test('a trip defaults to completed and is visible', () async {
+      final saved = await repository.saveTrip(createTestTrip());
+
+      expect(saved.status, TripStatus.completed);
+      expect(await repository.getAllTrips(), hasLength(1));
+    });
+
+    test('getAllTrips hides active and discarded trips', () async {
+      await repository.saveTrip(createTestTrip());
+      await saveActiveTrip();
+      await repository.saveTrip(
+        createTestTrip().copyWith(status: TripStatus.discarded),
+      );
+
+      final trips = await repository.getAllTrips();
+
+      expect(trips, hasLength(1));
+      expect(trips.single.status, TripStatus.completed);
+    });
+
+    test('every other list query hides them too', () async {
+      final now = DateTime.now();
+      await repository.saveTrip(
+        createTestTrip(startTime: now).copyWith(userConfirmed: true),
+      );
+      await saveActiveTrip(startTime: now);
+
+      expect(
+        await repository.getTripsByActivity(ActivityType.cycling),
+        hasLength(1),
+      );
+      expect(await repository.getConfirmedTrips(), hasLength(1));
+      expect(
+        await repository.getTripsByDateRange(
+          startDate: now.subtract(const Duration(days: 1)),
+          endDate: now.add(const Duration(days: 1)),
+        ),
+        hasLength(1),
+      );
+    });
+
+    test('stats count only completed trips', () async {
+      await repository.saveTrip(createTestTrip(distance: 5000.0));
+      await saveActiveTrip();
+      await repository.saveTrip(
+        createTestTrip(distance: 9000.0).copyWith(status: TripStatus.discarded),
+      );
+
+      expect(await repository.getTripCount(), equals(1));
+      expect(await repository.getTotalDistance(), equals(5000.0));
+    });
+
+    test(
+      'getTripById still resolves an active trip (recovery needs it)',
+      () async {
+        final active = await saveActiveTrip();
+
+        final fetched = await repository.getTripById(active.id!);
+
+        expect(fetched, isNotNull);
+        expect(fetched!.status, TripStatus.active);
+      },
+    );
+
+    test(
+      'getTripsByStatus returns only the requested status, oldest first',
+      () async {
+        final now = DateTime.now();
+        await repository.saveTrip(createTestTrip());
+        final second = await saveActiveTrip(startTime: now);
+        final first = await saveActiveTrip(
+          startTime: now.subtract(const Duration(hours: 3)),
+        );
+
+        final active = await repository.getTripsByStatus(TripStatus.active);
+
+        expect(active.map((t) => t.id), equals([first.id, second.id]));
+      },
+    );
+  });
+
   group('TripRepository - Error Handling', () {
     test('should throw TripRepositoryException on database errors', () async {
       // Close database to cause errors

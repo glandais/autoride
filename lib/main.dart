@@ -7,6 +7,7 @@ import 'core/utils/platform_config_validator.dart';
 import 'features/onboarding/data/services/onboarding_service.dart';
 import 'features/onboarding/presentation/screens/onboarding_screen.dart';
 import 'features/settings/presentation/screens/settings_screen.dart';
+import 'features/trip_detection/data/services/trip_recovery_service.dart';
 import 'features/trip_detection/data/services/trip_state_machine.dart';
 import 'features/trip_detection/domain/models/trip_state.dart';
 import 'features/trip_detection/presentation/providers/auto_detection_controller.dart';
@@ -59,6 +60,12 @@ class _AutoRideAppState extends ConsumerState<AutoRideApp>
 
     // Listen for trip state changes and auto-navigate to tracking screen
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Close any trip a process death left mid-recording (L-068), before
+      // automatic detection below can start a new one. Fire-and-forget: the
+      // provider logs its own outcome and a failure must not block launch —
+      // the rows stay `active` and are retried next time.
+      ref.listenManual(tripRecoveryProvider, (_, _) {});
+
       // Lifecycle owner for automatic detection (audit #11): instantiating it
       // here — above every screen — is what makes detection run at all. The
       // listener is what keeps it reactive: a keepAlive provider with no

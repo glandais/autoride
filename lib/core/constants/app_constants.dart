@@ -230,9 +230,18 @@ class AppConstants {
   // Higher than cyclingSpeedMax to allow safety margin
   static const double maxCyclingSpeedKmh = 60.0;
 
+  // Minimum duration for a recording to be kept as a real trip (seconds).
+  // Anything shorter is a false start (a bump, a mis-tap on the manual start
+  // button) and is discarded instead of becoming a permanent history entry.
+  // Consumed by `Trip.isValidTrip`, the recorder's stop path and the startup
+  // recovery of interrupted trips.
+  static const int minTripDurationSeconds = 60;
+
   // Database
   static const String databaseName = 'autoride.db';
-  static const int databaseVersion = 1;
+  // v2 (L-068): `trips.status` (active/completed/discarded) for trip lifecycle
+  // tracking and recovery of recordings interrupted by an app kill.
+  static const int databaseVersion = 2;
 
   // Onboarding Configuration (T021)
   static const String onboardingCompleteKey = 'onboarding_complete';

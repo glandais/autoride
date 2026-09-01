@@ -64,8 +64,14 @@ class TripStateMachine extends _$TripStateMachine {
     );
   }
 
-  /// Stop trip and return to Idle (manual stop or timeout)
-  void stopTrip() {
+  /// Stop trip and return to Idle (manual stop or timeout).
+  ///
+  /// [discarded] is set by the recorder when the recording was too short to be
+  /// kept (its row is deleted, not saved). Such a ride must not announce
+  /// itself with a "trip recorded" notification — but the foreground
+  /// notification still has to be cancelled, or a phantom "trip in progress"
+  /// would outlive the trip.
+  void stopTrip({bool discarded = false}) {
     // Capture trip metrics before stopping (for notification)
     final recorderAsync = ref.read(tripRecorderServiceProvider);
 
@@ -76,13 +82,15 @@ class TripStateMachine extends _$TripStateMachine {
       active: (_) {
         // Show trip stop notification with final metrics
         recorderAsync.whenData((metrics) {
-          ref
-              .read(notificationServiceProvider.notifier)
-              .showTripStopNotification(
-                distance: metrics.distanceMeters,
-                duration: Duration(seconds: metrics.durationSeconds),
-                avgSpeed: metrics.avgSpeedKmh ?? 0.0,
-              );
+          if (!discarded) {
+            ref
+                .read(notificationServiceProvider.notifier)
+                .showTripStopNotification(
+                  distance: metrics.distanceMeters,
+                  duration: Duration(seconds: metrics.durationSeconds),
+                  avgSpeed: metrics.avgSpeedKmh ?? 0.0,
+                );
+          }
 
           // Cancel foreground notification
           ref
@@ -95,13 +103,15 @@ class TripStateMachine extends _$TripStateMachine {
       paused: (_) {
         // Show trip stop notification with final metrics
         recorderAsync.whenData((metrics) {
-          ref
-              .read(notificationServiceProvider.notifier)
-              .showTripStopNotification(
-                distance: metrics.distanceMeters,
-                duration: Duration(seconds: metrics.durationSeconds),
-                avgSpeed: metrics.avgSpeedKmh ?? 0.0,
-              );
+          if (!discarded) {
+            ref
+                .read(notificationServiceProvider.notifier)
+                .showTripStopNotification(
+                  distance: metrics.distanceMeters,
+                  duration: Duration(seconds: metrics.durationSeconds),
+                  avgSpeed: metrics.avgSpeedKmh ?? 0.0,
+                );
+          }
 
           // Cancel foreground notification
           ref

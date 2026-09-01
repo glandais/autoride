@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../../domain/models/activity_confidence.dart';
@@ -199,6 +200,10 @@ class TripRecorderService extends _$TripRecorderService {
       maxSpeed: null,
       detectedActivity: activity,
       confidenceScore: confidenceScore,
+      // Written as `active`: the row exists only so route points have a trip
+      // to hang off. It stays out of history until the stop path (or, if the
+      // process is killed first, the startup recovery) finalizes it.
+      status: TripStatus.active,
       routePoints: [],
     );
 
@@ -278,6 +283,10 @@ class TripRecorderService extends _$TripRecorderService {
   }
 
   Future<Trip> _stopRecording() async {
+    // Stop the periodic snapshot first: a tick landing after the final write
+    // below would put the row back to `active` (see _persistPartialMetrics).
+    _stopFlushTimer();
+
     // If still paused, calculate final pause duration
     if (_pauseStartTime != null) {
       final pauseDuration = DateTime.now().difference(_pauseStartTime!);
@@ -311,7 +320,7 @@ class TripRecorderService extends _$TripRecorderService {
         : null;
 
     // Update trip with final metrics
-    final finalTrip = _activeTrip!.copyWith(
+    final candidate = _activeTrip!.copyWith(
       endTime: endTime,
       distance: _totalDistanceMeters,
       duration: activeDuration,
@@ -319,7 +328,34 @@ class TripRecorderService extends _$TripRecorderService {
       maxSpeed: _maxSpeedKmh > 0 ? _maxSpeedKmh : null,
     );
 
-    await _repository!.updateTrip(finalTrip);
+    // A recording shorter than `minTripDurationSeconds` is a false start (a
+    // bump, a mis-tap on the manual start button). It is deleted rather than
+    // kept as a `discarded` row: `route_points` cascades on the trip's primary
+    // key, so one delete removes the whole thing and leaves no debris behind.
+    final discarded = !candidate.isValidTrip;
+    final finalTrip = candidate.copyWith(
+      status: discarded ? TripStatus.discarded : TripStatus.completed,
+    );
+
+    if (discarded) {
+      _logger.info(
+        'Discarding trip ${candidate.id}: ${candidate.duration}s is below the '
+        '${AppConstants.minTripDurationSeconds}s minimum',
+      );
+      try {
+        await _repository!.deleteTrip(candidate.id!);
+      } catch (e, stackTrace) {
+        // Leave the row `active` rather than lying about it: the startup
+        // recovery will re-evaluate and delete it on the next launch.
+        _logger.error(
+          'Failed to delete discarded trip ${candidate.id}',
+          e,
+          stackTrace,
+        );
+      }
+    } else {
+      await _repository!.updateTrip(finalTrip);
+    }
 
     // Cleanup
     _stopLocationStream();
@@ -335,8 +371,9 @@ class TripRecorderService extends _$TripRecorderService {
     _maxSpeedKmh = 0.0;
     _totalPauseDurationSeconds = 0;
 
-    // Update state machine
-    _stateMachine!.stopTrip();
+    // Update state machine. A discarded trip must not announce itself as a
+    // recorded ride.
+    _stateMachine!.stopTrip(discarded: discarded);
 
     // Reset UI metrics
     state = const AsyncValue.data(
@@ -493,8 +530,71 @@ class TripRecorderService extends _$TripRecorderService {
   void _startFlushTimer() {
     _flushTimer = Timer.periodic(
       const Duration(seconds: AppConstants.maxRecordingIntervalSeconds),
-      (_) => _flushRoutePointBuffer(),
+      (_) => _flushProgress(),
     );
+  }
+
+  /// Run one periodic-flush cycle by hand.
+  ///
+  /// The timer that normally drives it fires every
+  /// `AppConstants.maxRecordingIntervalSeconds`, which no test can wait for.
+  @visibleForTesting
+  Future<void> debugFlushProgress() => _flushProgress();
+
+  /// Persist the buffered points *and* the metrics computed so far.
+  ///
+  /// Distance, max speed and the pause total live only in memory during a
+  /// ride, so a process death used to leave a trip row reading 0 m / 0 s no
+  /// matter how far the rider had got. Writing them on the existing 30 s flush
+  /// (not per point) means the startup recovery has real numbers to fall back
+  /// on when the route points alone are not enough.
+  Future<void> _flushProgress() async {
+    await _flushRoutePointBuffer();
+    await _persistPartialMetrics();
+  }
+
+  /// Snapshot the in-memory metrics onto the active trip row.
+  ///
+  /// `endTime` is provisional (now), and `duration` excludes the pauses
+  /// accumulated so far, including one in progress — the same arithmetic the
+  /// live metrics use. The row stays `active`: only a stop or the recovery
+  /// finalizes it.
+  Future<void> _persistPartialMetrics() async {
+    final trip = _activeTrip;
+    // `_flushTimer == null` means a stop is under way (it cancels the timer
+    // before finalizing): a tick whose buffer flush was still in flight must
+    // not overwrite the final row with a stale `active` snapshot.
+    if (trip == null || _flushTimer == null) return;
+
+    final now = DateTime.now();
+    var activeDuration =
+        now.difference(trip.startTime).inSeconds - _totalPauseDurationSeconds;
+    if (_pauseStartTime != null) {
+      activeDuration -= now.difference(_pauseStartTime!).inSeconds;
+    }
+
+    try {
+      await _repository!.updateTrip(
+        trip.copyWith(
+          endTime: now,
+          distance: _totalDistanceMeters,
+          duration: activeDuration,
+          avgSpeed: activeDuration > 0
+              ? (_totalDistanceMeters / activeDuration) * 3.6
+              : null,
+          maxSpeed: _maxSpeedKmh > 0 ? _maxSpeedKmh : null,
+          status: TripStatus.active,
+        ),
+      );
+    } catch (e, stackTrace) {
+      // Best-effort: a failed snapshot must never interrupt a ride. The next
+      // tick retries, and the recovery still has the route points.
+      _logger.error(
+        'Failed to persist partial metrics for trip ${trip.id}',
+        e,
+        stackTrace,
+      );
+    }
   }
 
   /// Stop flush timer

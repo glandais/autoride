@@ -1,8 +1,43 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 import 'package:autoride/features/trip_detection/domain/models/activity_confidence.dart';
 import 'package:autoride/features/trip_detection/domain/models/location_data.dart';
+import 'package:autoride/core/constants/app_constants.dart';
 
 part 'trip.freezed.dart';
+
+/// Lifecycle status of a persisted trip.
+///
+/// A trip row is written as soon as recording starts (that is what gives the
+/// route points a foreign key to point at), so an unfinished row is normal
+/// while a ride is in progress and *stale* once the process dies. The status
+/// column is what tells those two apart at the next launch.
+enum TripStatus {
+  /// Recording right now, or interrupted by an app kill before it could be
+  /// finalized. Never shown in history; recovered at startup.
+  active,
+
+  /// Finalized with real metrics. The only status history and stats display.
+  completed,
+
+  /// Finalized but rejected (too short to be a real ride).
+  ///
+  /// The recorder and the startup recovery *delete* such trips rather than
+  /// keeping them (route points cascade), so nothing writes this value today.
+  /// It is kept in the schema so a row that ever carries it stays out of
+  /// history instead of silently reappearing there.
+  discarded;
+
+  /// Parse a persisted value, falling back to [TripStatus.completed].
+  ///
+  /// The fallback matches the migration default: rows written before the
+  /// status column existed are finished trips.
+  static TripStatus fromName(Object? value) {
+    return TripStatus.values.firstWhere(
+      (status) => status.name == value,
+      orElse: () => TripStatus.completed,
+    );
+  }
+}
 
 /// Trip model representing a recorded bike trip
 @freezed
@@ -20,6 +55,7 @@ sealed class Trip with _$Trip {
     double? avgSpeed, // km/h
     double? maxSpeed, // km/h
     @Default(false) bool userConfirmed,
+    @Default(TripStatus.completed) TripStatus status,
     @Default([]) List<RoutePoint> routePoints,
   }) = _Trip;
 
@@ -39,6 +75,7 @@ sealed class Trip with _$Trip {
       avgSpeed: map['avg_speed'] as double?,
       maxSpeed: map['max_speed'] as double?,
       userConfirmed: (map['user_confirmed'] as int) == 1,
+      status: TripStatus.fromName(map['status']),
       routePoints: points,
     );
   }
@@ -59,14 +96,20 @@ extension TripExtensions on Trip {
       'detected_activity': detectedActivity.name,
       'confidence_score': confidenceScore,
       'user_confirmed': userConfirmed ? 1 : 0,
+      'status': status.name,
     };
   }
 
   /// Calculate duration from start/end times
   Duration get tripDuration => endTime.difference(startTime);
 
-  /// Check if trip meets minimum duration threshold (e.g., 1 minute)
-  bool get isValidTrip => duration >= 60;
+  /// Check if the trip is long enough to be kept.
+  ///
+  /// Applied by the recorder when a recording stops and by the startup
+  /// recovery of interrupted trips: anything shorter is a false start and is
+  /// deleted rather than persisted. There is no minimum-distance rule — a slow
+  /// or short ride is still a ride.
+  bool get isValidTrip => duration >= AppConstants.minTripDurationSeconds;
 
   /// Format duration as HH:MM:SS
   String get formattedDuration {

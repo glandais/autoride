@@ -19,6 +19,15 @@ Future<TripRepository> tripRepository(Ref ref) async {
 class TripRepository {
   TripRepository(this._db);
 
+  /// Only finished trips belong in history and statistics.
+  ///
+  /// A row is written the moment recording starts, so the table always holds
+  /// in-progress rows (0 m / 0 s) while a ride is running, and stale ones after
+  /// an app kill until [TripRecoveryService] closes them. Filtering here — the
+  /// single place every read goes through — is what keeps those out of the UI.
+  static const String _completedFilter = 'status = ?';
+  static final List<Object?> _completedArgs = [TripStatus.completed.name];
+
   final Database _db;
 
   // ========== CREATE ==========
@@ -115,6 +124,8 @@ class TripRepository {
     try {
       final tripMaps = await _db.query(
         'trips',
+        where: _completedFilter,
+        whereArgs: _completedArgs,
         orderBy: orderBy,
         limit: limit,
         offset: offset,
@@ -135,10 +146,11 @@ class TripRepository {
     try {
       final tripMaps = await _db.query(
         'trips',
-        where: 'start_time >= ? AND start_time <= ?',
+        where: 'start_time >= ? AND start_time <= ? AND $_completedFilter',
         whereArgs: [
           startDate.millisecondsSinceEpoch,
           endDate.millisecondsSinceEpoch,
+          ..._completedArgs,
         ],
         orderBy: 'start_time DESC',
       );
@@ -179,8 +191,8 @@ class TripRepository {
     try {
       final tripMaps = await _db.query(
         'trips',
-        where: 'detected_activity = ?',
-        whereArgs: [activity.name],
+        where: 'detected_activity = ? AND $_completedFilter',
+        whereArgs: [activity.name, ..._completedArgs],
         orderBy: 'start_time DESC',
       );
 
@@ -195,8 +207,8 @@ class TripRepository {
     try {
       final tripMaps = await _db.query(
         'trips',
-        where: 'user_confirmed = ?',
-        whereArgs: [1],
+        where: 'user_confirmed = ? AND $_completedFilter',
+        whereArgs: [1, ..._completedArgs],
         orderBy: 'start_time DESC',
       );
 
@@ -206,10 +218,33 @@ class TripRepository {
     }
   }
 
+  /// Get every trip with the given [status], oldest first.
+  ///
+  /// Deliberately unfiltered by [_completedFilter]: this is the seam the
+  /// startup recovery uses to find recordings an app kill left `active`.
+  /// Route points are not loaded (callers fetch them per trip).
+  Future<List<Trip>> getTripsByStatus(TripStatus status) async {
+    try {
+      final tripMaps = await _db.query(
+        'trips',
+        where: 'status = ?',
+        whereArgs: [status.name],
+        orderBy: 'start_time ASC',
+      );
+
+      return tripMaps.map((map) => Trip.fromMap(map, [])).toList();
+    } catch (e) {
+      throw TripRepositoryException('Failed to get trips by status: $e');
+    }
+  }
+
   /// Get trip count
   Future<int> getTripCount() async {
     try {
-      final result = await _db.rawQuery('SELECT COUNT(*) as count FROM trips');
+      final result = await _db.rawQuery(
+        'SELECT COUNT(*) as count FROM trips WHERE $_completedFilter',
+        _completedArgs,
+      );
       return Sqflite.firstIntValue(result) ?? 0;
     } catch (e) {
       throw TripRepositoryException('Failed to get trip count: $e');
@@ -220,7 +255,8 @@ class TripRepository {
   Future<double> getTotalDistance() async {
     try {
       final result = await _db.rawQuery(
-        'SELECT SUM(distance) as total FROM trips',
+        'SELECT SUM(distance) as total FROM trips WHERE $_completedFilter',
+        _completedArgs,
       );
       return (result.first['total'] as num?)?.toDouble() ?? 0.0;
     } catch (e) {

@@ -41,20 +41,40 @@ class _FakeTripRepository extends TripRepository {
 
   final List<Trip> savedTrips = [];
   final List<Trip> updatedTrips = [];
+  final List<int> deletedTripIds = [];
   final List<List<RoutePoint>> savedRoutePointBatches = [];
 
   int _nextId = 1;
   bool throwOnSaveRoutePoints = false;
   bool throwOnSaveTrip = false;
 
+  /// Pushes the started trip's `startTime` this far into the past.
+  ///
+  /// The recorder computes a ride's duration from the trip it got back from
+  /// `saveTrip`, so backdating here is how a test gets a recording that is
+  /// longer than `AppConstants.minTripDurationSeconds` without waiting a
+  /// minute. Without it every test ride lasts 0 s and is (correctly) discarded.
+  Duration? backdateStartBy;
+
   @override
   Future<Trip> saveTrip(Trip trip) async {
     if (throwOnSaveTrip) {
       throw TripRepositoryException('forced save failure');
     }
-    final withId = trip.copyWith(id: _nextId++);
+    final backdate = backdateStartBy;
+    final withId = trip.copyWith(
+      id: _nextId++,
+      startTime: backdate == null
+          ? trip.startTime
+          : trip.startTime.subtract(backdate),
+    );
     savedTrips.add(withId);
     return withId;
+  }
+
+  @override
+  Future<void> deleteTrip(int tripId) async {
+    deletedTripIds.add(tripId);
   }
 
   @override
@@ -130,8 +150,14 @@ class _TestTripStateMachine extends TripStateMachine {
     );
   }
 
+  /// Every `discarded` flag the recorder passed to [stopTrip], newest last.
+  /// A discarded ride must not trigger the "trip recorded" notification, and
+  /// this flag is how the recorder says so.
+  final List<bool> stopTripDiscardedFlags = [];
+
   @override
-  void stopTrip() {
+  void stopTrip({bool discarded = false}) {
+    stopTripDiscardedFlags.add(discarded);
     state.mapOrNull(
       detecting: (_) => state = const TripState.idle(),
       active: (_) => state = const TripState.idle(),
@@ -345,6 +371,9 @@ void main() {
     test('stopRecording persists final trip and resets metrics', () async {
       final recorder = await readRecorder();
 
+      // Long enough to be a real ride; a 0 s recording is discarded (L-068)
+      // and covered by its own group below.
+      fakeRepository.backdateStartBy = const Duration(minutes: 5);
       await startTrip(recorder, confidenceScore: 0.9);
 
       final finalTrip = await recorder.stopRecording();
@@ -362,6 +391,9 @@ void main() {
             updated.endTime.isAtSameMomentAs(updated.startTime),
         isTrue,
       );
+
+      expect(updated.status, TripStatus.completed);
+      expect(fakeRepository.deletedTripIds, isEmpty);
 
       // Returned trip matches the persisted one.
       expect(finalTrip.id, updated.id);
@@ -486,6 +518,7 @@ void main() {
     test('stop while paused still finalizes the trip', () async {
       final recorder = await readRecorder();
 
+      fakeRepository.backdateStartBy = const Duration(minutes: 5);
       await startTrip(recorder, confidenceScore: 0.9);
       await recorder.pauseRecording();
 
@@ -495,6 +528,86 @@ void main() {
       expect(finalTrip.id, 1);
       expect(container.read(tripStateMachineProvider).hasActiveTrip, isFalse);
     });
+  });
+
+  group('TripRecorderService - short trips are discarded (L-068)', () {
+    test(
+      'a recording under the minimum duration is deleted, not saved',
+      () async {
+        final recorder = await readRecorder();
+
+        await startTrip(recorder, confidenceScore: 0.9);
+        final finalTrip = await recorder.stopRecording();
+
+        // Nothing was kept: the row (and its route points, by cascade) is gone.
+        expect(fakeRepository.deletedTripIds, equals([1]));
+        expect(fakeRepository.updatedTrips, isEmpty);
+        expect(finalTrip.status, TripStatus.discarded);
+        expect(finalTrip.isValidTrip, isFalse);
+      },
+    );
+
+    test(
+      'a discarded trip does not fire the "trip recorded" notification',
+      () async {
+        final recorder = await readRecorder();
+        final machine = container.read(
+          tripStateMachineProvider.notifier,
+        ) as _TestTripStateMachine;
+
+        await startTrip(recorder, confidenceScore: 0.9);
+        await recorder.stopRecording();
+
+        expect(machine.stopTripDiscardedFlags, equals([true]));
+      },
+    );
+
+    test('a real ride is completed and does notify', () async {
+      final recorder = await readRecorder();
+      final machine = container.read(
+        tripStateMachineProvider.notifier,
+      ) as _TestTripStateMachine;
+
+      fakeRepository.backdateStartBy = const Duration(minutes: 5);
+      await startTrip(recorder, confidenceScore: 0.9);
+      await recorder.stopRecording();
+
+      expect(fakeRepository.deletedTripIds, isEmpty);
+      expect(fakeRepository.updatedTrips.single.status, TripStatus.completed);
+      expect(machine.stopTripDiscardedFlags, equals([false]));
+    });
+
+    test(
+      'the trip is inserted as active so history ignores it mid-ride',
+      () async {
+        final recorder = await readRecorder();
+
+        await startTrip(recorder, confidenceScore: 0.9);
+
+        expect(fakeRepository.savedTrips.single.status, TripStatus.active);
+      },
+    );
+
+    test(
+      'the periodic flush snapshots the metrics onto the active row',
+      () async {
+        final recorder = await readRecorder();
+        await startTrip(recorder);
+
+        await pushFix(_fix(0));
+        await pushFix(_fix(2));
+
+        // What the 30 s flush timer calls.
+        await recorder.debugFlushProgress();
+
+        final snapshot = fakeRepository.updatedTrips.single;
+        expect(snapshot.status, TripStatus.active);
+        expect(snapshot.distance, closeTo(22.3, 1.0));
+        expect(snapshot.maxSpeed, isNotNull);
+        expect(snapshot.endTime.isAfter(snapshot.startTime), isTrue);
+        expect(fakeRepository.savedRoutePointBatches.single, hasLength(2));
+      },
+    );
   });
 
   group('TripRecorderService - location handling', () {

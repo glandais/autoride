@@ -13,9 +13,10 @@ platform :android do
     upload_to_play_store(
       track: "internal",
       aab: AAB_PATH,
-      # Play refuses a non-draft upload until the app has been published once. Keep "draft"
-      # for the very first upload, then switch this to "completed".
-      release_status: "draft",
+      # The first internal release was published by hand on 2026-09-01 (build 5), which is
+      # what Play required before it would accept a non-draft upload. Every later beta goes
+      # straight to the testers.
+      release_status: "completed",
       skip_upload_apk: true,
       # The store listing is version-controlled under fastlane/metadata/ and pushed
       # deliberately, not overwritten on every beta build.
@@ -30,6 +31,10 @@ platform :android do
        "Run this when fastlane/metadata/ changes."
   lane :metadata do
     upload_to_play_store(
+      # supply defaults to the production track and then dies with
+      # "Could not find release for version code '' to update changelog" because production
+      # has no release. Point it at the track that actually carries the builds.
+      track: "internal",
       skip_upload_apk: true,
       skip_upload_aab: true,
       skip_upload_changelogs: true,

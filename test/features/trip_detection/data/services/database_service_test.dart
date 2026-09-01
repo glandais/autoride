@@ -91,6 +91,7 @@ void main() {
           'detected_activity',
           'confidence_score',
           'user_confirmed',
+          'status',
         }),
       );
 
@@ -106,6 +107,14 @@ void main() {
       expect(notNull['confidence_score'], isTrue);
       expect(notNull['avg_speed'], isFalse);
       expect(notNull['max_speed'], isFalse);
+      expect(notNull['status'], isTrue);
+
+      // A row written without a status is a finished trip, so history keeps
+      // showing it after the upgrade.
+      final defaults = {
+        for (final c in columns) c['name'] as String: c['dflt_value'],
+      };
+      expect(defaults['status'], equals("'${TripStatus.completed.name}'"));
     });
 
     test('creates the route_points table with the shipped columns', () async {
@@ -136,6 +145,7 @@ void main() {
       expect(indexNames, contains('idx_trip_end_time'));
       expect(indexNames, contains('idx_route_points_trip_id'));
       expect(indexNames, contains('idx_route_points_timestamp'));
+      expect(indexNames, contains('idx_trip_status'));
     });
 
     test('declares the route_points -> trips foreign key', () async {
@@ -254,18 +264,103 @@ void main() {
   });
 
   group('DatabaseService.onUpgrade', () {
-    // The shipped schema has only ever been at version
-    // AppConstants.databaseVersion, so `onUpgrade` has no migration steps yet.
-    // These tests pin that: they will fail the moment the version is bumped
-    // without a migration, which is exactly when a real migration test is owed.
-    test('the only shipped schema version is 1', () {
-      expect(AppConstants.databaseVersion, equals(1));
+    /// Builds the v1 schema by hand — the shipped `onCreate` now emits v2, so
+    /// this is the only way to have a real pre-migration database to upgrade.
+    /// It is a verbatim copy of the v1 DDL as of `c08734d`.
+    Future<Database> openV1Database() async {
+      return databaseFactory.openDatabase(
+        inMemoryDatabasePath,
+        options: OpenDatabaseOptions(
+          version: 1,
+          onCreate: (db, version) async {
+            await db.execute('''
+              CREATE TABLE trips (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                start_time INTEGER NOT NULL,
+                end_time INTEGER NOT NULL,
+                distance REAL NOT NULL,
+                duration INTEGER NOT NULL,
+                avg_speed REAL,
+                max_speed REAL,
+                detected_activity TEXT NOT NULL,
+                confidence_score REAL NOT NULL,
+                user_confirmed INTEGER DEFAULT 0
+              )
+            ''');
+            await db.execute('''
+              CREATE TABLE route_points (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                trip_id INTEGER NOT NULL,
+                latitude REAL NOT NULL,
+                longitude REAL NOT NULL,
+                altitude REAL,
+                timestamp INTEGER NOT NULL,
+                accuracy REAL,
+                speed REAL,
+                FOREIGN KEY (trip_id) REFERENCES trips(id) ON DELETE CASCADE
+              )
+            ''');
+          },
+          onConfigure: service.onConfigure,
+        ),
+      );
+    }
+
+    test('the shipped schema version is 2', () {
+      expect(AppConstants.databaseVersion, equals(2));
     });
 
-    test('is a no-op that preserves data and schema', () async {
+    test(
+      'v1 -> v2 adds status and backfills existing rows as completed',
+      () async {
+        final legacy = await openV1Database();
+        addTearDown(legacy.close);
+
+        // A trip written before the column existed: the user already sees it.
+        final legacyId = await legacy.insert('trips', _tripMap());
+
+        final before = await legacy.rawQuery('PRAGMA table_info(trips)');
+        expect(
+          before.map((c) => c['name']),
+          isNot(contains('status')),
+          reason: 'precondition: the v1 schema has no status column',
+        );
+
+        await service.onUpgrade(legacy, 1, AppConstants.databaseVersion);
+
+        final after = await legacy.rawQuery('PRAGMA table_info(trips)');
+        expect(after.map((c) => c['name']), contains('status'));
+        expect(after, hasLength(11));
+
+        final rows = await legacy.query(
+          'trips',
+          where: 'id = ?',
+          whereArgs: [legacyId],
+        );
+        expect(rows, hasLength(1));
+        expect(rows.first['status'], equals(TripStatus.completed.name));
+        expect(
+          Trip.fromMap(rows.first, const []).status,
+          equals(TripStatus.completed),
+          reason: 'a migrated row must read back as a finished trip',
+        );
+
+        // And the filter index history queries rely on came with it.
+        final indexes = await legacy.rawQuery(
+          "SELECT name FROM sqlite_master WHERE type='index'",
+        );
+        expect(indexes.map((e) => e['name']), contains('idx_trip_status'));
+      },
+    );
+
+    test('is a no-op on an already-migrated database', () async {
       final tripId = await db.insert('trips', _tripMap());
 
-      await service.onUpgrade(db, 1, AppConstants.databaseVersion);
+      await service.onUpgrade(
+        db,
+        AppConstants.databaseVersion,
+        AppConstants.databaseVersion,
+      );
 
       final rows = await db.query(
         'trips',
@@ -275,7 +370,7 @@ void main() {
       expect(rows, hasLength(1));
 
       final columns = await db.rawQuery('PRAGMA table_info(trips)');
-      expect(columns, hasLength(10));
+      expect(columns, hasLength(11));
     });
   });
 

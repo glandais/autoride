@@ -20,6 +20,24 @@ Future<Database> database(Ref ref) async {
   return db;
 }
 
+/// Status persisted for every trip row that predates the status column, and
+/// the column default. Spelled out rather than referencing `TripStatus` so the
+/// DDL stays a literal string (the shipped schema must not move when the enum
+/// is reordered); `database_service_test` pins the two together.
+const String _defaultTripStatus = 'completed';
+
+/// Index backing the `status = 'completed'` filter every history/stats query
+/// carries since L-068.
+const String _createTripStatusIndex =
+    'CREATE INDEX idx_trip_status ON trips(status)';
+
+/// v1 -> v2 migration step. SQLite backfills the existing rows with the
+/// column default, which is exactly the intended semantics: everything written
+/// before the column existed is a finished trip.
+const String _addTripStatusColumn =
+    "ALTER TABLE trips ADD COLUMN status TEXT NOT NULL "
+    "DEFAULT '$_defaultTripStatus'";
+
 /// Database service for AutoRide
 /// Handles database initialization, schema creation, and migrations
 class DatabaseService {
@@ -71,8 +89,6 @@ class DatabaseService {
   /// database instead of re-declaring it (L-014).
   Future<void> onCreate(Database db, int version) async {
     // Create trips table
-    // FIXME(T009): Add a 'status' column (e.g. active/completed/discarded) for
-    // trip lifecycle tracking. Currently only user_confirmed boolean exists.
     await db.execute('''
       CREATE TABLE trips (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -84,7 +100,8 @@ class DatabaseService {
         max_speed REAL,
         detected_activity TEXT NOT NULL,
         confidence_score REAL NOT NULL,
-        user_confirmed INTEGER DEFAULT 0
+        user_confirmed INTEGER DEFAULT 0,
+        status TEXT NOT NULL DEFAULT '$_defaultTripStatus'
       )
     ''');
 
@@ -119,19 +136,25 @@ class DatabaseService {
     await db.execute('''
       CREATE INDEX idx_route_points_timestamp ON route_points(timestamp)
     ''');
+
+    await db.execute(_createTripStatusIndex);
   }
 
   /// Upgrade database schema
   /// Called when database version changes
   ///
   /// Public so tests can drive the *production* migration path (L-014).
-  /// Currently a no-op: schema version 1 is the only version ever shipped.
   Future<void> onUpgrade(Database db, int oldVersion, int newVersion) async {
-    // Future migrations will go here
-    // Example:
-    // if (oldVersion < 2) {
-    //   await db.execute('ALTER TABLE trips ADD COLUMN new_field TEXT');
-    // }
+    // v1 -> v2: trip lifecycle status (L-068).
+    //
+    // Every pre-existing row is a trip the user already sees in history, so
+    // the default backfills them as `completed`. The column is NOT NULL with
+    // that same default, which is also what SQLite writes into the existing
+    // rows during the ALTER.
+    if (oldVersion < 2) {
+      await db.execute(_addTripStatusColumn);
+      await db.execute(_createTripStatusIndex);
+    }
   }
 
   /// Close database connection

@@ -34,6 +34,8 @@ Executed the same day as the audit, one commit per step, each by an Opus subagen
 
 | 7 — FGS covers the detection phase | (this change) | **L-067** (new) | `AutoDetectionController` now starts the Android foreground service as soon as the coordinator starts listening, not only while a trip records, and stops it when listening stops (setting off / permission revoked). Two notification phases (`AppConstants.notificationTitleDetecting`/`notificationContentDetecting` vs the trip's distance • duration). Manual-ride-with-detection-off behaviour is unchanged. Tests 331 → 339. |
 
+| 8 — trip lifecycle in the database | (this change) | **L-068** (new) | `trips.status` (`active`/`completed`/`discarded`) added in schema **v2** with an `onUpgrade` that backfills existing rows as `completed`; the recorder inserts `active`, snapshots distance/max speed/provisional end time onto the row on the existing 30 s flush, and on stop either completes it or *deletes* a sub-`minTripDurationSeconds` false start (no end-of-trip notification for those, via `stopTrip(discarded: true)`); a new `TripRecoveryService` + `tripRecoveryProvider` closes trips left `active` by a process death, recomputing metrics from the persisted route points; every history/stats query now filters `status = 'completed'`. Tests 339 → 365. |
+
 **Decision (2026-09-01) — L-067: the foreground service covers the whole listening window, not just recordings.**
 The service was scoped to a recording (decision (d) of step 4c). That left the detection phase with no
 foreground service and no wake lock, so with the screen off Android suspends the process under Doze,
@@ -47,6 +49,40 @@ screen-off auto-start. No manifest change: the service is already `foregroundSer
 `FOREGROUND_SERVICE_LOCATION` declared, and both start paths run with the app in the foreground (Android
 12+ forbids background FGS starts) with the location permission already granted (Android 14+ requires it
 for a `location`-type service).
+
+**Decision (2026-09-01) — L-068: a trip's lifetime is a database column, and false starts are deleted rather than kept.**
+The `trips` row has always been inserted at *start* (route points need a foreign key), with `end_time =
+start_time`, 0 m and 0 s, and nothing ever marked it unfinished — the `FIXME(T009)` in
+`database_service.dart` had named the gap since T009. Two consequences were reachable in a shipped build:
+an app kill mid-ride left that empty row in history forever as a phantom trip, and `Trip.isValidTrip`
+(the ≥ 60 s rule) was never applied to anything, so a 3-second mis-tap on the manual start button became
+a permanent entry too. Three choices were made:
+
+* **Discarded vs deleted.** A rejected recording is *deleted*, not stored as `status = 'discarded'`.
+  `route_points.trip_id` already carries `ON DELETE CASCADE` with `PRAGMA foreign_keys = ON`, so one
+  delete removes the whole thing and leaves nothing for a later export, statistic or migration to trip
+  over. The `discarded` value stays in the enum and the schema so that a row which ever acquires it is
+  still hidden from history rather than silently reappearing there — and so that failing to delete can
+  degrade to marking rather than to lying.
+* **Where recovery lives.** `TripRecoveryService` is a plain class over `TripRepository`, wrapped in a
+  keep-alive `tripRecoveryProvider` that `main.dart` reads once from the post-frame callback, before the
+  auto-detection listener. It does **not** resume an interrupted recording: the sensor and GPS sessions
+  are gone, and a trip stitched across an unknown gap would be worse than an honestly-closed one. It only
+  closes the books — metrics recomputed from the route points that reached the database, `endTime` = the
+  last point's timestamp (not "whenever the app was reopened"), `duration` = end − start because pauses
+  are unknowable after the fact. That over-counts a ride with long stops, which is the safe direction: it
+  keeps a real ride above the validity threshold instead of deleting it. Fewer than two points, or a span
+  under the minimum, means delete.
+* **Partial metrics are persisted.** Distance, max speed and the pause total lived only in memory, so
+  recovery would have had nothing but the raw points. The existing 30 s flush timer now also writes them
+  onto the `active` row (`_flushProgress`), which costs one extra UPDATE per flush — not one per point —
+  and gives the recovery a floor to fall back on.
+
+Not addressed here, deliberately: the end-of-trip notification still reports 0 m because `_stopRecording`
+zeroes the in-memory metrics before `_stateMachine.stopTrip()` reads them (separate change in flight).
+`AppConstants.minTripDurationSeconds` now holds the threshold `Trip.isValidTrip` used to hardcode; there
+is intentionally **no** minimum-distance rule, since a slow ride is still a ride.
+
 
 Gates after step 5: `flutter analyze` clean, **331/331 tests**. T029 and T033 closed in the tracker (T033's leftover — the CI format gate — is step 6's L-050; the T038/T039 dependency caveat L-053 is thereby resolved).
 
