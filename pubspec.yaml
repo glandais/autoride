@@ -12,6 +12,7 @@ environment:
 dependencies:
   battery_plus: ^7.1.1           # Battery level monitoring for power optimization
   device_info_plus: ^13.2.0      # Platform info (Android API level, iOS version)
+  fit_dart_sdk: ^21.215.0        # Garmin FIT encoding for trip export
   flutter:
     sdk: flutter
   flutter_background_service: ^5.0.0  # Background task execution
@@ -25,9 +26,11 @@ dependencies:
   latlong2: ^0.10.1               # Coordinate handling for flutter_map
   package_info_plus: ^10.2.1     # App version/build number for the Settings About row
   path: ^1.9.0                   # Path manipulation for database paths
+  path_provider: ^2.1.5          # Temp directory for exported .fit files
   permission_handler: ^13.0.1    # Runtime permission handling
   riverpod_annotation: ^4.0.6    # Riverpod annotations
   sensors_plus: ^7.1.0           # Accelerometer & gyroscope
+  share_plus: ^13.3.0            # Share/save the exported .fit file via the OS sheet
   shared_preferences: ^2.2.0     # User settings storage
   sqflite: ^2.3.0                # SQLite database for trips
   tflite_flutter: ^0.12.1        # TensorFlow Lite for activity recognition

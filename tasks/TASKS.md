@@ -371,15 +371,32 @@
 
 ---
 
+## Phase 12: Data Portability
+
+- ⏳ **T042**: FIT Export
+  - *Detail*: this entry (no separate task doc)
+  - *Scope*: export a recorded trip as a Garmin FIT activity file and hand it to the OS share sheet, so a ride can land in Strava, Garmin Connect, Files or anything else that reads `.fit`.
+  - *Dependencies*: T041's recorder (the route points and the moving/pause split are what the file is made of)
+  - *Implementation*: `lib/features/trip_export/`
+    - `FitActivityEncoder` — pure Dart, no `dart:io` and no plugin, so it is testable off-device. Writes the sequence every FIT reader expects: `file_id` → `device_info` → timer `start` → `record`s → timer `stop` → `lap` / `session` / `activity`. Coordinates in semicircles; altitude and speed in `enhanced_altitude`/`enhanced_speed` (the uint16 fields clip); cumulative distance computed point-to-point; ascent/descent behind a 3 m noise gate; `total_elapsed_time` from the timestamps and `total_timer_time` from `movingDuration`; `local_timestamp` offset by the zone, since FIT stores local wall-clock with no zone attached.
+    - `TripExportService` — the platform half: encodes on another isolate (a long ride is tens of thousands of records), writes `<cache>/fit_exports/autoride-YYYY-MM-DD-HHMM.fit`, then opens the share sheet.
+    - `TripDetailScreen` gained an "Export as FIT" action; the screen became a `ConsumerStatefulWidget` to hold the in-flight state.
+  - *Dependencies added*: `fit_dart_sdk`, `share_plus` (13.x — 12.x conflicts with `package_info_plus ^10.2.1` over `win32`), `path_provider`
+  - *Tests*: 11 round-trip tests — encode, then decode with the same SDK an importer would use, and assert on what comes back. Byte-level expectations would only restate the encoder.
+  - *Not validated*: the share sheet itself and an actual import into Strava/Garmin Connect (needs a device), and a multi-hour ride's encode time.
+  - *Not covered*: pause intervals (the model stores only the pause total, so no per-pause timer events), heart rate, cadence and power (not recorded), and there is no import side.
+
+---
+
 ## Progress Summary
 
-**Total Tasks**: 41
+**Total Tasks**: 42
 **Completed**: 25
-**In Progress**: 7 (T006, T013, T030, T037, T038, T039, T041)
+**In Progress**: 8 (T006, T013, T030, T037, T038, T039, T041, T042)
 **Pending**: 9
 **Blocked**: 0
 
-**Current Phase**: Phase 10 - Release Preparation, alongside the Phase 11 audit backlog
+**Current Phase**: Phase 10 - Release Preparation, alongside the Phase 11 audit backlog and the Phase 12 export work
 **Last Completed**: T029/T033 - test-suite recut and code quality (2026-09-01)
 **Current Task**: T039/T041 — iOS release is 2 blockers from submittable (build attach + screenshots); T041 device validation under way (first iPhone run done: prompts OK, one crash found and fixed — see `tasks/T041-device-validation.md`). T038 open on manual Play Console setup; T037 open (§5.6/§5.7).
 **Next Task**: T039 - iOS Release Configuration (T038 now owns the version scheme and `publish_beta.sh`, so T039 can extend both)

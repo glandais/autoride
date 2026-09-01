@@ -5,6 +5,7 @@ import 'package:autoride/features/trip_history/presentation/providers/trip_histo
 import 'package:autoride/features/trip_history/presentation/widgets/trip_detail_card.dart';
 import 'package:autoride/features/trip_history/presentation/widgets/trip_route_map.dart';
 import 'package:autoride/features/trip_detection/domain/models/trip.dart';
+import 'package:autoride/features/trip_export/data/services/trip_export_service.dart';
 import 'package:autoride/shared/widgets/error_view.dart';
 import 'package:autoride/shared/widgets/loading_view.dart';
 import 'package:autoride/core/theme/app_spacing.dart';
@@ -17,24 +18,57 @@ import 'package:autoride/core/utils/error_handler.dart';
 /// - Detailed trip statistics
 /// - Route map visualization
 /// - Confirm/Delete actions
-class TripDetailScreen extends ConsumerWidget {
+/// - Export as a Garmin FIT activity file
+class TripDetailScreen extends ConsumerStatefulWidget {
   const TripDetailScreen({required this.tripId, super.key});
 
   final int tripId;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<TripDetailScreen> createState() => _TripDetailScreenState();
+}
+
+class _TripDetailScreenState extends ConsumerState<TripDetailScreen> {
+  /// True while a `.fit` export is being encoded and handed to the share sheet.
+  ///
+  /// Guards against a second tap queueing another encode on top of the first.
+  bool _isExporting = false;
+
+  /// Anchors the iPad share popover to the export button rather than to the
+  /// whole screen.
+  final GlobalKey _exportButtonKey = GlobalKey();
+
+  int get tripId => widget.tripId;
+
+  @override
+  Widget build(BuildContext context) {
     final tripAsync = ref.watch(tripDetailProvider(tripId));
+    final trip = tripAsync.asData?.value;
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Trip Details'),
         actions: [
+          // Export as FIT
+          IconButton(
+            key: _exportButtonKey,
+            icon: _isExporting
+                ? const SizedBox.square(
+                    dimension: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.ios_share),
+            tooltip: 'Export as FIT',
+            // Greyed out until the trip (and its route points) have loaded.
+            onPressed: _isExporting || trip == null
+                ? null
+                : () => _handleExport(trip),
+          ),
           // Delete button
           IconButton(
             icon: const Icon(Icons.delete_outline),
             color: AppColors.error,
-            onPressed: () => _handleDelete(context, ref),
+            onPressed: () => _handleDelete(),
           ),
         ],
       ),
@@ -77,7 +111,7 @@ class TripDetailScreen extends ConsumerWidget {
                         SizedBox(
                           width: double.infinity,
                           child: ElevatedButton.icon(
-                            onPressed: () => _handleConfirm(context, ref),
+                            onPressed: () => _handleConfirm(),
                             icon: const Icon(Icons.check_circle),
                             label: const Text('Confirm Trip'),
                             style: ElevatedButton.styleFrom(
@@ -118,15 +152,51 @@ class TripDetailScreen extends ConsumerWidget {
     );
   }
 
+  /// Encode the trip as a Garmin FIT activity and open the OS share sheet.
+  ///
+  /// [trip] is null while the detail is still loading or has failed, in which
+  /// case there is nothing to export yet.
+  Future<void> _handleExport(Trip? trip) async {
+    if (trip == null || _isExporting) return;
+
+    // iPads anchor the share popover to a rect in screen coordinates; taking it
+    // from the button's own box puts the arrow where the user tapped.
+    final box =
+        _exportButtonKey.currentContext?.findRenderObject() as RenderBox?;
+    final origin = box == null
+        ? null
+        : box.localToGlobal(Offset.zero) & box.size;
+
+    setState(() => _isExporting = true);
+    try {
+      await ref
+          .read(tripExportServiceProvider)
+          .shareAsFit(trip, sharePosition: origin);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Failed to export trip: ${ErrorHandler.getErrorMessage(e)}',
+            ),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isExporting = false);
+    }
+  }
+
   /// Handle trip confirmation
-  Future<void> _handleConfirm(BuildContext context, WidgetRef ref) async {
+  Future<void> _handleConfirm() async {
     try {
       await ref.read(tripHistoryProvider.notifier).confirmTrip(tripId);
 
       // Refresh trip detail
       ref.invalidate(tripDetailProvider(tripId));
 
-      if (context.mounted) {
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Trip confirmed'),
@@ -135,7 +205,7 @@ class TripDetailScreen extends ConsumerWidget {
         );
       }
     } catch (e) {
-      if (context.mounted) {
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Failed to confirm trip: $e'),
@@ -147,7 +217,7 @@ class TripDetailScreen extends ConsumerWidget {
   }
 
   /// Handle trip deletion
-  Future<void> _handleDelete(BuildContext context, WidgetRef ref) async {
+  Future<void> _handleDelete() async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -169,17 +239,17 @@ class TripDetailScreen extends ConsumerWidget {
       ),
     );
 
-    if (confirmed == true && context.mounted) {
+    if (confirmed == true && mounted) {
       try {
         await ref.read(tripHistoryProvider.notifier).deleteTrip(tripId);
 
-        if (context.mounted) {
+        if (mounted) {
           Navigator.pop(context); // Go back to history screen
           ScaffoldMessenger.of(context)
               .showSnackBar(const SnackBar(content: Text('Trip deleted')));
         }
       } catch (e) {
-        if (context.mounted) {
+        if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text('Failed to delete trip: $e'),
