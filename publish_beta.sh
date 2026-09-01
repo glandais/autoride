@@ -58,13 +58,10 @@ esac
 (cd ios && ensure_bundler && { bundle check >/dev/null 2>&1 || bundle install; })
 (cd android && ensure_bundler && { bundle check >/dev/null 2>&1 || bundle install; })
 
-# Project quality gates, in the order CLAUDE.md mandates.
-echo ">>> Code generation"
-dart run build_runner build --delete-conflicting-outputs
-echo ">>> Analyze"
-flutter analyze
-echo ">>> Test"
-flutter test
+# Project quality gates, in the order CLAUDE.md mandates. Defined once, in check.sh, so they
+# can also be run on their own without starting a release.
+echo ">>> Quality gates (check.sh)"
+./check.sh
 
 # ------------------------------------------------------------------------- version bump
 
@@ -119,6 +116,10 @@ flutter build appbundle --release
 # Accumulate rather than overwrite, so the failure trap names every store that already took
 # this build number.
 UPLOADED="${UPLOADED:+$UPLOADED + }Play internal"
+
+# Stop the Gradle daemon spawned for this build so it doesn't linger holding the JDK 21 forced
+# above — it would otherwise outlive the release and serve stale toolchain state to later runs.
+(cd android && ./gradlew --stop)
 
 # -------------------------------------------------------------------- record the release
 

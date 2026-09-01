@@ -1,0 +1,5 @@
+# Revisions to skip when running `git blame`. Enable once per clone with:
+#   git config blame.ignoreRevsFile .git-blame-ignore-revs
+
+# 🎨 style(format): apply dart format to lib/ and test/ (103 files, no logic change)
+834451f72fec850b0a20566db608274aff17d93b

@@ -42,6 +42,31 @@ updates:
           - "minor"
           - "patch"
 
+  # Fastlane toolchain for both stores (android/Gemfile, ios/Gemfile). Their Gemfile.lock is
+  # committed and publish_beta.sh reads its BUNDLED WITH pin, so drift here breaks releases.
+  - package-ecosystem: "bundler"
+    directories:
+      - "/android"
+      - "/ios"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Europe/Paris"
+    open-pull-requests-limit: 5
+    assignees:
+      - "glandais"
+    commit-message:
+      prefix: "deps(bundler)"
+      include: "scope"
+    labels:
+      - "dependencies"
+    groups:
+      minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:

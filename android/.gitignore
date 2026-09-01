@@ -1,5 +1,6 @@
 gradle-wrapper.jar
 /.gradle
+/.kotlin
 /captures/
 /gradlew
 /gradlew.bat
@@ -18,3 +19,9 @@ key.properties
 fastlane/report.xml
 fastlane/Preview.html
 fastlane/test_output
+fastlane/README.md
+
+# Bundler installs fastlane here (BUNDLE_PATH in .bundle/config) — Homebrew's shared gem dir
+# symlinks read-only files into the Cellar, so a global install can die with EACCES while
+# regenerating gem plugins. Mirrors the same rule in ios/.gitignore.
+vendor/bundle/
