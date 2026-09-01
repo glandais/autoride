@@ -3,8 +3,9 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     id("com.android.application")
-    id("kotlin-android")
-    // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
+    // The Flutter Gradle Plugin must be applied after the Android Gradle plugin.
+    // Kotlin support comes from AGP's built-in Kotlin (android.builtInKotlin=true in
+    // gradle.properties) — the standalone kotlin-android plugin is no longer applied.
     id("dev.flutter.flutter-gradle-plugin")
 }
 
@@ -18,7 +19,10 @@ if (keystorePropertiesFile.exists()) {
 
 android {
     namespace = "io.github.glandais.autoride"
-    compileSdk = flutter.compileSdkVersion
+    // Pinned above `flutter.compileSdkVersion` (36): permission_handler_android is
+    // compiled against API 37 and its AAR metadata refuses a lower compileSdk.
+    // compileSdk is backward compatible; minSdk/targetSdk are unaffected.
+    compileSdk = 37
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
@@ -73,8 +77,8 @@ android {
     }
 }
 
-// Kotlin 2.x requires the jvmTarget to be set via the compilerOptions DSL
-// (the old `kotlinOptions { jvmTarget = ... }` was removed in Kotlin 2.4).
+// jvmTarget must be set via the compilerOptions DSL (the old
+// `kotlinOptions { jvmTarget = ... }` block was removed in Kotlin 2.4).
 kotlin {
     compilerOptions {
         jvmTarget = JvmTarget.JVM_17
