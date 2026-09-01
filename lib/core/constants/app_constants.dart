@@ -89,13 +89,67 @@ class AppConstants {
   static const double cyclingRotationMin = 0.5; // Minimum rotation for cycling
   static const double cyclingRotationMax = 3.0; // Maximum typical rotation
 
-  // Stationary thresholds (T007, used in T014)
+  // Stationary thresholds (T007)
+  //
+  // INSTANTANEOUS, single-sample thresholds. Their only consumer is
+  // `MotionWindow.state`, which classifies a window for the coordinator's GPS
+  // gate (stationary => schedule the GPS subscription to close). They are NOT
+  // used by trip stop detection any more — see the windowed thresholds below.
+  //
   // Max deviation of raw accelerometer magnitude from gravity while stationary.
   // A resting device reads ~`standardGravity`; |magnitude - gravity| must stay
   // within this tolerance to be considered stationary.
   static const double stationaryAccelerationMax =
       1.0; // m/s² - max deviation from gravity
   static const double stationaryRotationMax = 0.2; // rad/s - max for stationary
+
+  // Windowed stationary thresholds (T041 — trip stop detection)
+  //
+  // The stop detector evaluates "standing still" over a sliding time window
+  // instead of one 50 Hz sample. The instantaneous test above is unusable for
+  // a *carried* phone: at a red light with the phone in a pocket the gyroscope
+  // reads 0.1-0.5 rad/s on individual samples, so `stationaryRotationMax` (0.2)
+  // fails constantly, auto-pause almost never fires and the 5-minute auto-stop
+  // is unreachable. Averaged over ~1.5 s the picture is unambiguous.
+  //
+  // Orders of magnitude these values are chosen against:
+  //   at a standstill, phone carried : accel std-dev < 0.5 m/s², gyro mean 0.1-0.5 rad/s
+  //   rolling                        : accel std-dev > 1 m/s² (road vibration),
+  //                                    gyro mean > 0.5 rad/s
+  // The thresholds sit above the standstill band and below the rolling band.
+
+  /// Length of the sliding window the stationary verdict is computed over.
+  /// Long enough to average out a single sway or bump (75 samples at 50 Hz),
+  /// short enough that a rider pulling away is detected within one evaluation
+  /// interval.
+  static const Duration stationaryWindowDuration = Duration(milliseconds: 1500);
+
+  /// Hard cap on retained samples, so an unexpectedly high sensor rate cannot
+  /// grow the window without bound (1.5 s at 50 Hz is ~75).
+  static const int stationaryWindowMaxSamples = 128;
+
+  /// Max standard deviation of the accelerometer magnitude over the window.
+  /// Above this the phone is being shaken by road vibration, i.e. rolling.
+  static const double stationaryAccelerationStdDevMax = 0.8; // m/s²
+
+  /// Max mean gyroscope magnitude over the window. A pocketed phone at a
+  /// standstill averages 0.1-0.5 rad/s; pedalling averages well above 0.5.
+  static const double stationaryRotationAverageMax = 0.6; // rad/s
+
+  /// GPS speed below which a fresh fix is treated as "not travelling".
+  /// 3 km/h rather than 0 because a stationary GPS commonly reports 1-3 km/h of
+  /// noise; well below `cyclingSpeedMin` (8 km/h).
+  static const double stationarySpeedMaxKmh = 3.0;
+
+  /// GPS speed above which a fresh fix means "moving", whatever the sensors
+  /// say. Covers the phone lying still in a pannier or basket, where the
+  /// accelerometer and gyroscope can both look calm while the bike rolls.
+  static const double movingSpeedMinKmh = 6.0;
+
+  /// How old a fix may be before its speed is ignored by stop detection.
+  /// Beyond this the position stream has likely stalled (tunnel, gate closed),
+  /// and a stale "0 km/h" must not be read as a standstill.
+  static const Duration stationaryGpsMaxAge = Duration(seconds: 10);
 
   // Pedaling frequency (Hz)
   static const double pedalingFrequencyMin = 0.5; // 30 RPM minimum
@@ -124,10 +178,9 @@ class AppConstants {
   // Trip State Machine Configuration (T012)
   static const int detectionTimeoutSeconds =
       30; // Max time in Detecting before timeout
-  // TODO(T041): no consumer — the stop detector gates the pause on
-  // `minPauseDurationSeconds` + consecutive stationary detections instead.
-  static const int stationaryThresholdSeconds =
-      10; // Stationary time before pause
+  // (`stationaryThresholdSeconds` used to sit here with a TODO and no consumer;
+  // removed in T041 — the stop detector gates the pause on
+  // `minPauseDurationSeconds` + consecutive stationary detections.)
   static const int maxPauseDurationSeconds =
       300; // 5 min - max pause before auto-stop
   static const int resumeMovementThresholdSeconds =
@@ -196,9 +249,12 @@ class AppConstants {
   // Minimum movement duration to resume trip (seconds)
   // Note: resumeMovementThresholdSeconds already defined above = 5
 
-  // Stationary thresholds already defined in T007:
-  // - stationaryAccelerationMax = 1.0 m/s²
-  // - stationaryRotationMax = 0.2 rad/s
+  // Stationary thresholds used by the stop detector are the WINDOWED ones
+  // defined above (`stationaryAccelerationStdDevMax`,
+  // `stationaryRotationAverageMax`, `stationarySpeedMaxKmh`,
+  // `movingSpeedMinKmh`, `stationaryGpsMaxAge`). The instantaneous
+  // `stationaryAccelerationMax` / `stationaryRotationMax` pair belongs to
+  // `MotionWindow.state` / the GPS gate only.
 
   // Trip Recording Configuration (T015)
 

@@ -193,6 +193,10 @@ class _StopDetectorScript {
   StopDecision decision = StopDecision.continueTrip;
   bool resumeVerdict = false;
   int resetCalls = 0;
+
+  /// Records the `tripIsPaused` flag of every `analyzeForTripStop` call, so a
+  /// test can assert the paused path opts out of the movement hysteresis.
+  final List<bool> analyzePausedFlags = <bool>[];
 }
 
 class _FakeTripStopDetector extends TripStopDetector {
@@ -208,7 +212,9 @@ class _FakeTripStopDetector extends TripStopDetector {
     MotionData motion,
     LocationData? location, {
     DateTime? now,
+    bool tripIsPaused = false,
   }) async {
+    script.analyzePausedFlags.add(tripIsPaused);
     return script.decision;
   }
 
@@ -591,6 +597,28 @@ void main() {
       expect(recorder.stopCalls, 1);
       expect(_stateName(container.read(tripStateMachineProvider)), 'idle');
     });
+
+    test(
+      'the paused path tells the stop detector the trip is paused',
+      () async {
+        startDetector.verdict = true;
+        await startedCoordinator();
+        await pushMotion(1);
+
+        // Active trip: the hysteresis stays enabled.
+        stopDetector.decision = StopDecision.continueTrip;
+        await pushMotion(2);
+        expect(stopDetector.analyzePausedFlags, isNotEmpty);
+        expect(stopDetector.analyzePausedFlags.last, isFalse);
+
+        container.read(tripStateMachineProvider.notifier).pauseTrip();
+        stopDetector.resumeVerdict = false;
+        await pushMotion(3);
+
+        // Paused trip: intermittent movement must not clear the pause (L-070).
+        expect(stopDetector.analyzePausedFlags.last, isTrue);
+      },
+    );
 
     // L-001: the coordinator used to suspend its streams the moment a trip
     // started, so nothing ever drove `_analyzeForTripStop` again — auto-pause

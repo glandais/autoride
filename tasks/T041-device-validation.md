@@ -83,3 +83,24 @@ screen **off**, phone in a pocket; ride off. A trip must auto-start (and be visi
 History afterwards) without ever waking the screen. Repeat on Android with battery
 optimization enabled for the app. Then re-measure item 4's drain — the detection phase
 now holds a foreground service continuously, which is the main risk this change adds.
+
+## 9. Auto-pause / auto-stop with the phone carried (L-070, added 2026-09-01)
+The stationary verdict is now computed over a 1.5 s sliding window (accelerometer
+std-dev ≤ 0.8 m/s², mean gyroscope ≤ 0.6 rad/s) with a fresh GPS fix overriding it in
+both directions (≥ 6 km/h ⇒ moving, < 3 km/h ⇒ standing still). The previous
+instantaneous test made auto-pause practically unreachable with the phone in a pocket.
+
+**To validate**, phone carried the way it normally is (pocket or pannier, *not* mounted
+on the bars), automatic detection ON:
+
+- **Red light**: stop for ~40 s mid-ride. The trip must switch to *paused* at ~30 s
+  (notification/UI), and the recorded active duration must exclude the stop.
+- **Resume**: ride off again. The trip must return to *active* within ~5 s and keep the
+  same trip (History shows one ride, not two).
+- **Auto-stop after 5 min**: stop and stay put for >5 min, shuffling the bike or walking
+  a couple of steps every ~10 s (the "zombie pause" case). The trip must finalize at
+  ~300 s of pause and appear in History; it must NOT stay paused indefinitely.
+- **False pause check**: 20 min of normal riding including rough surfaces and slow
+  climbs (< 8 km/h) must produce no unintended pause.
+- **Basket case**: phone lying flat and still in a basket/pannier while riding — no
+  pause must occur (GPS speed must win over the calm sensors).

@@ -482,16 +482,18 @@ void main() {
       expect(decision, equals(StopDecision.stopTrip));
     });
 
-    // Helper: stationary motion paired with a noisy GPS speed (3 km/h) that a
-    // standstill commonly reports. With stationary motion this reading is
-    // classified as non-stationary because speedKmh >= 2.0.
-    LocationData createNoisyStandstillLocation() {
+    // Helper: stationary motion paired with a GPS speed spike well above
+    // `movingSpeedMinKmh`. A fresh fix that fast forces a "moving" verdict
+    // whatever the sensors say, which is exactly the transient the hysteresis
+    // has to absorb. (A 3 km/h reading is now correctly read as a standstill:
+    // it is below `stationarySpeedMaxKmh`.)
+    LocationData createSpikeLocation() {
       return LocationData(
         latitude: 48.8566,
         longitude: 2.3522,
         accuracy: 10.0,
         altitude: 35.0,
-        speed: 3.0 / 3.6, // 3 km/h in m/s - transient GPS noise at standstill
+        speed: 9.0 / 3.6, // 9 km/h in m/s - one bogus fix at a standstill
         heading: 90.0,
         timestamp: DateTime.now(),
       );
@@ -521,7 +523,7 @@ void main() {
       // but a SINGLE spike must not reset the pause.
       final decision = await detector.analyzeForTripStop(
         stationaryMotion,
-        createNoisyStandstillLocation(),
+        createSpikeLocation(),
       );
 
       final state = container.read(tripStopDetectorProvider);
@@ -613,6 +615,264 @@ void main() {
       expect(state.consecutiveStationaryDetections, equals(0));
       expect(state.consecutiveMovementDetections, equals(0));
       expect(resetDecision, equals(StopDecision.continueTrip));
+    });
+
+    // ---------------------------------------------------------------
+    // Realistic carried-phone scenarios (T041 / L-070).
+    //
+    // These drive the detector the way the coordinator does: a stream of
+    // samples with injected timestamps, several per second, so the sliding
+    // window sees a real spread instead of one repeated reading.
+    // ---------------------------------------------------------------
+
+    const sampleInterval = Duration(milliseconds: 100);
+    const samplesPerSecond = 10;
+
+    /// Motion with a controllable acceleration spread and rotation level.
+    /// [index] alternates the acceleration around gravity so the window's
+    /// standard deviation is exactly [accelStdDev].
+    MotionData noisyMotion(
+      int index, {
+      required double accelStdDev,
+      required double gyro,
+    }) {
+      final at = DateTime(2026, 1, 1).add(sampleInterval * index);
+      final delta = index.isEven ? accelStdDev : -accelStdDev;
+      return MotionData(
+        accelerometer: AccelerometerData(
+          x: 0.0,
+          y: 0.0,
+          z: AppConstants.standardGravity + delta,
+          timestamp: at,
+        ),
+        gyroscope: GyroscopeData(x: gyro, y: 0.0, z: 0.0, timestamp: at),
+        timestamp: at,
+      );
+    }
+
+    LocationData locationAt(DateTime now, double speedKmh) {
+      return LocationData(
+        latitude: 48.8566,
+        longitude: 2.3522,
+        accuracy: 8.0,
+        altitude: 35.0,
+        speed: speedKmh / 3.6,
+        heading: 90.0,
+        timestamp: now,
+      );
+    }
+
+    test('traffic light with a pocketed phone: pauses after 30s despite gyro noise', () async {
+      final container = createContainer();
+      addTearDown(container.dispose);
+
+      final detector = container.read(tripStopDetectorProvider.notifier);
+      final start = DateTime(2026, 1, 1);
+
+      // Phone in a pocket at a red light: the body sways (gyro ~0.3 rad/s,
+      // far above the old instantaneous 0.2 rad/s ceiling) and the bike
+      // shivers a little (accel std-dev 0.3 m/s²). GPS reads a standstill.
+      var decision = StopDecision.continueTrip;
+      var pausedAtSecond = -1;
+      for (var i = 0; i < 35 * samplesPerSecond; i++) {
+        final now = start.add(sampleInterval * i);
+        decision = await detector.analyzeForTripStop(
+          noisyMotion(i, accelStdDev: 0.3, gyro: 0.3),
+          locationAt(now, 0.0),
+          now: now,
+        );
+        if (decision == StopDecision.pauseTrip && pausedAtSecond < 0) {
+          pausedAtSecond = i ~/ samplesPerSecond;
+        }
+      }
+
+      expect(
+        container.read(tripStopDetectorProvider).isStationary,
+        isTrue,
+        reason: 'gyro noise at a standstill must not read as movement',
+      );
+      expect(decision, equals(StopDecision.pauseTrip));
+      expect(
+        pausedAtSecond,
+        inInclusiveRange(
+          AppConstants.minPauseDurationSeconds - 1,
+          AppConstants.minPauseDurationSeconds + 2,
+        ),
+        reason:
+            'pause fires at minPauseDurationSeconds, not before or long after',
+      );
+    });
+
+    test(
+      'traffic light without GPS: still pauses on windowed sensors',
+      () async {
+        final container = createContainer();
+        addTearDown(container.dispose);
+
+        final detector = container.read(tripStopDetectorProvider.notifier);
+        final start = DateTime(2026, 1, 1);
+
+        var decision = StopDecision.continueTrip;
+        for (var i = 0; i < 35 * samplesPerSecond; i++) {
+          decision = await detector.analyzeForTripStop(
+            noisyMotion(i, accelStdDev: 0.3, gyro: 0.3),
+            null,
+            now: start.add(sampleInterval * i),
+          );
+        }
+
+        expect(decision, equals(StopDecision.pauseTrip));
+      },
+    );
+
+    test('steady riding: never pauses', () async {
+      final container = createContainer();
+      addTearDown(container.dispose);
+
+      final detector = container.read(tripStopDetectorProvider.notifier);
+      final start = DateTime(2026, 1, 1);
+
+      // Road vibration: accel std-dev 1.5 m/s², gyro 0.8 rad/s, 18 km/h.
+      for (var i = 0; i < 60 * samplesPerSecond; i++) {
+        final now = start.add(sampleInterval * i);
+        final decision = await detector.analyzeForTripStop(
+          noisyMotion(i, accelStdDev: 1.5, gyro: 0.8),
+          locationAt(now, 18.0),
+          now: now,
+        );
+        expect(decision, equals(StopDecision.continueTrip));
+      }
+
+      final state = container.read(tripStopDetectorProvider);
+      expect(state.isStationary, isFalse);
+      expect(state.pauseStartTime, isNull);
+    });
+
+    test('phone lying still in a basket at 15 km/h: never pauses', () async {
+      final container = createContainer();
+      addTearDown(container.dispose);
+
+      final detector = container.read(tripStopDetectorProvider.notifier);
+      final start = DateTime(2026, 1, 1);
+
+      // Sensors are calm (a phone wedged in a basket barely moves) but GPS is
+      // unambiguous: 15 km/h is above `movingSpeedMinKmh`.
+      for (var i = 0; i < 60 * samplesPerSecond; i++) {
+        final now = start.add(sampleInterval * i);
+        final decision = await detector.analyzeForTripStop(
+          noisyMotion(i, accelStdDev: 0.02, gyro: 0.02),
+          locationAt(now, 15.0),
+          now: now,
+        );
+        expect(decision, equals(StopDecision.continueTrip));
+      }
+
+      expect(container.read(tripStopDetectorProvider).isStationary, isFalse);
+    });
+
+    test('zombie pause: intermittent movement while paused still reaches auto-stop', () async {
+      final container = createContainer();
+      addTearDown(container.dispose);
+
+      final detector = container.read(tripStopDetectorProvider.notifier);
+      final start = DateTime(2026, 1, 1);
+
+      // Enter the pause (35 s stationary), then behave the way the
+      // coordinator's paused branch does: shouldResumeTrip first, then
+      // analyzeForTripStop(tripIsPaused: true).
+      var decision = StopDecision.continueTrip;
+      var resumed = false;
+      var stoppedAtSecond = -1;
+
+      for (var i = 0; i < 320 * samplesPerSecond; i++) {
+        final now = start.add(sampleInterval * i);
+        final second = i ~/ samplesPerSecond;
+
+        // After the pause is established, move for 2 s out of every 10 -
+        // never the 5 s of continuous movement a resume needs.
+        final moving = second >= 35 && second % 10 < 2;
+        final motion = moving
+            ? noisyMotion(i, accelStdDev: 1.5, gyro: 0.8)
+            : noisyMotion(i, accelStdDev: 0.3, gyro: 0.3);
+        final location = locationAt(now, moving ? 12.0 : 0.0);
+
+        final paused = second >= 35;
+        if (paused) {
+          resumed =
+              resumed || detector.shouldResumeTrip(motion, location, now: now);
+        }
+
+        decision = await detector.analyzeForTripStop(
+          motion,
+          location,
+          now: now,
+          tripIsPaused: paused,
+        );
+
+        if (decision == StopDecision.stopTrip && stoppedAtSecond < 0) {
+          stoppedAtSecond = second;
+        }
+      }
+
+      expect(
+        resumed,
+        isFalse,
+        reason: '2 s bursts never satisfy resumeMovementThresholdSeconds',
+      );
+      expect(
+        stoppedAtSecond,
+        inInclusiveRange(
+          AppConstants.maxPauseDurationSeconds - 1,
+          AppConstants.maxPauseDurationSeconds + 3,
+        ),
+        reason:
+            'the pause must run out at maxPauseDurationSeconds instead of '
+            'being reset forever by intermittent movement',
+      );
+      expect(decision, equals(StopDecision.stopTrip));
+    });
+
+    test('paused + 5 s of continuous movement resumes', () async {
+      final container = createContainer();
+      addTearDown(container.dispose);
+
+      final detector = container.read(tripStopDetectorProvider.notifier);
+      final start = DateTime(2026, 1, 1);
+
+      // Establish the pause.
+      for (var i = 0; i < 35 * samplesPerSecond; i++) {
+        final now = start.add(sampleInterval * i);
+        await detector.analyzeForTripStop(
+          noisyMotion(i, accelStdDev: 0.3, gyro: 0.3),
+          locationAt(now, 0.0),
+          now: now,
+        );
+      }
+
+      // Then ride away continuously.
+      var resumed = false;
+      for (var i = 35 * samplesPerSecond; i < 42 * samplesPerSecond; i++) {
+        final now = start.add(sampleInterval * i);
+        final motion = noisyMotion(i, accelStdDev: 1.5, gyro: 0.8);
+        final location = locationAt(now, 15.0);
+        resumed = detector.shouldResumeTrip(motion, location, now: now);
+        if (resumed) {
+          expect(
+            (i ~/ samplesPerSecond) - 35,
+            greaterThanOrEqualTo(AppConstants.resumeMovementThresholdSeconds),
+            reason: 'resume must need sustained movement, not one sample',
+          );
+          break;
+        }
+        await detector.analyzeForTripStop(
+          motion,
+          location,
+          now: now,
+          tripIsPaused: true,
+        );
+      }
+
+      expect(resumed, isTrue);
     });
 
     test('reset should clear all state', () async {

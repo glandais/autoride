@@ -430,9 +430,13 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
       state = AsyncValue.data(stateMachineState);
     } else {
       // Still paused - check if should stop
+      // `tripIsPaused: true`: while paused, intermittent movement must not
+      // clear the accumulated pause — only a confirmed resume may, and that
+      // path resets the detector above. Without this a rider who nudges the
+      // bike every few seconds sat in a pause that could never end (L-070).
       final decision = await ref
           .read(tripStopDetectorProvider.notifier)
-          .analyzeForTripStop(motion, _lastLocation);
+          .analyzeForTripStop(motion, _lastLocation, tripIsPaused: true);
 
       if (decision == StopDecision.stopTrip) {
         // Stop trip after extended pause

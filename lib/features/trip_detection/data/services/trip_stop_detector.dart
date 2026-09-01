@@ -4,6 +4,7 @@ import '../../domain/models/location_data.dart';
 import '../../domain/models/motion_data.dart';
 import '../../domain/models/trip_stop_state.dart';
 import '../../../../core/constants/app_constants.dart';
+import 'stationary_window.dart';
 
 part 'trip_stop_detector.g.dart';
 
@@ -20,6 +21,17 @@ class TripStopDetector extends _$TripStopDetector {
     return TripStopState.initial();
   }
 
+  /// Sliding window of recent sensor samples backing the stationary verdict.
+  ///
+  /// Scratch state, not observable state: it never belongs in [TripStopState],
+  /// which is watched by the UI. Cleared by [reset].
+  final StationaryWindow _window = StationaryWindow();
+
+  /// Last sample fed to the window. While paused the coordinator runs both
+  /// [shouldResumeTrip] and [analyzeForTripStop] on the same reading, and each
+  /// must not enter the window twice.
+  MotionData? _lastWindowedMotion;
+
   /// Analyze motion and GPS data to determine trip stop decision
   ///
   /// Returns [StopDecision] indicating whether to continue, pause, or stop trip.
@@ -29,7 +41,17 @@ class TripStopDetector extends _$TripStopDetector {
   /// [AppConstants.detectionEvaluationInterval], so
   /// `minConsecutiveStationaryDetections` and
   /// `tripStopMovementHysteresisSamples` mean seconds rather than a few tens of
-  /// milliseconds. Uncounted samples still keep the pause timer up to date.
+  /// milliseconds. Uncounted samples still keep the pause timer up to date and
+  /// still feed the sliding window.
+  ///
+  /// [tripIsPaused] must be true when the trip is already in the paused state.
+  /// It disables the movement hysteresis that clears the pause: while paused,
+  /// only a real resume ([shouldResumeTrip], after which the coordinator calls
+  /// [reset]) may clear the accumulated pause. Otherwise intermittent movement
+  /// — a rider shuffling the bike around every few seconds — kept resetting the
+  /// auto-stop countdown without ever satisfying the 5 s continuous-movement
+  /// resume rule, leaving a "zombie" pause that neither resumed nor stopped
+  /// while GPS and the foreground service stayed up.
   ///
   /// [now] exists so tests can drive the clock deterministically; production
   /// callers omit it.
@@ -37,11 +59,12 @@ class TripStopDetector extends _$TripStopDetector {
     MotionData motion,
     LocationData? location, {
     DateTime? now,
+    bool tripIsPaused = false,
   }) async {
     final timestamp = now ?? DateTime.now();
 
     // Check if currently stationary
-    final isStationary = _isStationary(motion, location);
+    final isStationary = _isStationary(motion, location, timestamp);
 
     final canCount = state.canCountDetection(
       timestamp,
@@ -75,15 +98,18 @@ class TripStopDetector extends _$TripStopDetector {
           state = state.incrementMovement(timestamp);
         }
 
-        if (state.consecutiveMovementDetections >=
-            AppConstants.tripStopMovementHysteresisSamples) {
-          // Sustained movement confirmed - reset the pause.
+        if (!tripIsPaused &&
+            state.consecutiveMovementDetections >=
+                AppConstants.tripStopMovementHysteresisSamples) {
+          // Sustained movement confirmed on a still-active trip - reset the
+          // pause so brief stops don't accumulate towards the auto-stop.
           state = state.resetPause();
           return StopDecision.continueTrip;
         }
 
-        // Not yet confirmed as movement: keep the pause accumulating so the
-        // auto-stop / auto-pause logic still applies despite the noisy sample.
+        // Not yet confirmed as movement (or the trip is paused, where only a
+        // real resume may clear the pause): keep the pause accumulating so the
+        // auto-stop / auto-pause logic still applies.
         state = state.updatePauseDuration(timestamp);
         return _evaluatePauseDuration();
       }
@@ -105,7 +131,7 @@ class TripStopDetector extends _$TripStopDetector {
   }) {
     final timestamp = now ?? DateTime.now();
 
-    if (_isStationary(motion, location)) {
+    if (_isStationary(motion, location, timestamp)) {
       // Movement interrupted - restart the sustained-movement timer.
       if (state.movementStartTime != null) {
         state = state.copyWith(movementStartTime: null);
@@ -126,34 +152,51 @@ class TripStopDetector extends _$TripStopDetector {
   /// Reset detection state
   void reset() {
     state = TripStopState.initial();
+    _window.clear();
+    _lastWindowedMotion = null;
   }
 
-  /// Check if motion and GPS indicate stationary state
-  bool _isStationary(MotionData motion, LocationData? location) {
-    // Check motion thresholds.
-    // Accelerometer magnitude includes gravity, so a stationary device reads
-    // ~standardGravity. Compare the deviation from gravity, not the raw value.
-    final accelDeviation =
-        (motion.accelerometer.magnitude - AppConstants.standardGravity).abs();
-    final gyroMagnitude = motion.gyroscope.magnitude;
-
-    final isMotionStationary =
-        accelDeviation <= AppConstants.stationaryAccelerationMax &&
-        gyroMagnitude <= AppConstants.stationaryRotationMax;
-
-    // If GPS available, validate with speed
-    if (location != null) {
-      final speedKmh = location.speedKmh;
-      final isSpeedStationary =
-          speedKmh < 2.0; // Less than 2 km/h is stationary
-
-      // Both motion and speed must indicate stationary
-      return isMotionStationary && isSpeedStationary;
+  /// Check if motion and GPS indicate a stationary rider.
+  ///
+  /// Combination rule, in order of trust:
+  ///
+  /// 1. A **fresh** fix (younger than [AppConstants.stationaryGpsMaxAge])
+  ///    reading at or above [AppConstants.movingSpeedMinKmh] means moving,
+  ///    whatever the sensors say — a phone lying in a pannier is calm while the
+  ///    bike rolls.
+  /// 2. A fresh fix below [AppConstants.stationarySpeedMaxKmh] is strong
+  ///    evidence of a standstill, so only the vibration criterion has to agree;
+  ///    the rotation criterion is dropped, because a pocketed phone turns
+  ///    freely while the bike stands still. Sustained vibration still overrides
+  ///    the fix (a bad fix during a rough descent).
+  /// 3. Between the two speeds, and whenever GPS is missing or stale, the
+  ///    windowed sensor criteria decide on their own (both must agree).
+  bool _isStationary(MotionData motion, LocationData? location, DateTime now) {
+    if (!identical(motion, _lastWindowedMotion)) {
+      _window.add(motion, now);
+      _lastWindowedMotion = motion;
     }
 
-    // GPS unavailable - use motion only (without consecutive requirement)
-    // Consecutive detections are tracked separately in analyzeForTripStop
-    return isMotionStationary;
+    final speedKmh = _freshSpeedKmh(location, now);
+
+    if (speedKmh != null) {
+      if (speedKmh >= AppConstants.movingSpeedMinKmh) return false;
+      if (speedKmh < AppConstants.stationarySpeedMaxKmh) {
+        return _window.isVibrationFree;
+      }
+    }
+
+    return _window.isCalm;
+  }
+
+  /// GPS speed in km/h if the fix is recent enough to be trusted, else null.
+  double? _freshSpeedKmh(LocationData? location, DateTime now) {
+    if (location == null) return null;
+
+    final age = now.difference(location.timestamp).abs();
+    if (age > AppConstants.stationaryGpsMaxAge) return null;
+
+    return location.speedKmh;
   }
 
   /// Evaluate pause duration and return appropriate decision

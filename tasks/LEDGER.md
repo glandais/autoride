@@ -38,6 +38,8 @@ Executed the same day as the audit, one commit per step, each by an Opus subagen
 
 | 9 — the end-of-trip notification tells the truth | (this change) | **L-069** (new) | `TripStateMachine.stopTrip` no longer reads `tripRecorderServiceProvider` for the numbers it announces: the recorder now hands it the finalized `Trip` (`stopTrip({discarded, finalTrip})`). The old path read the recorder's live `TripMetrics` *after* `_stopRecording` had zeroed them, so the "trip recorded" notification announced 0 m / 0 s / 0 km/h (or, on a different interleaving, a value up to one metrics tick stale) — and, being wrapped in `whenData`, it emitted nothing at all (foreground notification included) whenever that provider was loading or in error. `cancelForegroundNotification()` is now unconditional, and the duplicated `active:`/`paused:` bodies are factored into one `_finishRecording`. Tests 365 → 370. |
 
+| 10 — auto-pause works with a carried phone | (this change) | **L-070** (new) | `TripStopDetector` decides "stationary" over a **1.5 s sliding window** (`StationaryWindow`: accelerometer-magnitude std-dev + mean gyroscope magnitude) instead of one instantaneous 50 Hz sample, and a fresh GPS fix now outranks the sensors in both directions. The hard-coded 2 km/h literal became `stationarySpeedMaxKmh`. While the trip is *paused*, intermittent movement no longer resets the pause (`analyzeForTripStop(..., tripIsPaused: true)` from the coordinator's paused branch). Dead code removed: `TripStateMachine.hasPauseTimedOut()` (+ its test) and `AppConstants.stationaryThresholdSeconds`. Tests 370 → 376. |
+
 **Decision (2026-09-01) — L-067: the foreground service covers the whole listening window, not just recordings.**
 The service was scoped to a recording (decision (d) of step 4c). That left the detection phase with no
 foreground service and no wake lock, so with the screen off Android suspends the process under Doze,
@@ -107,6 +109,54 @@ a trip from the *detecting* phase (the coordinator's failed-start and detection-
 foreground notification, announce nothing" instead of announcing zeros. Every stop of a *recorded* ride
 still goes through `TripRecorderService.stopRecording()` — UI button, notification action, coordinator —
 which is the only caller that can know the final metrics.
+
+
+**Decision (2026-09-01) — L-070: the stop detector judges a window, and GPS outranks the sensors.**
+The old `_isStationary` required, on a *single* 50 Hz sample, `|accel − g| ≤ 1.0 m/s²` **and**
+`gyro ≤ 0.2 rad/s` **and** GPS speed `< 2.0` km/h (a literal). That is a description of a phone lying
+on a table, not of a phone in a jersey pocket or a pannier: at a red light the carried device reads
+0.1–0.5 rad/s on individual samples, so nearly every sample failed the test, the pause counter almost
+never reached its three counted detections, "active" duration silently included every stop, and the
+300 s auto-stop was unreachable in practice. Three changes, each deliberately narrow:
+
+1. **Window, not sample.** A plain-Dart `StationaryWindow` (scratch state owned by the notifier, not
+   part of `TripStopState`, so the UI-visible state is unchanged) keeps ~1.5 s of samples and exposes
+   the accelerometer-magnitude **standard deviation** and the **mean** gyroscope magnitude. Std-dev
+   rather than mean acceleration because the mean is gravity in every orientation, while the spread is
+   exactly the road vibration that distinguishes rolling from standing. New thresholds
+   `stationaryAccelerationStdDevMax = 0.8 m/s²` and `stationaryRotationAverageMax = 0.6 rad/s` sit
+   between the two measured bands (standstill: std-dev < 0.5, gyro mean 0.1–0.5; rolling: std-dev > 1,
+   gyro mean > 0.5). They are **new constants, not a relaxation of `stationaryAccelerationMax` /
+   `stationaryRotationMax`**: those two keep their instantaneous meaning and their only remaining
+   consumer, `MotionWindow.state`, which drives the coordinator's GPS gate. The gate's behaviour is
+   therefore untouched by this change — deliberately, since it is a separate subject.
+2. **A fresh fix outranks the sensors.** A fix younger than `stationaryGpsMaxAge` (10 s) reading
+   ≥ `movingSpeedMinKmh` (6 km/h) means moving whatever the sensors say (phone wedged in a basket);
+   one reading < `stationarySpeedMaxKmh` (3 km/h, replacing the 2.0 literal — a standstill GPS commonly
+   reports 1–3 km/h of noise) means standing still with only the vibration criterion having to agree,
+   because a pocketed phone rotates freely at a stop. In between, or with GPS missing or **stale**, the
+   two windowed sensor criteria decide alone. Staleness matters: a stalled position stream must not
+   keep asserting "0 km/h".
+3. **No more zombie pause.** The movement hysteresis (`tripStopMovementHysteresisSamples`) exists so a
+   single noisy reading cannot zero an accumulating pause, but while the trip was already *paused* it
+   did the opposite of its intent: 3 counted non-stationary readings (~3 s) called `resetPause()`, while
+   resuming needs 5 s of *uninterrupted* movement — so a rider nudging the bike every few seconds sat in
+   a pause that could neither resume nor reach the 300 s auto-stop, with GPS and the foreground service
+   up indefinitely. The detector now takes a `tripIsPaused` flag (passed only from the coordinator's
+   `_analyzeForResume`) that disables the hysteresis reset: while paused, the pause clock only ever
+   moves forward, and only a confirmed resume — which already calls `reset()` — clears it. The
+   alternative, making the paused countdown a wall-clock delta from `pauseStartTime`, is what this
+   effectively is, with one fewer piece of state to keep in sync. A paused trip is now guaranteed to end
+   in a resume or a stop.
+
+Also removed while in the area: `TripStateMachine.hasPauseTimedOut()` (no caller ever — `_evaluatePauseDuration`
+owns that decision) and its test, plus `AppConstants.stationaryThresholdSeconds` (a TODO with no consumer;
+`minPauseDurationSeconds = 30` remains the delay before a pause). Five scenario tests were added driving the
+detector the way the coordinator does — several samples per second with injected timestamps: red light with a
+pocketed phone (pauses at 30 s), steady riding (never pauses), calm phone in a basket at 15 km/h (never pauses),
+paused with 2 s of movement every 10 s (auto-stops at 300 s), paused with 5 s of continuous movement (resumes).
+On-device confirmation is item 9 of `tasks/T041-device-validation.md`.
+
 
 ## Method
 

@@ -126,18 +126,4 @@ class TripStateMachine extends _$TripStateMachine {
         ) ??
         false;
   }
-
-  /// Check if pause has timed out (exceeded max pause duration)
-  /// Returns true if paused for > max pause time
-  bool hasPauseTimedOut() {
-    return state.mapOrNull(
-          paused: (pausedState) {
-            final elapsed = DateTime.now().difference(
-              pausedState.pauseStartTime,
-            );
-            return elapsed.inSeconds > AppConstants.maxPauseDurationSeconds;
-          },
-        ) ??
-        false;
-  }
 }

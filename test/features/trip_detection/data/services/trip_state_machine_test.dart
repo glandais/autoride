@@ -363,32 +363,6 @@ void main() {
       expect(stateMachine.hasDetectionTimedOut(), isFalse);
     });
 
-    test('should detect pause timeout', () async {
-      final stateMachine = container.read(tripStateMachineProvider.notifier);
-
-      // Freshly paused -> not timed out.
-      stateMachine.state = TripState.paused(
-        tripId: 1,
-        startTime: DateTime.now(),
-        pauseStartTime: DateTime.now(),
-      );
-      expect(stateMachine.hasPauseTimedOut(), isFalse);
-
-      // Paused longer than the max pause duration -> timed out (auto-stop).
-      stateMachine.state = TripState.paused(
-        tripId: 1,
-        startTime: DateTime.now(),
-        pauseStartTime: DateTime.now().subtract(
-          const Duration(seconds: AppConstants.maxPauseDurationSeconds + 5),
-        ),
-      );
-      expect(stateMachine.hasPauseTimedOut(), isTrue);
-
-      // Not in a paused state -> never timed out.
-      stateMachine.state = const TripState.idle();
-      expect(stateMachine.hasPauseTimedOut(), isFalse);
-    });
-
     test('should preserve trip ID across state transitions', () async {
       final stateMachine = container.read(tripStateMachineProvider.notifier);
 
