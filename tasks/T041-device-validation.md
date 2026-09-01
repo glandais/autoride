@@ -1,5 +1,22 @@
 # T041 — On-Device Validation Checklist
 
+## Validation log
+
+**2026-09-01, iPhone (dev build)** — first on-device run:
+- Onboarding completes; the iOS **location prompt appears with the correct usage
+  string**, and the notification permission is granted (setup-complete shows
+  Location ✓ / Trip Notifications ✓) → item 7 is validated for location and
+  notifications; the motion prompt is still unverified. The SPM concern is
+  largely allayed for these two.
+- "Automatic Tracking ✗" reflects the user choosing "While Using" instead of
+  "Always" — expected; foreground detection runs anyway (badge "Detecting",
+  "Analyzing motion…").
+- **Bug found**: "Start ride now" crashed with *Null check operator used on a
+  null value* — the manual start fired before the recorder's async build had
+  opened the database. Fixed in `856f7a8` (lazy init + regression test).
+  **Retest manual start on the next build**; TestFlight build 3 still carries
+  the bug.
+
 Code complete on `develop` (`7afb833` → `529db42` → `da3ad62`, 245 tests green).
 None of the items below are observable from `flutter analyze`/`flutter test` or on an
 emulator — run them on a physical device in `--release` mode. T041 (and the reopened
