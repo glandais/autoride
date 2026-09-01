@@ -160,10 +160,18 @@ class TripRecorderService extends _$TripRecorderService {
     );
   }
 
-  /// Start recording a new trip
+  /// Start recording a new trip.
+  ///
+  /// [priorLocations] are fixes the caller already received *before* the trip
+  /// was confirmed — the coordinator's pre-trip buffer (L-076). They are
+  /// replayed, oldest first, through the same filters as live fixes, and the
+  /// first one that survives them becomes the trip's `startTime`. Callers with
+  /// no trustworthy history (the manual start button) pass nothing and get the
+  /// previous behaviour: the trip starts now, at zero.
   Future<void> startRecording({
     required double confidenceScore,
     required ActivityType activity,
+    List<LocationData> priorLocations = const [],
   }) async {
     if (_activeTrip != null) {
       throw StateError('Trip already recording');
@@ -176,6 +184,7 @@ class TripRecorderService extends _$TripRecorderService {
       await _startRecording(
         confidenceScore: confidenceScore,
         activity: activity,
+        priorLocations: priorLocations,
       );
     } catch (_) {
       // Nothing is recording, so the session must not stay pinned.
@@ -187,6 +196,7 @@ class TripRecorderService extends _$TripRecorderService {
   Future<void> _startRecording({
     required double confidenceScore,
     required ActivityType activity,
+    List<LocationData> priorLocations = const [],
   }) async {
     // Lazily resolve the collaborators normally set by build(): on a fresh
     // launch the manual start button can fire before the async build — which
@@ -234,6 +244,14 @@ class TripRecorderService extends _$TripRecorderService {
         maxAttempts: AppConstants.routePointFlushMaxAttempts,
       );
     }
+
+    // Replay whatever the caller already saw. Deliberately AFTER the leftover
+    // flush above (those points belong to the previous trip and must not be
+    // interleaved with this one's) and BEFORE the location stream opens, so the
+    // prefix and the live fixes form one continuous, chronological route and
+    // `_lastLocation` is already the last prefixed point when the first live fix
+    // arrives.
+    await _replayPriorLocations(priorLocations);
 
     // Start location stream
     _startLocationStream();
@@ -464,6 +482,60 @@ class TripRecorderService extends _$TripRecorderService {
     _releaseSessionLink = null;
   }
 
+  /// Replay the fixes received before this trip was confirmed (L-076).
+  ///
+  /// They go through [_recordLocation] — the very same filters, distance
+  /// accumulation, max-speed update and route-point buffering as a live fix — so
+  /// there is exactly one definition of what a recorded point is. The trip's
+  /// `startTime` is then moved back to the first point that survived those
+  /// filters: without that the ride would carry the metres but be timed from the
+  /// confirmation, and its duration and average speed would both be wrong. If
+  /// nothing survives, the trip keeps the `now` it was created with.
+  Future<void> _replayPriorLocations(List<LocationData> locations) async {
+    if (locations.isEmpty) return;
+
+    final ordered = [...locations]
+      ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
+
+    DateTime? firstKept;
+    for (final location in ordered) {
+      if (_recordLocation(location)) {
+        firstKept ??= location.timestamp;
+      }
+    }
+
+    final trip = _activeTrip;
+    if (firstKept == null || trip == null) return;
+    // Only ever backwards: a buffered fix stamped in the future (a clock jump)
+    // must not push the start past the moment the ride was confirmed.
+    if (!firstKept.isBefore(trip.startTime)) return;
+
+    _activeTrip = trip.copyWith(startTime: firstKept);
+    _logger.info(
+      'Trip ${trip.id} back-dated to $firstKept from '
+      '${ordered.length} pre-trip fixes '
+      '(${_totalDistanceMeters.toStringAsFixed(0)} m already covered)',
+    );
+
+    // `updateTrip` writes the whole row (`Trip.toMap` includes `start_time`), so
+    // the 30 s snapshot and the final write would carry this anyway. Doing it
+    // now as well means a process death in the first 30 s leaves the recovery a
+    // row whose start is the real one rather than the confirmation instant.
+    try {
+      await _repository!.updateTrip(_activeTrip!);
+    } catch (e, stackTrace) {
+      // Best effort: the in-memory trip is already correct, and the next
+      // snapshot rewrites the row.
+      _logger.error(
+        'Failed to persist the back-dated start of trip ${trip.id}',
+        e,
+        stackTrace,
+      );
+    }
+
+    _updateMetrics();
+  }
+
   /// Handle new location update
   void _handleLocationUpdate(LocationData location) {
     if (_activeTrip == null) return;
@@ -472,14 +544,27 @@ class TripRecorderService extends _$TripRecorderService {
     final currentState = ref.read(tripStateMachineProvider);
     if (!currentState.isRecording) return;
 
+    _recordLocation(location);
+  }
+
+  /// Apply the recording filters to [location] and, if it passes all of them,
+  /// fold it into the trip. Returns whether the point was kept.
+  ///
+  /// Split out of [_handleLocationUpdate] so the pre-trip replay can reuse it
+  /// without depending on the state machine's phase: the replay runs inside
+  /// [_startRecording], and factoring the guards out makes it independent of
+  /// where `startTripWithId` happens to sit in that sequence.
+  bool _recordLocation(LocationData location) {
+    if (_activeTrip == null) return false;
+
     // Filter by accuracy
     if (location.accuracy > AppConstants.maxLocationAccuracyMeters) {
-      return; // Poor GPS fix, skip
+      return false; // Poor GPS fix, skip
     }
 
     // Filter by speed (outlier rejection)
     if (location.speedKmh > AppConstants.maxCyclingSpeedKmh) {
-      return; // Unlikely for cycling, probably GPS error
+      return false; // Unlikely for cycling, probably GPS error
     }
 
     // Filter by distance
@@ -488,7 +573,7 @@ class TripRecorderService extends _$TripRecorderService {
 
       // Skip if too close (GPS drift)
       if (distance < AppConstants.minRoutePointDistanceMeters) {
-        return;
+        return false;
       }
 
       // Update total distance
@@ -514,6 +599,8 @@ class TripRecorderService extends _$TripRecorderService {
     if (_routePointBuffer.length >= AppConstants.routePointBufferSize) {
       _flushRoutePointBuffer();
     }
+
+    return true;
   }
 
   /// Flush route point buffer to database.

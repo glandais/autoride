@@ -18,6 +18,7 @@ import 'package:autoride/features/trip_detection/data/services/trip_recorder_ser
 import 'package:autoride/features/trip_detection/data/services/trip_state_machine.dart';
 import 'package:autoride/features/trip_detection/domain/models/activity_confidence.dart';
 import 'package:autoride/features/trip_detection/domain/models/auto_detection_state.dart';
+import 'package:autoride/features/trip_detection/domain/models/location_data.dart';
 import 'package:autoride/features/trip_detection/domain/models/trip.dart';
 import 'package:autoride/features/trip_detection/domain/models/trip_state.dart';
 import 'package:autoride/features/trip_detection/presentation/providers/auto_detection_controller.dart';
@@ -140,6 +141,7 @@ class FakeTripRecorderService extends TripRecorderService {
   Future<void> startRecording({
     required double confidenceScore,
     required ActivityType activity,
+    List<LocationData> priorLocations = const [],
   }) async {
     _releaseSession ??= ref.keepAlive().close;
     log.startedWithConfidence.add(confidenceScore);

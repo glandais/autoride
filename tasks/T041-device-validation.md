@@ -161,3 +161,35 @@ the stop detector falls back to sensors when the fix is stale.
 detection session is running. A manual ride started with *automatic detection off* has no
 coordinator session at all, and therefore no GPS-loss stop (it has no auto-pause or
 auto-stop either — same pre-existing limitation).
+
+## 11. The trip begins where the riding began, not at confirmation (L-076, added 2026-09-01)
+The coordinator now buffers the GPS fixes it receives during the detection phase and
+replays them into the recorder when a trip is confirmed, back-dating `startTime` to the
+first replayed point that survives the recording filters. Before this, a ride's first
+50–200 m and 10–40 s were silently dropped: the gate opens on movement, confirmation takes
+seconds, and the recorder started counting from its own second fix.
+
+**To validate:**
+
+- **The head of the trip is there**: from a cold stop, set off on a straight, recognisable
+  stretch (a long street, a canal path) with automatic detection on. When the trip appears
+  in History, its route must start at or very near where you actually set off — not one
+  street further on. Compare against the same departure recorded with the **manual** start
+  button, which deliberately prefixes nothing.
+- **The walk is not in it**: carry the phone on foot for 100–200 m to where the bike is
+  parked, then ride off. The recorded route must begin at the bike, not at the front door,
+  and the distance must not include the walk. Only fixes at ≥ `cyclingSpeedMin` (8 km/h)
+  open the prefix. Log line to look for: `Trip N back-dated to … from K pre-trip fixes
+  (D m already covered)`.
+- **Duration and average speed agree**: the trip's moving time must cover the back-dated
+  start (so a trip confirmed 30 s after departure reads ~30 s longer than before), and the
+  average speed must stay plausible — a back-dated start with the distance missing would
+  show as an implausibly low average.
+- **Nothing is prefixed after a long stop**: stand still long enough for the GPS gate to
+  close (`gpsInactivityTimeout`, 30 s), then set off. The buffer is emptied when the gate
+  closes, so the trip starts at the new departure and carries nothing from before the stop.
+- **Sub-60 s interaction (L-068)**: the rule is unchanged, and the duration it judges now
+  *includes* the prefix. A genuine short ride that was previously deleted because
+  confirmation ate most of its length should now survive; a real false start (a bump, a
+  mis-tap) still has no fixes above 8 km/h to prefix, still measures only the seconds it
+  lasted, and is still deleted with its points.

@@ -10,6 +10,7 @@ import '../../domain/models/motion_data.dart';
 import '../../domain/models/trip.dart';
 import '../../domain/models/trip_state.dart';
 import '../../domain/models/trip_stop_state.dart';
+import 'pre_trip_location_buffer.dart';
 import 'sensor_service.dart';
 import 'location_service.dart';
 import 'trip_start_detector.dart';
@@ -69,6 +70,17 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
   void Function()? _releaseSessionLink;
 
   LocationData? _lastLocation;
+
+  /// Fixes received while the GPS gate was open but no trip was recording yet.
+  /// Replayed into the recorder when a trip is confirmed, so the ride starts
+  /// where the rider actually set off instead of where the detector made up its
+  /// mind (L-076). Cleared whenever the history stops being trustworthy: the
+  /// gate closing, the session being suspended, a trip starting or ending.
+  final PreTripLocationBuffer _preTripLocations = PreTripLocationBuffer();
+
+  /// The pre-trip fixes currently buffered, oldest first.
+  @visibleForTesting
+  List<LocationData> get debugPreTripLocations => _preTripLocations.locations;
 
   /// Reference instant for the GPS-loss watchdog (L-074): the reception time of
   /// the last fix, or the moment the current trip started while none has
@@ -251,6 +263,7 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
             error: (error, stackTrace) {
               // GPS unavailable - continue with motion-only detection
               _lastLocation = null;
+              _preTripLocations.clear();
             },
             loading: () {},
           ),
@@ -265,6 +278,9 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
     _closeLocationSubscription?.call();
     _closeLocationSubscription = null;
     _lastLocation = null;
+    // The gate closing means the rider stood still long enough for the buffered
+    // approach to have stopped describing a departure.
+    _preTripLocations.clear();
   }
 
   /// Arm the inactivity timeout once, on the first stationary sample after
@@ -404,6 +420,15 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
   void _onLocationData(LocationData location) {
     _lastLocation = location;
 
+    // Buffer only while no trip is recording. During a trip the gate is pinned
+    // open and the recorder holds its own subscription, so accumulating here
+    // would grow a list nobody reads.
+    if (ref.read(tripStateMachineProvider).hasActiveTrip) {
+      _preTripLocations.clear();
+    } else {
+      _preTripLocations.add(location, now());
+    }
+
     // Reception time, not `location.timestamp`: a fix replayed from a plugin
     // cache (or one carrying a skewed device clock) still proves the position
     // stream is alive, which is the only thing the watchdog measures. Only
@@ -467,6 +492,14 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
       final detector = ref.read(tripStartDetectorProvider);
       final confidence = detector.confidence;
 
+      // Hand the recorder the fixes already collected during detection, cut
+      // back to the first one at cycling speed (L-076): the gate opens on any
+      // movement, so the head of the buffer is usually the walk to the bike and
+      // must not become part of the ride. Emptied either way — confirmed or
+      // failed, this departure is no longer pending.
+      final priorLocations = _preTripLocations.ridingTail;
+      _preTripLocations.clear();
+
       try {
         // Trigger trip recording (T015)
         // This will create trip in database and update state machine
@@ -475,6 +508,7 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
             .startRecording(
               confidenceScore: confidence,
               activity: ActivityType.cycling,
+              priorLocations: priorLocations,
             );
       } catch (e, stackTrace) {
         // startRecording writes to the DB and can throw. Without this guard the
@@ -585,6 +619,10 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
     ref.read(tripStopDetectorProvider.notifier).reset();
     ref.read(tripStartDetectorProvider.notifier).reset();
 
+    // Anything buffered during the ride (there should be nothing — see
+    // `_onLocationData`) belongs to the trip that just ended, not to the next.
+    _preTripLocations.clear();
+
     // THIS is a false start: a recording the recorder threw away because it was
     // shorter than `minTripDurationSeconds` (L-068). Backing off for
     // `tripStartCooldownPeriodSeconds` is worth its blind window here, because
@@ -659,7 +697,8 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
     _gpsWatchdogReference = null;
 
     // Suspending the session also closes the GPS gate: the recorder owns its
-    // own location subscription while a trip runs, so nothing is lost.
+    // own location subscription while a trip runs, so nothing is lost. Closing
+    // the gate clears the pre-trip buffer too.
     _closeGpsGate();
   }
 }

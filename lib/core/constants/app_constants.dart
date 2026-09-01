@@ -50,6 +50,26 @@ class AppConstants {
   // coordinator cancels its GPS subscription. See TripDetectionCoordinator.
   static const Duration gpsInactivityTimeout = Duration(seconds: 30);
 
+  // Pre-trip location buffer (L-076)
+  //
+  // While the GPS gate is open but no trip is recording, the coordinator keeps
+  // the fixes it receives so the ride that is confirmed a few seconds later can
+  // be back-filled with the metres already covered. Two independent bounds, so
+  // neither a stalled clock nor an unexpectedly chatty location plugin can grow
+  // it without limit:
+  //
+  // - 90 s of history. The window that must be covered is the detection phase:
+  //   up to `detectionTimeoutSeconds` (30 s) in `Detecting`, plus the ~2-3 s the
+  //   consecutive-detection rule needs to confirm, plus the delay before the
+  //   recorder's own stream yields its first fix. 90 s covers all of it with
+  //   room to spare while staying far below anything a rider would recognise as
+  //   "the trip started too early".
+  // - 64 points. At `minRoutePointDistanceMeters` (15 m) and ~20 km/h a fix is
+  //   retained roughly every 3 s, so 90 s is about 30 points; 64 is a guard
+  //   against a faster rider or a denser stream, not the operative limit.
+  static const Duration preTripLocationBufferDuration = Duration(seconds: 90);
+  static const int preTripLocationBufferMaxPoints = 64;
+
   /// How long a recording trip may go without a single GPS fix before the
   /// coordinator stops it (L-074). Counted from the last fix, or from the start
   /// of the trip while no fix has arrived yet.

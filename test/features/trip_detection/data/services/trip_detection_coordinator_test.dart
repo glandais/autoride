@@ -112,6 +112,9 @@ class _TestTripStateMachine extends TripStateMachine {
 class _RecorderLog {
   final List<double> startedWithConfidence = [];
   final List<ActivityType> startedWithActivity = [];
+
+  /// Pre-trip fixes handed over by the coordinator on each start (L-076).
+  final List<List<LocationData>> startedWithPriorLocations = [];
   int stopCalls = 0;
   bool throwOnStart = false;
 
@@ -138,12 +141,14 @@ class _SpyTripRecorderService extends TripRecorderService {
   Future<void> startRecording({
     required double confidenceScore,
     required ActivityType activity,
+    List<LocationData> priorLocations = const [],
   }) async {
     if (log.throwOnStart) {
       throw StateError('forced start failure');
     }
     log.startedWithConfidence.add(confidenceScore);
     log.startedWithActivity.add(activity);
+    log.startedWithPriorLocations.add(List<LocationData>.from(priorLocations));
     ref.read(tripStateMachineProvider.notifier).startTripWithId(1);
   }
 
@@ -1542,6 +1547,144 @@ void main() {
 
       expect(recorder.stopCalls, 1);
       expect(startDetector.cooldownCalls, 0);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Pre-trip location buffer (L-076)
+  // -------------------------------------------------------------------------
+  group('TripDetectionCoordinator - pre-trip location buffer (L-076)', () {
+    setUp(() {
+      container.dispose();
+      container = ProviderContainer(
+        overrides: baseOverrides(
+          extra: [
+            tripDetectionCoordinatorProvider.overrideWith(
+              _ManualGateCoordinator.new,
+            ),
+          ],
+        ),
+      );
+      coordinatorSubscription = container.listen(
+        tripDetectionCoordinatorProvider,
+        (_, _) {},
+      );
+    });
+
+    Future<void> elapseInactivity() async {
+      (container.read(
+        tripDetectionCoordinatorProvider.notifier,
+      ) as _ManualGateCoordinator).inactivityTimer?.fire();
+      await pumpEventQueue();
+    }
+
+    List<LocationData> buffered() => container
+        .read(tripDetectionCoordinatorProvider.notifier)
+        .debugPreTripLocations;
+
+    /// Feeds one fix through the (gated) location stream.
+    Future<void> pushLocation({required int index, double speed = 5.0}) async {
+      locationController.add(_location(speed: speed, index: index));
+      await pumpEventQueue();
+    }
+
+    test('fixes received while detecting reach startRecording', () async {
+      await startedCoordinator();
+      await pushMotion(1); // opens the GPS gate
+
+      await pushLocation(index: 1);
+      await pushLocation(index: 2);
+      await pushLocation(index: 3);
+      expect(buffered(), hasLength(3));
+
+      startDetector.verdict = true;
+      await pushMotion(2);
+
+      expect(recorder.startedWithPriorLocations, hasLength(1));
+      expect(
+        recorder.startedWithPriorLocations.single.map((f) => f.timestamp),
+        [
+          _location(index: 1).timestamp,
+          _location(index: 2).timestamp,
+          _location(index: 3).timestamp,
+        ],
+      );
+      // Handed over, so no longer pending.
+      expect(buffered(), isEmpty);
+    });
+
+    test('the walk to the bike is skimmed off the front', () async {
+      await startedCoordinator();
+      await pushMotion(1);
+
+      // 1 m/s = 3.6 km/h: below cyclingSpeedMin.
+      await pushLocation(speed: 1.0, index: 1);
+      await pushLocation(speed: 1.2, index: 2);
+      // 5 m/s = 18 km/h: riding.
+      await pushLocation(speed: 5.0, index: 3);
+      await pushLocation(speed: 5.5, index: 4);
+
+      startDetector.verdict = true;
+      await pushMotion(2);
+
+      expect(
+        recorder.startedWithPriorLocations.single.map((f) => f.timestamp),
+        [_location(index: 3).timestamp, _location(index: 4).timestamp],
+      );
+    });
+
+    test(
+      'a departure that never reached cycling speed prefixes nothing',
+      () async {
+        await startedCoordinator();
+        await pushMotion(1);
+
+        await pushLocation(speed: 1.0, index: 1);
+        await pushLocation(speed: 1.5, index: 2);
+
+        startDetector.verdict = true;
+        await pushMotion(2);
+
+        expect(recorder.startedWithPriorLocations.single, isEmpty);
+      },
+    );
+
+    test('closing the GPS gate empties the buffer', () async {
+      await startedCoordinator();
+      await pushMotion(1);
+      await pushLocation(index: 1);
+      expect(buffered(), hasLength(1));
+
+      motionController.add(_stationarySample(2));
+      await pumpEventQueue();
+      await elapseInactivity();
+
+      expect(gpsSubscribed, isFalse);
+      expect(buffered(), isEmpty);
+    });
+
+    test('nothing accumulates while a trip is recording', () async {
+      startDetector.verdict = true;
+      await startedCoordinator();
+      await pushMotion(1);
+      expect(container.read(tripStateMachineProvider).hasActiveTrip, isTrue);
+
+      await pushLocation(index: 5);
+      await pushLocation(index: 6);
+
+      expect(buffered(), isEmpty);
+    });
+
+    test('a suspended session leaves nothing behind', () async {
+      await startedCoordinator();
+      await pushMotion(1);
+      await pushLocation(index: 1);
+      expect(buffered(), hasLength(1));
+
+      container.read(tripDetectionCoordinatorProvider.notifier).stopListening();
+      await pumpEventQueue();
+
+      expect(buffered(), isEmpty);
     });
   });
 }

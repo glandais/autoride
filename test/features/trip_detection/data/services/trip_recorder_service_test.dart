@@ -312,11 +312,13 @@ void main() {
     TripRecorderService recorder, {
     double confidenceScore = 0.85,
     ActivityType activity = ActivityType.cycling,
+    List<LocationData> priorLocations = const [],
   }) async {
     container.read(tripStateMachineProvider.notifier).startDetecting();
     await recorder.startRecording(
       confidenceScore: confidenceScore,
       activity: activity,
+      priorLocations: priorLocations,
     );
     await pumpEventQueue();
   }
@@ -1011,6 +1013,155 @@ void main() {
       expect(
         container.read(tripRecorderServiceProvider.notifier),
         isNot(same(recorder)),
+      );
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Pre-trip replay (L-076)
+  // -------------------------------------------------------------------------
+  group('TripRecorderService - priorLocations replay', () {
+    test('a prefixed trip starts with distance already on the clock', () async {
+      final recorder = await readRecorder();
+
+      // ~22 m apart each, so both gaps clear minRoutePointDistanceMeters.
+      await startTrip(recorder, priorLocations: [_fix(0), _fix(2), _fix(4)]);
+
+      // Two accumulated gaps of ~22.2 m.
+      expect(currentDistance(), greaterThan(40.0));
+      expect(currentDistance(), lessThan(50.0));
+      expect(
+        container.read(tripRecorderServiceProvider).value!.routePointCount,
+        3,
+      );
+    });
+
+    test('startTime becomes the first retained point timestamp', () async {
+      final recorder = await readRecorder();
+
+      await startTrip(recorder, priorLocations: [_fix(0), _fix(2)]);
+
+      // Persisted right away, so a process death in the first 30 s still
+      // recovers the real start.
+      expect(fakeRepository.updatedTrips, hasLength(1));
+      expect(fakeRepository.updatedTrips.single.startTime, _fix(0).timestamp);
+
+      final finalTrip = (await recorder.stopRecording())!;
+      expect(finalTrip.startTime, _fix(0).timestamp);
+    });
+
+    test('the prefixed points reach the database on the next flush', () async {
+      final recorder = await readRecorder();
+
+      await startTrip(recorder, priorLocations: [_fix(0), _fix(2), _fix(4)]);
+      await recorder.debugFlushProgress();
+
+      expect(fakeRepository.savedRoutePointBatches, hasLength(1));
+      final batch = fakeRepository.savedRoutePointBatches.single;
+      expect(batch, hasLength(3));
+      expect(batch.every((point) => point.tripId == 1), isTrue);
+      expect(batch.map((point) => point.timestamp), [
+        _fix(0).timestamp,
+        _fix(2).timestamp,
+        _fix(4).timestamp,
+      ]);
+    });
+
+    test('the live filters apply to the prefix too', () async {
+      final recorder = await readRecorder();
+
+      await startTrip(
+        recorder,
+        priorLocations: [
+          // Rejected: accuracy above maxLocationAccuracyMeters. It must not
+          // become the trip's start either.
+          _fix(0, accuracy: AppConstants.maxLocationAccuracyMeters + 10),
+          _fix(2),
+          // Rejected: closer than minRoutePointDistanceMeters to the previous.
+          _fix(3),
+          // Rejected: faster than maxCyclingSpeedKmh (GPS outlier).
+          _fix(6, speed: AppConstants.maxCyclingSpeedKmh),
+          _fix(8),
+        ],
+      );
+
+      expect(
+        container.read(tripRecorderServiceProvider).value!.routePointCount,
+        2,
+      );
+      expect(fakeRepository.updatedTrips.single.startTime, _fix(2).timestamp);
+      // Only the 2 -> 8 gap (~66 m); the rejected points contribute nothing.
+      expect(currentDistance(), greaterThan(60.0));
+      expect(currentDistance(), lessThan(72.0));
+    });
+
+    test('replayed points are ordered chronologically', () async {
+      final recorder = await readRecorder();
+
+      await startTrip(recorder, priorLocations: [_fix(4), _fix(0), _fix(2)]);
+
+      // `.first`: the flush below snapshots the row a second time.
+      expect(fakeRepository.updatedTrips.first.startTime, _fix(0).timestamp);
+
+      await recorder.debugFlushProgress();
+      expect(
+        fakeRepository.savedRoutePointBatches.single.map((p) => p.timestamp),
+        [_fix(0).timestamp, _fix(2).timestamp, _fix(4).timestamp],
+      );
+    });
+
+    test('the live stream continues from the last prefixed point', () async {
+      final recorder = await readRecorder();
+
+      await startTrip(recorder, priorLocations: [_fix(0), _fix(2)]);
+      final prefixDistance = currentDistance();
+
+      // Too close to the last prefixed fix: filtered, exactly as it would be
+      // between two live fixes.
+      await pushFix(_fix(3));
+      expect(currentDistance(), prefixDistance);
+
+      await pushFix(_fix(4));
+      expect(currentDistance(), greaterThan(prefixDistance));
+    });
+
+    test('no priorLocations leaves the previous behaviour intact', () async {
+      final recorder = await readRecorder();
+
+      final before = DateTime.now();
+      await startTrip(recorder);
+      final after = DateTime.now();
+
+      // No back-dating write, no points, no distance.
+      expect(fakeRepository.updatedTrips, isEmpty);
+      expect(currentDistance(), 0.0);
+      expect(
+        container.read(tripRecorderServiceProvider).value!.routePointCount,
+        0,
+      );
+
+      final started = fakeRepository.savedTrips.single.startTime;
+      expect(started.isBefore(before), isFalse);
+      expect(started.isAfter(after), isFalse);
+    });
+
+    test('an all-rejected prefix leaves the start at now', () async {
+      final recorder = await readRecorder();
+
+      final before = DateTime.now();
+      await startTrip(
+        recorder,
+        priorLocations: [
+          _fix(0, accuracy: AppConstants.maxLocationAccuracyMeters + 1),
+          _fix(2, accuracy: AppConstants.maxLocationAccuracyMeters + 1),
+        ],
+      );
+
+      expect(fakeRepository.updatedTrips, isEmpty);
+      expect(currentDistance(), 0.0);
+      expect(
+        fakeRepository.savedTrips.single.startTime.isBefore(before),
+        isFalse,
       );
     });
   });
