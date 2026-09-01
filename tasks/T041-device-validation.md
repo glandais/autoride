@@ -17,6 +17,16 @@
   **Retest manual start on the next build**; TestFlight build 3 still carries
   the bug.
 
+**2026-09-01, iPhone 13 Pro (release, `4559820`)** — background-location status:
+- "While Using" instead of "Always" shows the banner above the navigation bar and
+  the settings switch off with `Location is not set to "Always"`; choosing "Always"
+  in Settings and returning clears both without a restart. Item 7's SPM concern is
+  closed: "Always" appears in Settings, so `requestAlwaysAuthorization` did run
+  (the plugin's `Package.swift` derives `PERMISSION_LOCATION` from `Info.plist`;
+  the Podfile macros are dead but harmless).
+- "Precise Location" off shows the precise-location banner and subtitle; on again
+  clears them.
+
 Code complete on `develop` (`7afb833` → `529db42` → `da3ad62`, 245 tests green).
 None of the items below are observable from `flutter analyze`/`flutter test` or on an
 emulator — run them on a physical device in `--release` mode. T041 (and the reopened
@@ -63,6 +73,10 @@ halves of T006/T013) close only when this checklist passes.
 - Turn it back ON: detection resumes without restarting the app.
 - Grant location from system settings while the app is backgrounded: detection
   starts on resume.
+- Downgrade to "While Using" (iOS) / revoke "Allow all the time" (Android), or
+  turn off precise location, then return: the home banner appears and the
+  settings switch turns off; reverting clears them (L-071). ✅ iOS 2026-09-01;
+  Android pending.
 
 ## 7. iOS permission prompts (T039 finding — added 2026-09-01)
 Flutter 3.47 resolves `permission_handler_apple` via Swift Package Manager, so the
@@ -71,6 +85,11 @@ reach the plugin (the `cc1c088` fix is bypassed). On a physical iPhone, verify t
 the location (when-in-use → always), notification, and motion permission prompts all
 actually appear and that granted permissions report correctly. If prompts are missing,
 the SPM package needs the compile-time flags supplied another way.
+
+**Resolved 2026-09-01 for location** (see the validation log): `permission_handler_apple`'s
+`Package.swift` reads the `NSLocation*`/notification keys from `Info.plist` at manifest
+evaluation, so the flags are supplied by the plist itself. The Podfile macros are dead
+code. Still to confirm on device: the motion prompt (`NSMotionUsageDescription`).
 
 ## 8. Automatic detection with the screen off (added 2026-09-01)
 The foreground service used to run only during a recording, so with the screen off the

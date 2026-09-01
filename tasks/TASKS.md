@@ -337,7 +337,7 @@
   - *Dependencies*: **T038** (owns the version scheme and `publish_beta.sh`), T033, T036
   - *Estimate*: 3-4 hours
   - *Status 2026-09-01*: **pipeline proven end-to-end** — TestFlight build 3 uploaded and VALID via `fastlane beta` (April's App Store profile reused, no signing repair needed); build `1.0.0+4` (with the `856f7a8` crash fix) launched through the first full dual-platform `publish_beta.sh` run. Credentials wired via `~/.secrets/autoride-asc.env` (`0966a0c`). Store surface cleared by agents: name **AutoRide**, version `1.0.0`, full metadata, **App Privacy published**, age rating 4+, content rights, free + 175 territories, App Review contact + notes filed — `asc validate` down from 33 errors to **2** (attach a build — use build 4, build 3 carries the crash — and screenshots). Remaining beyond that: privacy-manifest reconciliation (detail doc step 6), Motion & Fitness prompt still unverified on device (SPM finding below — location/notification prompts confirmed OK on iPhone)
-  - *⚠️ New finding*: Flutter 3.47 resolves `permission_handler_apple` via Swift Package Manager, so the Podfile's `PERMISSION_*` post_install macros no longer reach it — the cc1c088 permission fix is bypassed. iOS permission prompts must be re-verified on device (see `tasks/T041-device-validation.md` item 7); plausible TestFlight blocker
+  - *⚠️ New finding*: Flutter 3.47 resolves `permission_handler_apple` via Swift Package Manager, so the Podfile's `PERMISSION_*` post_install macros no longer reach it — the cc1c088 permission fix is bypassed. iOS permission prompts must be re-verified on device (see `tasks/T041-device-validation.md` item 7); plausible TestFlight blocker — **resolved 2026-09-01 for location and notifications**: the plugin's `Package.swift` derives the flags from `Info.plist`, so the Podfile macros are dead but nothing is bypassed; motion prompt still unverified
 
 - ✅ **Build-chain alignment with `../tribly/mobile`** (2026-09-01)
   - *Why*: both apps share one release mechanic, and autoride's was modelled on tribly's (T038 "Reference Implementation"). They had drifted — but **not in one direction**: on release plumbing autoride is ahead (non-expiring ASC API key vs tribly's Apple ID session, `~/.secrets` + env-var Play credentials vs a hardcoded absolute path, guarded `publish_beta.sh` with a rollback trap and tag vs a minimal script). Those were deliberately **not** imported.
@@ -365,6 +365,7 @@
   - *Decisions (maintainer, 2026-08-31)*: (a) session lifetime = scoped `ref.keepAlive()` opened on start, released on stop/error/dispose (note: Riverpod 3 deactivates `ref.listen` subscriptions when the last listener leaves, so session streams are container-owned); (b) GPS gating inside the coordinator, `GPSController` deleted; (c) auto-detection setting-gated (`automaticDetectionEnabled`, default ON); (d) foreground stream is the single source of truth — the background isolate only holds the foreground-service notification.
   - *Status*: **code complete** — landed in three commits per the dependency order: `7afb833` (#5 providerize + #2 sessions), `529db42` (#3 gating + #4 adaptive), `da3ad62` (#11 entry point + #7/#8 isolate). 245 tests, analyze clean.
   - *Validation*: **physical device required** — see `tasks/T041-device-validation.md`. T041 closes only when that checklist passes.
+  - *2026-09-01 (`4559820`)*: background-location status surfaced — `backgroundLocationStatusProvider` (OS grant + accuracy), home banner and settings switch bound to it, platform-specific "Always" / "Precise Location" guidance with a settings link; `PermissionRationaleDialog.show` double-pop fixed. Verified on iPhone 13 Pro (ledger L-071, validation item 6).
   - *References*: `tasks/BLOCKED-pipeline-refactor.md` (decisions + dependency order), `tasks/AUDIT-FINDINGS.md` (2026-06-17, deferred cluster), `tasks/LEDGER.md` (2026-08-31, §3 findings and §5 step 4)
   - *Retires*: the blocked halves of T006 and T013; unblocks T032 and the recorder/coordinator tests under T029/T031
 
@@ -426,5 +427,5 @@
 
 ---
 
-**Last Updated**: 2026-08-31
+**Last Updated**: 2026-09-01
 **Version**: 1.2

@@ -39,6 +39,41 @@ Executed the same day as the audit, one commit per step, each by an Opus subagen
 | 9 — the end-of-trip notification tells the truth | (this change) | **L-069** (new) | `TripStateMachine.stopTrip` no longer reads `tripRecorderServiceProvider` for the numbers it announces: the recorder now hands it the finalized `Trip` (`stopTrip({discarded, finalTrip})`). The old path read the recorder's live `TripMetrics` *after* `_stopRecording` had zeroed them, so the "trip recorded" notification announced 0 m / 0 s / 0 km/h (or, on a different interleaving, a value up to one metrics tick stale) — and, being wrapped in `whenData`, it emitted nothing at all (foreground notification included) whenever that provider was loading or in error. `cancelForegroundNotification()` is now unconditional, and the duplicated `active:`/`paused:` bodies are factored into one `_finishRecording`. Tests 365 → 370. |
 
 | 10 — auto-pause works with a carried phone | (this change) | **L-070** (new) | `TripStopDetector` decides "stationary" over a **1.5 s sliding window** (`StationaryWindow`: accelerometer-magnitude std-dev + mean gyroscope magnitude) instead of one instantaneous 50 Hz sample, and a fresh GPS fix now outranks the sensors in both directions. The hard-coded 2 km/h literal became `stationarySpeedMaxKmh`. While the trip is *paused*, intermittent movement no longer resets the pause (`analyzeForTripStop(..., tripIsPaused: true)` from the coordinator's paused branch). Dead code removed: `TripStateMachine.hasPauseTimedOut()` (+ its test) and `AppConstants.stationaryThresholdSeconds`. Tests 370 → 376. |
+| 11 — the app says when background location is insufficient | `4559820` | **L-071** (new); L-030's iOS half | `backgroundLocationStatusProvider` reads the *real* OS grant (`locationAlways` via permission_handler **plus** geolocator's accuracy) as `BackgroundLocationState` with `issue ∈ {alwaysMissing, preciseMissing, none}`, re-read on app resume and after every request. A banner above `HomeShell`'s navigation bar and the settings "Background location" switch (now bound to the OS grant, not the stored preference) show the platform-specific fix and open app settings. Fixed on the way: `PermissionRationaleDialog.show` double-popped (answer always `null`, caller's route removed), so the settings toggle had never worked. `Info.plist` gains `NSLocationTemporaryUsageDescriptionDictionary` (not yet requested from Dart). Podfile `PERMISSION_*` macros confirmed dead under SPM but harmless — the plugin's `Package.swift` derives them from `Info.plist`. Tests 376 → 402. Verified on iPhone 13 Pro. |
+
+**Decision (2026-09-01) — L-071: the app reports the OS grant it actually has, and the fix is a settings link.**
+Two facts about iOS drove this. First, "Always" is never offered in the first location prompt: the
+system asks "While Using / Once / Don't Allow", and the "Change to Always?" upgrade dialog appears once
+per install — `permission_handler` additionally records that it asked (`NSUserDefaults`) and never asks
+again. A user who tapped "Keep Only While Using" therefore lives with an app whose stored
+`backgroundLocationEnabled = true` preference, onboarding "✓" and settings switch all say background
+tracking is on while automatic detection can never start with the app closed. Second,
+`permission_handler` ignores *accuracy*: "Always" with "Precise Location" off (iOS 14+, or Android 12+
+coarse-only) reads as granted while positions are kilometres off. Choices:
+
+1. **One provider, one state.** `BackgroundLocationState { permission, accuracy }` with a derived
+   `issue`; the permission outranks the accuracy because it is the thing to fix first, and the accuracy
+   is only queried when the permission is granted (asking the OS otherwise buys nothing, and
+   `getLocationAccuracy` is wrapped so a plugin error can never block the UI — it falls back to
+   `precise`). Kept alive and re-read on `AppLifecycleState.resumed` unconditionally, because the grant
+   can be *downgraded* in system settings as well as upgraded.
+2. **Tell, then link — never re-prompt.** Both surfaces (home banner, settings switch) explain what to
+   change in the OS's own vocabulary ("Always" / "Precise Location" on iOS, "Allow all the time" /
+   "Precise" on Android) and open app settings. The settings toggle still tries a request first when the
+   permission is missing — that is the one path Android < 11 can prompt on — but a permanently-denied
+   result (what iOS reports once its one-shot upgrade prompt is spent) lands on the settings dialog
+   instead of escaping as an uncaught exception, and a reduced-accuracy state skips the request
+   entirely. Turning the switch off explains that revocation happens in system settings; the app
+   persists nothing, because the preference had no consumer and lying about the OS is the bug.
+3. **Banner placement.** Above the navigation bar, not the top of the body: each tab owns its app bar,
+   so a top banner sat under the status bar and above the screen title (seen on the first device run).
+4. **Not done, deliberately.** `requestTemporaryFullAccuracy` is not called; the plist key is in place
+   so a later change can ask for precise location for the duration of a ride, but the permanent setting
+   is what automatic detection needs and that can only be granted in Settings.
+
+The `PermissionRationaleDialog.show` double pop was found because the settings switch never reached the
+request: its buttons already pop, and `show`'s callbacks popped again, so the future resolved `null` and
+the *settings screen* left the navigator. `show` now captures the answer from the callbacks.
 
 **Decision (2026-09-01) — L-067: the foreground service covers the whole listening window, not just recordings.**
 The service was scoped to a recording (decision (d) of step 4c). That left the detection phase with no
