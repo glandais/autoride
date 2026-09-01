@@ -176,6 +176,14 @@ class TripRecorderService extends _$TripRecorderService {
     required double confidenceScore,
     required ActivityType activity,
   }) async {
+    // Lazily resolve the collaborators normally set by build(): on a fresh
+    // launch the manual start button can fire before the async build — which
+    // awaits the database open — has completed, and `_repository!` then threw
+    // "Null check operator used on a null value" (first on-device iOS run,
+    // 2026-09-01).
+    _repository ??= await ref.read(tripRepositoryProvider.future);
+    _stateMachine ??= ref.read(tripStateMachineProvider.notifier);
+
     // Create initial trip in database
     final initialTrip = Trip(
       startTime: DateTime.now(),

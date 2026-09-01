@@ -391,6 +391,57 @@ void main() {
       expect(fakeRepository.savedTrips[1].id, 2);
       expect(container.read(tripStateMachineProvider).currentTripId, 2);
     });
+
+    test(
+        'startRecording before the async build completes does not crash '
+        '(regression: null-check on _repository, first on-device iOS run '
+        '2026-09-01)', () async {
+      // A repository that resolves slowly, like the real database open on a
+      // fresh install — the recorder's build() is still awaiting it when the
+      // manual start button fires.
+      final slowContainer = ProviderContainer(
+        overrides: [
+          locationStreamProvider
+              .overrideWith((ref, settings) => locationController.stream),
+          tripRepositoryProvider.overrideWith((ref) async {
+            await Future<void>.delayed(const Duration(milliseconds: 200));
+            return fakeRepository;
+          }),
+          notificationServiceProvider
+              .overrideWith(_MockNotificationService.new),
+          locationPermissionServiceProvider
+              .overrideWith(_MockLocationPermissionService.new),
+          tripStateMachineProvider.overrideWith(_TestTripStateMachine.new),
+        ],
+      );
+      addTearDown(slowContainer.dispose);
+      await slowContainer.read(settingsServiceProvider.future);
+      // Same keep-alive pattern as readRecorder(): in the real app the
+      // tracking screen and AutoDetectionController hold these listeners.
+      final keepAlive =
+          slowContainer.listen(tripRecorderServiceProvider, (_, _) {});
+      addTearDown(keepAlive.close);
+      final keepAliveSm =
+          slowContainer.listen(tripStateMachineProvider, (_, _) {});
+      addTearDown(keepAliveSm.close);
+
+      // Deliberately NOT awaiting tripRecorderServiceProvider.future — the
+      // manual-start path reads the notifier and calls startRecording right
+      // after startDetecting, exactly as AutoDetectionController does.
+      slowContainer.read(tripStateMachineProvider.notifier).startDetecting();
+      await slowContainer
+          .read(tripRecorderServiceProvider.notifier)
+          .startRecording(confidenceScore: 1.0, activity: ActivityType.cycling);
+
+      expect(fakeRepository.savedTrips, hasLength(1));
+      expect(
+        slowContainer.read(tripStateMachineProvider).hasActiveTrip,
+        isTrue,
+      );
+      await slowContainer
+          .read(tripRecorderServiceProvider.notifier)
+          .stopRecording();
+    });
   });
 
   group('TripRecorderService - pause/resume bookkeeping', () {
