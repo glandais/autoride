@@ -47,8 +47,9 @@ esac
 [ -f android/key.properties ] ||
   die "android/key.properties is missing — a release build would be signed with DEBUG keys"
 
-# The iOS lanes authenticate with an App Store Connect API key. Without these, fastlane falls
-# through to an interactive Apple ID prompt in the middle of the run (see T039 Step 7).
+# The iOS lanes authenticate with an App Store Connect API key. The canonical values live in
+# ~/.secrets/autoride-asc.env (outside git, like the Play credentials); explicit env wins.
+[ -n "${ASC_KEY_ID:-}" ] || [ ! -f "$HOME/.secrets/autoride-asc.env" ] || . "$HOME/.secrets/autoride-asc.env"
 [ -n "${ASC_KEY_ID:-}" ] && [ -n "${ASC_ISSUER_ID:-}" ] && [ -n "${ASC_KEY_PATH:-}" ] ||
   die "ASC_KEY_ID / ASC_ISSUER_ID / ASC_KEY_PATH must be set (see T039 Step 7)"
 

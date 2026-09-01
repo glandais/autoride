@@ -11,6 +11,15 @@ default_platform(:ios)
 # it fails loudly naming the missing variable instead of falling through to an interactive
 # Apple ID prompt in the middle of an unattended release.
 def asc_api_key
+  # Canonical values live in ~/.secrets/autoride-asc.env (outside git); explicit env wins,
+  # so the lanes also work when invoked directly rather than through publish_beta.sh.
+  env_file = File.expand_path("~/.secrets/autoride-asc.env")
+  if !ENV["ASC_KEY_ID"] && File.exist?(env_file)
+    File.foreach(env_file) do |line|
+      next unless line =~ /^export\s+(ASC_\w+)="(.*)"$/
+      ENV[$1] ||= $2.sub("$HOME", Dir.home)
+    end
+  end
   app_store_connect_api_key(
     key_id: ENV.fetch("ASC_KEY_ID"),
     issuer_id: ENV.fetch("ASC_ISSUER_ID"),
