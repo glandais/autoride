@@ -36,6 +36,8 @@ Executed the same day as the audit, one commit per step, each by an Opus subagen
 
 | 8 — trip lifecycle in the database | (this change) | **L-068** (new) | `trips.status` (`active`/`completed`/`discarded`) added in schema **v2** with an `onUpgrade` that backfills existing rows as `completed`; the recorder inserts `active`, snapshots distance/max speed/provisional end time onto the row on the existing 30 s flush, and on stop either completes it or *deletes* a sub-`minTripDurationSeconds` false start (no end-of-trip notification for those, via `stopTrip(discarded: true)`); a new `TripRecoveryService` + `tripRecoveryProvider` closes trips left `active` by a process death, recomputing metrics from the persisted route points; every history/stats query now filters `status = 'completed'`. Tests 339 → 365. |
 
+| 9 — the end-of-trip notification tells the truth | (this change) | **L-069** (new) | `TripStateMachine.stopTrip` no longer reads `tripRecorderServiceProvider` for the numbers it announces: the recorder now hands it the finalized `Trip` (`stopTrip({discarded, finalTrip})`). The old path read the recorder's live `TripMetrics` *after* `_stopRecording` had zeroed them, so the "trip recorded" notification announced 0 m / 0 s / 0 km/h (or, on a different interleaving, a value up to one metrics tick stale) — and, being wrapped in `whenData`, it emitted nothing at all (foreground notification included) whenever that provider was loading or in error. `cancelForegroundNotification()` is now unconditional, and the duplicated `active:`/`paused:` bodies are factored into one `_finishRecording`. Tests 365 → 370. |
+
 **Decision (2026-09-01) — L-067: the foreground service covers the whole listening window, not just recordings.**
 The service was scoped to a recording (decision (d) of step 4c). That left the detection phase with no
 foreground service and no wake lock, so with the screen off Android suspends the process under Doze,
@@ -89,6 +91,22 @@ Gates after step 5: `flutter analyze` clean, **331/331 tests**. T029 and T033 cl
 **Code-complete but pending on-device validation** (`tasks/T041-device-validation.md`): the entire step-4 cluster — GPS-stops-when-stationary, trip-survives-backgrounding, recording under OS suspension, ≤5 %/hr drain, notification behaviour. T041/T006/T013 stay ⏳ until it passes.
 
 **Still open after steps 1–5 and 6a**: L-013 partially (T030 in progress: settings/history/detail screens uncovered); L-017's manual half (ASC app record, API key, first signing) and the new SPM permission-macro issue; the remaining release findings L-018, L-032…L-035, L-048, L-050, L-051 (step 6; L-049 closed in `1857040`); L-011's product half — `CyclingPatternDetector` is now fully tested but *still unwired*: `TripStartDetector` remains the live algorithm, and the detector cannot classify walking/driving until it gets a location source (maintainer decision: wire it or retire it); plus L-028 (manifest side), L-043, L-045 (TripMetrics), L-047, L-057.
+
+**Decision (2026-09-01) — L-069: the stop notification is built from the saved trip, not from provider state.**
+Two options were on the table: keep reading `tripRecorderServiceProvider` but reorder `_stopRecording` so
+the reset happens after `stopTrip`, or pass the finalized data down. The reorder was rejected — it fixes
+the zeroing but not the two other faults (the live metrics are a 1 s-granular ticker snapshot, not the
+final computation that excludes pauses; and `whenData` still swallows everything on a loading/error
+recorder) and it leaves the machine depending on the very provider that depends on it, an ordering hazard
+one edit away from returning. Passing the `Trip` (rather than a `TripMetrics`) also lets
+`trip_state_machine.dart` drop its `trip_recorder_service.dart` import entirely, so the notification now
+reports exactly the row that reached the database. `finalTrip` is optional: the three call sites that stop
+a trip from the *detecting* phase (the coordinator's failed-start and detection-timeout paths,
+`AutoDetectionController.startTripManually`'s failure path) have no trip to report and take the
+`detecting:` branch, which never notified; a `null` on the recorded branches degrades to "cancel the
+foreground notification, announce nothing" instead of announcing zeros. Every stop of a *recorded* ride
+still goes through `TripRecorderService.stopRecording()` — UI button, notification action, coordinator —
+which is the only caller that can know the final metrics.
 
 ## Method
 

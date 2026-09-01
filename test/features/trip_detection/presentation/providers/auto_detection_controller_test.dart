@@ -73,7 +73,7 @@ class _TestTripStateMachine extends TripStateMachine {
   }
 
   @override
-  void stopTrip({bool discarded = false}) {
+  void stopTrip({bool discarded = false, Trip? finalTrip}) {
     state.mapOrNull(
       detecting: (_) => state = const TripState.idle(),
       active: (_) => state = const TripState.idle(),

@@ -4,12 +4,27 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:autoride/features/trip_detection/data/services/trip_state_machine.dart';
 import 'package:autoride/features/trip_detection/data/services/notification_service.dart';
 import 'package:autoride/features/trip_detection/data/services/trip_recorder_service.dart';
+import 'package:autoride/features/trip_detection/domain/models/activity_confidence.dart';
+import 'package:autoride/features/trip_detection/domain/models/trip.dart';
 import 'package:autoride/features/trip_detection/domain/models/trip_state.dart';
 import 'package:autoride/features/settings/data/services/settings_service.dart';
 import 'package:autoride/core/constants/app_constants.dart';
 
-/// Mock NotificationService that skips all plugin calls
+/// One recorded call to [NotificationService.showTripStopNotification].
+class _StopNotification {
+  const _StopNotification(this.distance, this.duration, this.avgSpeed);
+
+  final double distance;
+  final Duration duration;
+  final double avgSpeed;
+}
+
+/// Mock NotificationService that skips all plugin calls and records what the
+/// state machine asked it to display.
 class _MockNotificationService extends NotificationService {
+  final List<_StopNotification> stopNotifications = [];
+  int foregroundCancelCount = 0;
+
   @override
   Future<void> build() async {
     // No-op: skip plugin initialization
@@ -23,10 +38,14 @@ class _MockNotificationService extends NotificationService {
     required double distance,
     required Duration duration,
     required double avgSpeed,
-  }) async {}
+  }) async {
+    stopNotifications.add(_StopNotification(distance, duration, avgSpeed));
+  }
 
   @override
-  Future<void> cancelForegroundNotification() async {}
+  Future<void> cancelForegroundNotification() async {
+    foregroundCancelCount++;
+  }
 }
 
 /// Mock TripRecorderService that returns empty metrics
@@ -41,6 +60,36 @@ class _MockTripRecorderService extends TripRecorderService {
   }
 }
 
+/// Recorder whose build never resolves successfully. Before L-069 the stop
+/// notification (and the foreground cancel with it) was wrapped in a
+/// `whenData` on this provider, so an error here silently swallowed both.
+class _FailingTripRecorderService extends TripRecorderService {
+  @override
+  Future<TripMetrics> build() async {
+    throw StateError('recorder unavailable');
+  }
+}
+
+/// A finalized ride, as the recorder hands it to `stopTrip`.
+Trip _finalTrip({
+  double distance = 4200.0,
+  int duration = 900,
+  double? avgSpeed = 16.8,
+}) {
+  return Trip(
+    id: 1,
+    startTime: DateTime.now().subtract(const Duration(minutes: 20)),
+    endTime: DateTime.now(),
+    distance: distance,
+    duration: duration,
+    avgSpeed: avgSpeed,
+    maxSpeed: 31.0,
+    detectedActivity: ActivityType.cycling,
+    confidenceScore: 0.9,
+    status: TripStatus.completed,
+  );
+}
+
 // NOTE: Some tests that trigger notifications may fail in unit test environment
 // due to flutter_local_notifications plugin not being available.
 // These tests pass functionally but fail at the plugin layer.
@@ -48,6 +97,7 @@ class _MockTripRecorderService extends TripRecorderService {
 
 void main() {
   late ProviderContainer container;
+  late _MockNotificationService notifications;
 
   setUpAll(() {
     // Initialize Flutter binding for plugin tests
@@ -65,10 +115,11 @@ void main() {
   });
 
   setUp(() async {
+    notifications = _MockNotificationService();
     container = ProviderContainer(
       overrides: [
         // Mock NotificationService to avoid flutter_local_notifications plugin
-        notificationServiceProvider.overrideWith(_MockNotificationService.new),
+        notificationServiceProvider.overrideWith(() => notifications),
         // Mock TripRecorderService to avoid database dependency
         tripRecorderServiceProvider.overrideWith(_MockTripRecorderService.new),
       ],
@@ -188,6 +239,82 @@ void main() {
         paused: (tripId, startTime, pauseStartTime) => fail('Should be Idle'),
       );
       expect(state.hasActiveTrip, isFalse);
+    });
+
+    test('stop notification reports the finalized trip metrics', () async {
+      final stateMachine = container.read(tripStateMachineProvider.notifier);
+
+      stateMachine.startDetecting();
+      stateMachine.startTripWithId(1);
+      stateMachine.stopTrip(finalTrip: _finalTrip());
+
+      final notification = notifications.stopNotifications.single;
+      expect(notification.distance, equals(4200.0));
+      expect(notification.duration, equals(const Duration(seconds: 900)));
+      expect(notification.avgSpeed, equals(16.8));
+      expect(notifications.foregroundCancelCount, equals(1));
+    });
+
+    test('stop from Paused also reports the finalized metrics', () async {
+      final stateMachine = container.read(tripStateMachineProvider.notifier);
+
+      stateMachine.startDetecting();
+      stateMachine.startTripWithId(1);
+      stateMachine.pauseTrip();
+      stateMachine.stopTrip(
+        finalTrip: _finalTrip(distance: 800, duration: 300),
+      );
+
+      final notification = notifications.stopNotifications.single;
+      expect(notification.distance, equals(800.0));
+      expect(notification.duration, equals(const Duration(seconds: 300)));
+      expect(container.read(tripStateMachineProvider).hasActiveTrip, isFalse);
+    });
+
+    test('a discarded trip is not announced but still clears the foreground '
+        'notification', () async {
+      final stateMachine = container.read(tripStateMachineProvider.notifier);
+
+      stateMachine.startDetecting();
+      stateMachine.startTripWithId(1);
+      stateMachine.stopTrip(discarded: true, finalTrip: _finalTrip());
+
+      expect(notifications.stopNotifications, isEmpty);
+      expect(notifications.foregroundCancelCount, equals(1));
+    });
+
+    test('the foreground notification is cancelled even when the recorder '
+        'provider is in error', () async {
+      final erroring = ProviderContainer(
+        overrides: [
+          notificationServiceProvider.overrideWith(() => notifications),
+          tripRecorderServiceProvider.overrideWith(
+            _FailingTripRecorderService.new,
+          ),
+        ],
+      );
+      addTearDown(erroring.dispose);
+      await erroring.read(settingsServiceProvider.future);
+
+      final stateMachine = erroring.read(tripStateMachineProvider.notifier);
+      stateMachine.startDetecting();
+      stateMachine.startTripWithId(1);
+      stateMachine.stopTrip(finalTrip: _finalTrip());
+
+      expect(notifications.stopNotifications, hasLength(1));
+      expect(notifications.foregroundCancelCount, equals(1));
+    });
+
+    test('a stop with no final trip still clears the foreground '
+        'notification', () async {
+      final stateMachine = container.read(tripStateMachineProvider.notifier);
+
+      stateMachine.startDetecting();
+      stateMachine.startTripWithId(1);
+      stateMachine.stopTrip();
+
+      expect(notifications.stopNotifications, isEmpty);
+      expect(notifications.foregroundCancelCount, equals(1));
     });
 
     test('should prevent invalid transitions', () async {

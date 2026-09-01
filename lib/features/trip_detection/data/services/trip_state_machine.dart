@@ -1,9 +1,9 @@
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
+import '../../domain/models/trip.dart';
 import '../../domain/models/trip_state.dart';
 import '../../../../core/constants/app_constants.dart';
 import 'notification_service.dart';
-import 'trip_recorder_service.dart';
 
 part 'trip_state_machine.g.dart';
 
@@ -66,62 +66,51 @@ class TripStateMachine extends _$TripStateMachine {
 
   /// Stop trip and return to Idle (manual stop or timeout).
   ///
+  /// [finalTrip] is the finalized ride the recorder has just written, and is
+  /// the only source the end-of-trip notification reads. It used to read the
+  /// recorder provider's live `TripMetrics` instead, which announced either a
+  /// value up to a metrics tick stale or — depending on the order of the
+  /// recorder's own cleanup — a freshly zeroed 0 m / 0 s / 0 km/h, and skipped
+  /// the notification entirely whenever that provider happened to be
+  /// loading/erroring (L-069).
+  ///
   /// [discarded] is set by the recorder when the recording was too short to be
   /// kept (its row is deleted, not saved). Such a ride must not announce
   /// itself with a "trip recorded" notification — but the foreground
   /// notification still has to be cancelled, or a phantom "trip in progress"
   /// would outlive the trip.
-  void stopTrip({bool discarded = false}) {
-    // Capture trip metrics before stopping (for notification)
-    final recorderAsync = ref.read(tripRecorderServiceProvider);
-
+  void stopTrip({bool discarded = false, Trip? finalTrip}) {
     state.mapOrNull(
       detecting: (_) {
         state = const TripState.idle();
       },
       active: (_) {
-        // Show trip stop notification with final metrics
-        recorderAsync.whenData((metrics) {
-          if (!discarded) {
-            ref
-                .read(notificationServiceProvider.notifier)
-                .showTripStopNotification(
-                  distance: metrics.distanceMeters,
-                  duration: Duration(seconds: metrics.durationSeconds),
-                  avgSpeed: metrics.avgSpeedKmh ?? 0.0,
-                );
-          }
-
-          // Cancel foreground notification
-          ref
-              .read(notificationServiceProvider.notifier)
-              .cancelForegroundNotification();
-        });
-
-        state = const TripState.idle();
+        _finishRecording(discarded: discarded, finalTrip: finalTrip);
       },
       paused: (_) {
-        // Show trip stop notification with final metrics
-        recorderAsync.whenData((metrics) {
-          if (!discarded) {
-            ref
-                .read(notificationServiceProvider.notifier)
-                .showTripStopNotification(
-                  distance: metrics.distanceMeters,
-                  duration: Duration(seconds: metrics.durationSeconds),
-                  avgSpeed: metrics.avgSpeedKmh ?? 0.0,
-                );
-          }
-
-          // Cancel foreground notification
-          ref
-              .read(notificationServiceProvider.notifier)
-              .cancelForegroundNotification();
-        });
-
-        state = const TripState.idle();
+        _finishRecording(discarded: discarded, finalTrip: finalTrip);
       },
     );
+  }
+
+  /// Close out a recording: announce it (unless discarded) and return to Idle.
+  ///
+  /// The foreground notification is cancelled unconditionally — it is the one
+  /// piece of UI that would otherwise survive the trip.
+  void _finishRecording({required bool discarded, required Trip? finalTrip}) {
+    final notifications = ref.read(notificationServiceProvider.notifier);
+
+    if (!discarded && finalTrip != null) {
+      notifications.showTripStopNotification(
+        distance: finalTrip.distance,
+        duration: Duration(seconds: finalTrip.duration),
+        avgSpeed: finalTrip.avgSpeed ?? 0.0,
+      );
+    }
+
+    notifications.cancelForegroundNotification();
+
+    state = const TripState.idle();
   }
 
   /// Check if detection phase has timed out

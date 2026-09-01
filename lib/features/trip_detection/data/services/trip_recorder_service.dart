@@ -371,9 +371,12 @@ class TripRecorderService extends _$TripRecorderService {
     _maxSpeedKmh = 0.0;
     _totalPauseDurationSeconds = 0;
 
-    // Update state machine. A discarded trip must not announce itself as a
-    // recorded ride.
-    _stateMachine!.stopTrip(discarded: discarded);
+    // Update state machine. The finalized trip is handed over explicitly: the
+    // end-of-trip notification must report the numbers just written to the
+    // database, not this provider's live metrics — which the reset above has
+    // already zeroed by the time the machine would read them (L-069). A
+    // discarded trip must not announce itself as a recorded ride.
+    _stateMachine!.stopTrip(discarded: discarded, finalTrip: finalTrip);
 
     // Reset UI metrics
     state = const AsyncValue.data(

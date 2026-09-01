@@ -155,9 +155,14 @@ class _TestTripStateMachine extends TripStateMachine {
   /// this flag is how the recorder says so.
   final List<bool> stopTripDiscardedFlags = [];
 
+  /// Every `finalTrip` the recorder handed to [stopTrip], newest last. The
+  /// notification is built from this, so it must carry the finalized metrics.
+  final List<Trip?> stopTripFinalTrips = [];
+
   @override
-  void stopTrip({bool discarded = false}) {
+  void stopTrip({bool discarded = false, Trip? finalTrip}) {
     stopTripDiscardedFlags.add(discarded);
+    stopTripFinalTrips.add(finalTrip);
     state.mapOrNull(
       detecting: (_) => state = const TripState.idle(),
       active: (_) => state = const TripState.idle(),
@@ -559,6 +564,43 @@ void main() {
         await recorder.stopRecording();
 
         expect(machine.stopTripDiscardedFlags, equals([true]));
+      },
+    );
+
+    test(
+      'the state machine is handed the finalized metrics, not the reset ones',
+      () async {
+        final recorder = await readRecorder();
+        final machine = container.read(
+          tripStateMachineProvider.notifier,
+        ) as _TestTripStateMachine;
+
+        fakeRepository.backdateStartBy = const Duration(minutes: 5);
+        await startTrip(recorder, confidenceScore: 0.9);
+        await pushFix(_fix(0));
+        await pushFix(_fix(2)); // ~22 m further north
+
+        final returned = await recorder.stopRecording();
+
+        // The trip handed over is the one written to the database, complete
+        // with its distance and its active (pause-excluded) duration — not the
+        // recorder's live metrics, which are zeroed by this point (L-069).
+        final handed = machine.stopTripFinalTrips.single;
+        expect(handed, isNotNull);
+        expect(handed, same(returned));
+        expect(handed!.distance, greaterThan(0.0));
+        expect(
+          handed.distance,
+          equals(fakeRepository.updatedTrips.single.distance),
+        );
+        expect(handed.duration, equals(returned.duration));
+        expect(handed.duration, greaterThan(0));
+        expect(handed.avgSpeed, isNotNull);
+
+        // Meanwhile the recorder's own metrics really are back to zero.
+        final metrics = container.read(tripRecorderServiceProvider).value!;
+        expect(metrics.distanceMeters, 0.0);
+        expect(metrics.durationSeconds, 0);
       },
     );
 
