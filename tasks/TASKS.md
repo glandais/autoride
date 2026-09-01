@@ -247,18 +247,19 @@
 ## Phase 8: Testing & Quality
 
 ### 8.1 Automated Testing
-- ☐ **T029**: Unit Tests (Business Logic)
+- ✅ **T029**: Unit Tests (Business Logic)
   - *Detail*: `tasks/T029-unit-tests.md` (create on request)
   - *Scope*: Repository, state machine, calculations
   - *Dependencies*: T010, T012
   - *Estimate*: 3-4 hours
-  - *Status note*: 190 unit tests already cover this stated scope (repository, state machine, detectors). Kept ☐ because the suite needs a recut, not more of the same: four test files never import the unit they are named for and `database_service_test` validates a duplicated schema (ledger L-011, L-014, L-026). The genuinely missing layer is T030's UI coverage.
+  - *Completed*: 2026-09-01 (`a3dd31c`, on top of T041's coordinator/recorder tests) — suite recut: every test file exercises the unit it is named for, database tests run the production schema (duplicated DDL helper deleted), 331 tests total (ledger L-011 test side, L-014, L-015, L-026)
 
-- ☐ **T030**: Widget Tests (UI Components)
+- ⏳ **T030**: Widget Tests (UI Components)
   - *Detail*: `tasks/T030-widget-tests.md` (create on request)
   - *Scope*: Screen tests with mocked providers
   - *Dependencies*: T022, T023, T024
   - *Estimate*: 3-4 hours
+  - *Status*: started 2026-09-01 (`99eae4c`) — 25 widget tests with shared fakes in `test/helpers/widget/`: onboarding permission flow, tracking screen, HomeShell session guarantee (ledger L-013). Remaining: settings screen, trip history/detail, InitialRouteScreen, map interactions
 
 - ☐ **T031**: Integration Tests (E2E Flow)
   - *Detail*: `tasks/T031-integration-tests.md` (create on request)
@@ -273,13 +274,12 @@
   - *Dependencies*: T006, T015
   - *Estimate*: 3-4 hours
 
-- ☐ **T033**: Code Quality & Linting
+- ✅ **T033**: Code Quality & Linting
   - *Detail*: `tasks/T033-code-quality.md` (create on request)
   - *Scope*: flutter analyze, code formatting, linting rules
   - *Dependencies*: All implementation tasks
   - *Estimate*: 2 hours
-  - *Status note*: `flutter analyze` is clean against the curated 20-rule lint set and CI enforces it, so the stated scope is effectively met; ☐ remains only because `analysis_options.yaml`'s `strong-mode` keys are dead config on Dart 3 (ledger L-042) and no formatting gate exists in CI (L-050).
-  - *Dependency caveat*: T038 (shipped) and T039 both list T033 as a dependency while it is still ☐ — the dependency is nominal, not a real gate. Resolve by closing T033 or dropping it from T038/T039 (ledger L-053).
+  - *Completed*: 2026-09-01 — analyze clean under the curated lint set with real strict modes (`strict-casts`/`strict-raw-types` since `11e74b7`, ledger L-042). The CI formatting gate is tracked under ledger step 6 (L-050), not here. This resolves the T038/T039 dependency caveat (L-053): the dependency is now satisfied.
 
 ---
 
@@ -364,13 +364,13 @@
 ## Progress Summary
 
 **Total Tasks**: 41
-**Completed**: 23
-**In Progress**: 5 (T006, T013, T037, T038, T041)
-**Pending**: 13
+**Completed**: 25
+**In Progress**: 6 (T006, T013, T030, T037, T038, T041)
+**Pending**: 10
 **Blocked**: 0
 
 **Current Phase**: Phase 10 - Release Preparation, alongside the Phase 11 audit backlog
-**Last Completed**: T036 - App Icons & Splash Screen (2026-07-25)
+**Last Completed**: T029/T033 - test-suite recut and code quality (2026-09-01)
 **Current Task**: T041 - Core Tracking-Pipeline Refactor (code complete, awaiting on-device validation — `tasks/T041-device-validation.md`). T038 open on manual Play Console setup; T037 open (§5.6/§5.7).
 **Next Task**: T039 - iOS Release Configuration (T038 now owns the version scheme and `publish_beta.sh`, so T039 can extend both)
 **Audit backlog**: `tasks/AUDIT-FINDINGS.md` (2026-06-17) and `tasks/LEDGER.md` (2026-08-31) record open defects that are not otherwise tracked here; the blocked core-pipeline cluster is T041.
