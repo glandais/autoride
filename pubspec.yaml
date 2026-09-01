@@ -4,7 +4,7 @@ publish_to: 'none'
 # X.Y.Z is the user-visible marketing version, bumped by hand.
 # +N is the build number: bumped by publish_beta.sh on every store upload, never reset.
 # Single source of truth for both platforms (Android versionCode/Name, iOS CFBundleVersion).
-version: 1.0.0+5
+version: 1.0.0+6
 
 environment:
   sdk: ^3.13.0
