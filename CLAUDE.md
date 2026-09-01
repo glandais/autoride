@@ -10,6 +10,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 dart run build_runner watch
 
 # Quality gates (run in order)
+./check.sh                       # pub get + codegen + analyze + test (what CI runs)
 flutter analyze                  # MUST pass before testing
 flutter test                     # All tests must pass
 flutter test test/path/to/specific_test.dart  # Run single test
@@ -64,11 +65,10 @@ flutter run --release            # Test on physical device (sensors/GPS)
 6. Update progress summary in `tasks/TASKS.md`
 
 **Quality Gates** (run in this order):
-1. Code generation: `dart run build_runner build`
-2. Static analysis: `flutter analyze` (MUST pass)
-3. Unit tests: `flutter test`
-4. Physical device test (for sensor/location tasks)
-5. Wait for user to run `/commit` (NEVER commit autonomously)
+1. `./check.sh` — pub get, code generation, `flutter analyze` (MUST pass), `flutter test`.
+   Same script CI and `publish_beta.sh` invoke, so there is one definition of "green".
+2. Physical device test (for sensor/location tasks)
+3. Wait for user to run `/commit` (NEVER commit autonomously)
 
 **Task Dependencies**: Never start a task before its dependencies are complete. See `tasks/TASKS.md` for dependency tree.
 

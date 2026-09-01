@@ -144,6 +144,16 @@ The only way to run AutoRide right now is to [build it from source](#building-fr
 
 ### Development Workflow
 
+**Quality gates (all of them, in order)**
+```bash
+# pub get -> code generation -> format check -> analyze -> test. This is exactly what CI runs
+# and what ./publish_beta.sh runs before it will publish anything.
+./check.sh
+
+# One-time per clone: keep the bulk-reformatting commit out of `git blame`.
+git config blame.ignoreRevsFile .git-blame-ignore-revs
+```
+
 **Code Generation (Riverpod)**
 ```bash
 # Watch mode - auto-generates code on file changes
