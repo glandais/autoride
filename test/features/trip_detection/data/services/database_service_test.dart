@@ -92,6 +92,7 @@ void main() {
           'confidence_score',
           'user_confirmed',
           'status',
+          'pause_duration',
         }),
       );
 
@@ -108,6 +109,7 @@ void main() {
       expect(notNull['avg_speed'], isFalse);
       expect(notNull['max_speed'], isFalse);
       expect(notNull['status'], isTrue);
+      expect(notNull['pause_duration'], isTrue);
 
       // A row written without a status is a finished trip, so history keeps
       // showing it after the upgrade.
@@ -115,6 +117,9 @@ void main() {
         for (final c in columns) c['name'] as String: c['dflt_value'],
       };
       expect(defaults['status'], equals("'${TripStatus.completed.name}'"));
+      // A trip written before pauses were persisted reports no stops, not a
+      // wrong number (L-073).
+      expect(defaults['pause_duration'], equals('0'));
     });
 
     test('creates the route_points table with the shipped columns', () async {
@@ -306,8 +311,8 @@ void main() {
       );
     }
 
-    test('the shipped schema version is 2', () {
-      expect(AppConstants.databaseVersion, equals(2));
+    test('the shipped schema version is 3', () {
+      expect(AppConstants.databaseVersion, equals(3));
     });
 
     test(
@@ -330,7 +335,7 @@ void main() {
 
         final after = await legacy.rawQuery('PRAGMA table_info(trips)');
         expect(after.map((c) => c['name']), contains('status'));
-        expect(after, hasLength(11));
+        expect(after, hasLength(12));
 
         final rows = await legacy.query(
           'trips',
@@ -370,8 +375,142 @@ void main() {
       expect(rows, hasLength(1));
 
       final columns = await db.rawQuery('PRAGMA table_info(trips)');
-      expect(columns, hasLength(11));
+      expect(columns, hasLength(12));
     });
+
+    /// Builds the v2 schema by hand, for the same reason `openV1Database`
+    /// exists: the shipped `onCreate` now emits v3. Verbatim copy of the v2
+    /// DDL as of `4559820`.
+    Future<Database> openV2Database() async {
+      return databaseFactory.openDatabase(
+        inMemoryDatabasePath,
+        options: OpenDatabaseOptions(
+          version: 2,
+          onCreate: (db, version) async {
+            await db.execute('''
+              CREATE TABLE trips (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                start_time INTEGER NOT NULL,
+                end_time INTEGER NOT NULL,
+                distance REAL NOT NULL,
+                duration INTEGER NOT NULL,
+                avg_speed REAL,
+                max_speed REAL,
+                detected_activity TEXT NOT NULL,
+                confidence_score REAL NOT NULL,
+                user_confirmed INTEGER DEFAULT 0,
+                status TEXT NOT NULL DEFAULT 'completed'
+              )
+            ''');
+            await db.execute('''
+              CREATE TABLE route_points (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                trip_id INTEGER NOT NULL,
+                latitude REAL NOT NULL,
+                longitude REAL NOT NULL,
+                altitude REAL,
+                timestamp INTEGER NOT NULL,
+                accuracy REAL,
+                speed REAL,
+                FOREIGN KEY (trip_id) REFERENCES trips(id) ON DELETE CASCADE
+              )
+            ''');
+            await db.execute('CREATE INDEX idx_trip_status ON trips(status)');
+          },
+          onConfigure: service.onConfigure,
+        ),
+      );
+    }
+
+    test(
+      'v2 -> v3 adds pause_duration and defaults existing rows to 0 (L-073)',
+      () async {
+        final legacy = await openV2Database();
+        addTearDown(legacy.close);
+
+        final legacyId = await legacy.insert('trips', _tripMap());
+
+        final before = await legacy.rawQuery('PRAGMA table_info(trips)');
+        expect(
+          before.map((c) => c['name']),
+          isNot(contains('pause_duration')),
+          reason: 'precondition: the v2 schema has no pause_duration column',
+        );
+
+        await service.onUpgrade(legacy, 2, AppConstants.databaseVersion);
+
+        final after = await legacy.rawQuery('PRAGMA table_info(trips)');
+        final pauseColumn = after.firstWhere(
+          (c) => c['name'] == 'pause_duration',
+        );
+        expect(pauseColumn['notnull'], equals(1));
+        expect(pauseColumn['dflt_value'], equals('0'));
+
+        final rows = await legacy.query(
+          'trips',
+          where: 'id = ?',
+          whereArgs: [legacyId],
+        );
+        expect(rows.first['pause_duration'], equals(0));
+        expect(
+          Trip.fromMap(rows.first, const []).pauseDuration,
+          equals(0),
+          reason: 'a migrated row reports no stops, not a wrong number',
+        );
+        expect(
+          rows.first['status'],
+          equals(TripStatus.completed.name),
+          reason: 'the v2 status column survives the v3 migration untouched',
+        );
+      },
+    );
+
+    test('v1 -> v3 in one hop applies both steps', () async {
+      final legacy = await openV1Database();
+      addTearDown(legacy.close);
+
+      final legacyId = await legacy.insert('trips', _tripMap());
+      await service.onUpgrade(legacy, 1, AppConstants.databaseVersion);
+
+      final rows = await legacy.query(
+        'trips',
+        where: 'id = ?',
+        whereArgs: [legacyId],
+      );
+      final trip = Trip.fromMap(rows.first, const []);
+      expect(trip.status, equals(TripStatus.completed));
+      expect(trip.pauseDuration, equals(0));
+    });
+
+    test(
+      'round-trips pauseDuration through the shipped schema (L-073)',
+      () async {
+        final trip = Trip(
+          startTime: DateTime.fromMillisecondsSinceEpoch(1700000000000),
+          endTime: DateTime.fromMillisecondsSinceEpoch(1700003600000),
+          distance: 12000.0,
+          duration: 3000,
+          detectedActivity: ActivityType.cycling,
+          confidenceScore: 0.9,
+          avgSpeed: 14.4,
+          maxSpeed: 31.0,
+          pauseDuration: 600,
+        );
+
+        final id = await db.insert('trips', trip.toMap());
+        final rows = await db.query('trips', where: 'id = ?', whereArgs: [id]);
+
+        expect(rows.first['pause_duration'], equals(600));
+
+        final readBack = Trip.fromMap(rows.first, const []);
+        expect(readBack.pauseDuration, equals(600));
+        expect(readBack.duration, equals(3000));
+        expect(readBack.movingDuration, equals(const Duration(seconds: 3000)));
+        expect(readBack.pausedDuration, equals(const Duration(seconds: 600)));
+        expect(readBack.totalDuration, equals(const Duration(seconds: 3600)));
+        expect(readBack.totalDuration, equals(readBack.tripDuration));
+      },
+    );
   });
 
   group('databaseProvider', () {

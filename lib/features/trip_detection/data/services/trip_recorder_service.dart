@@ -97,9 +97,15 @@ class TripRecorderService extends _$TripRecorderService {
   Timer? _flushTimer;
   Timer? _metricsTimer;
 
-  // Pause tracking
+  // Pause tracking.
+  //
+  // Kept as a `Duration`, i.e. at millisecond resolution, and rounded to whole
+  // seconds only where it is written out (the 30 s snapshot and the final
+  // trip). Accumulating `.inSeconds` per pause instead truncated up to 999 ms
+  // *each time*, so a ride with many short stops — every red light on a
+  // commute — drifted its moving time upwards by seconds (L-073).
   DateTime? _pauseStartTime;
-  int _totalPauseDurationSeconds = 0;
+  Duration _totalPauseDuration = Duration.zero;
 
   // Metrics
   double _totalDistanceMeters = 0.0;
@@ -216,7 +222,7 @@ class TripRecorderService extends _$TripRecorderService {
     // Reset metrics
     _totalDistanceMeters = 0.0;
     _maxSpeedKmh = 0.0;
-    _totalPauseDurationSeconds = 0;
+    _totalPauseDuration = Duration.zero;
     _lastLocation = null;
 
     // Do NOT clear the buffer: it may still hold points from a previous trip
@@ -259,8 +265,7 @@ class TripRecorderService extends _$TripRecorderService {
     if (_activeTrip == null || _pauseStartTime == null) return;
 
     // Calculate pause duration
-    final pauseDuration = DateTime.now().difference(_pauseStartTime!);
-    _totalPauseDurationSeconds += pauseDuration.inSeconds;
+    _totalPauseDuration += DateTime.now().difference(_pauseStartTime!);
     _pauseStartTime = null;
 
     _stateMachine!.resumeTrip();
@@ -289,8 +294,7 @@ class TripRecorderService extends _$TripRecorderService {
 
     // If still paused, calculate final pause duration
     if (_pauseStartTime != null) {
-      final pauseDuration = DateTime.now().difference(_pauseStartTime!);
-      _totalPauseDurationSeconds += pauseDuration.inSeconds;
+      _totalPauseDuration += DateTime.now().difference(_pauseStartTime!);
       _pauseStartTime = null;
     }
 
@@ -310,10 +314,12 @@ class TripRecorderService extends _$TripRecorderService {
       );
     }
 
-    // Calculate final metrics
+    // Calculate final metrics. `duration` is the MOVING time and
+    // `pauseDuration` the stopped time; the millisecond-resolution pause total
+    // is rounded here, once, rather than at every pause.
     final endTime = DateTime.now();
-    final totalDuration = endTime.difference(_activeTrip!.startTime).inSeconds;
-    final activeDuration = totalDuration - _totalPauseDurationSeconds;
+    final elapsed = endTime.difference(_activeTrip!.startTime);
+    final activeDuration = _movingSeconds(elapsed, _totalPauseDuration);
     final avgSpeed = activeDuration > 0
         ? (_totalDistanceMeters / activeDuration) *
               3.6 // m/s to km/h
@@ -324,6 +330,7 @@ class TripRecorderService extends _$TripRecorderService {
       endTime: endTime,
       distance: _totalDistanceMeters,
       duration: activeDuration,
+      pauseDuration: _totalPauseDuration.inSeconds,
       avgSpeed: avgSpeed,
       maxSpeed: _maxSpeedKmh > 0 ? _maxSpeedKmh : null,
     );
@@ -369,7 +376,7 @@ class TripRecorderService extends _$TripRecorderService {
     _lastLocation = null;
     _totalDistanceMeters = 0.0;
     _maxSpeedKmh = 0.0;
-    _totalPauseDurationSeconds = 0;
+    _totalPauseDuration = Duration.zero;
 
     // Update state machine. The finalized trip is handed over explicitly: the
     // end-of-trip notification must report the numbers just written to the
@@ -402,8 +409,7 @@ class TripRecorderService extends _$TripRecorderService {
     } else if (previous?.isRecording == false && next.isRecording == true) {
       // Resumed
       if (_pauseStartTime != null) {
-        final pauseDuration = DateTime.now().difference(_pauseStartTime!);
-        _totalPauseDurationSeconds += pauseDuration.inSeconds;
+        _totalPauseDuration += DateTime.now().difference(_pauseStartTime!);
         _pauseStartTime = null;
       }
     }
@@ -558,10 +564,11 @@ class TripRecorderService extends _$TripRecorderService {
 
   /// Snapshot the in-memory metrics onto the active trip row.
   ///
-  /// `endTime` is provisional (now), and `duration` excludes the pauses
-  /// accumulated so far, including one in progress — the same arithmetic the
-  /// live metrics use. The row stays `active`: only a stop or the recovery
-  /// finalizes it.
+  /// `endTime` is provisional (now), `duration` excludes the pauses
+  /// accumulated so far — including one in progress — and `pause_duration`
+  /// records exactly what was excluded, so a process death leaves a row whose
+  /// two counters still add up (L-073). Same arithmetic as the live metrics.
+  /// The row stays `active`: only a stop or the recovery finalizes it.
   Future<void> _persistPartialMetrics() async {
     final trip = _activeTrip;
     // `_flushTimer == null` means a stop is under way (it cancels the timer
@@ -570,11 +577,11 @@ class TripRecorderService extends _$TripRecorderService {
     if (trip == null || _flushTimer == null) return;
 
     final now = DateTime.now();
-    var activeDuration =
-        now.difference(trip.startTime).inSeconds - _totalPauseDurationSeconds;
-    if (_pauseStartTime != null) {
-      activeDuration -= now.difference(_pauseStartTime!).inSeconds;
-    }
+    final pauseSoFar = _pauseTotalAt(now);
+    final activeDuration = _movingSeconds(
+      now.difference(trip.startTime),
+      pauseSoFar,
+    );
 
     try {
       await _repository!.updateTrip(
@@ -582,6 +589,7 @@ class TripRecorderService extends _$TripRecorderService {
           endTime: now,
           distance: _totalDistanceMeters,
           duration: activeDuration,
+          pauseDuration: pauseSoFar.inSeconds,
           avgSpeed: activeDuration > 0
               ? (_totalDistanceMeters / activeDuration) * 3.6
               : null,
@@ -629,15 +637,12 @@ class TripRecorderService extends _$TripRecorderService {
     if (_activeTrip == null) return;
 
     final now = DateTime.now();
-    final totalDuration = now.difference(_activeTrip!.startTime).inSeconds;
 
-    // Calculate active duration (exclude pauses)
-    int activeDuration = totalDuration - _totalPauseDurationSeconds;
-    if (_pauseStartTime != null) {
-      // Currently paused - exclude current pause duration
-      final currentPauseDuration = now.difference(_pauseStartTime!).inSeconds;
-      activeDuration -= currentPauseDuration;
-    }
+    // Calculate active duration (exclude pauses, the one in progress included)
+    final activeDuration = _movingSeconds(
+      now.difference(_activeTrip!.startTime),
+      _pauseTotalAt(now),
+    );
 
     final avgSpeed = activeDuration > 0
         ? (_totalDistanceMeters / activeDuration) *
@@ -653,5 +658,22 @@ class TripRecorderService extends _$TripRecorderService {
         routePointCount: _routePointBuffer.length,
       ),
     );
+  }
+
+  /// Total time paused as of [now], including a pause still in progress.
+  Duration _pauseTotalAt(DateTime now) {
+    final start = _pauseStartTime;
+    if (start == null) return _totalPauseDuration;
+    return _totalPauseDuration + now.difference(start);
+  }
+
+  /// Whole seconds of movement in [elapsed] once [paused] is taken out.
+  ///
+  /// Rounds once, at the point of use, and never returns a negative: clock
+  /// adjustments (or a pause that outlives the recording by a few ms) must not
+  /// produce a trip of −3 s.
+  static int _movingSeconds(Duration elapsed, Duration paused) {
+    final moving = elapsed - paused;
+    return moving.isNegative ? 0 : moving.inSeconds;
   }
 }

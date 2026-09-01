@@ -42,6 +42,8 @@ Executed the same day as the audit, one commit per step, each by an Opus subagen
 | 11 — the app says when background location is insufficient | `4559820` | **L-071** (new); L-030's iOS half | `backgroundLocationStatusProvider` reads the *real* OS grant (`locationAlways` via permission_handler **plus** geolocator's accuracy) as `BackgroundLocationState` with `issue ∈ {alwaysMissing, preciseMissing, none}`, re-read on app resume and after every request. A banner above `HomeShell`'s navigation bar and the settings "Background location" switch (now bound to the OS grant, not the stored preference) show the platform-specific fix and open app settings. Fixed on the way: `PermissionRationaleDialog.show` double-popped (answer always `null`, caller's route removed), so the settings toggle had never worked. `Info.plist` gains `NSLocationTemporaryUsageDescriptionDictionary` (not yet requested from Dart). Podfile `PERMISSION_*` macros confirmed dead under SPM but harmless — the plugin's `Package.swift` derives them from `Info.plist`. Tests 376 → 402. Verified on iPhone 13 Pro. |
 | 12 — the app survives its own first launch | (this change) | **L-072** (new) | `BackgroundLocationService.initialize()` awaits `notificationServiceProvider.future` before `configure()`. The foreground-service notification posts on `AppConstants.tripTrackingChannelId`, but that channel is created by `NotificationService.build()`, which nothing awaited: on a device where the channel did not already exist, `startService()` raised `CannotPostForegroundServiceNotificationException: Bad notification for startForeground` and Android crash-looped the process until `AppStandbyController` restricted the app — it simply vanished. Notification channels persist across launches, so every dev and TestFlight/Play device that had ever run the app was immune; only a **first launch after a clean install** hit it, i.e. exactly what a new Play Store user gets. Found on Pixel 6a (Android 17) after uninstalling the Play build to sideload a local release APK. |
 
+| 13 — a trip records how long it stood still | (this change) | **L-073** (new) | `trips.pause_duration` (seconds, `INTEGER NOT NULL DEFAULT 0`) added in schema **v3**. `duration` has always been the *moving* time — the recorder subtracts the pauses before writing it — but the subtrahend lived only in `TripRecorderService`'s memory, so "45 min moving, 8 min stopped" was unreconstructible and the startup recovery had to assume `duration = end − start`. The recorder now writes the pause total on the final update *and* on the 30 s snapshot, so an interrupted trip recovers as `(end − start) − pauseDuration` (floored at 0, clamped to the surviving span) instead of over-counting every stop as ride time. Rounding fixed while in there: `_totalPauseDuration` is a `Duration` (ms) rounded once at the write, not `+= pauseDuration.inSeconds` per pause — ten 200 ms stops used to round away to 0 s and inflate the moving time. `Trip` gains `pauseDuration` plus `movingDuration` / `pausedDuration` / `totalDuration`, and the detail screen shows **Moving / Stopped / Total** tiles when `pauseDuration > 0` (otherwise the grid is unchanged, down to the "Duration" label). Tests 408 → 423 (+15). |
+
 **Decision (2026-09-01) — L-071: the app reports the OS grant it actually has, and the fix is a settings link.**
 Two facts about iOS drove this. First, "Always" is never offered in the first location prompt: the
 system asks "While Using / Once / Don't Allow", and the "Change to Always?" upgrade dialog appears once
@@ -75,6 +77,37 @@ coarse-only) reads as granted while positions are kilometres off. Choices:
 The `PermissionRationaleDialog.show` double pop was found because the settings switch never reached the
 request: its buttons already pop, and `show`'s callbacks popped again, so the future resolved `null` and
 the *settings screen* left the navigator. `show` now captures the answer from the callbacks.
+
+**Decision (2026-09-01) — L-073: the stopped time is a stored column, not a re-derivation, and the individual intervals are not stored.**
+`duration` was already the moving time, so nothing about how a ride reads had to change — the only
+question was where the number that was subtracted goes. Four choices:
+
+* **A total, not a table.** A `trip_pauses` table (one row per interval: start, end, whether it was the
+  auto-pause or the user's button) would answer questions nothing asks today — where on the route the
+  rider stopped, how the auto-pause behaved over a ride, a moving-time chart. Every display surface that
+  exists wants one number, and the total is exactly recoverable from the intervals if that changes, so
+  the table stays a **possible extension**, deliberately not built here. Whoever builds it should note
+  the two write points (`_stopRecording` and `_persistPartialMetrics`) and that the recovery would then
+  be able to close an interval left open by a process death, which the total cannot.
+* **Stored, not derived.** `pauseDuration` could have been computed as `tripDuration − duration` instead
+  of persisted. It cannot: `duration` is floored at 0 and rounded, `endTime` is provisional between
+  snapshots, and the recovery *rewrites* `endTime` to the last route point — so the difference silently
+  becomes "however much of the ride was lost", not "how long the rider stood still". A column that says
+  0 for pre-v3 rows is honest; a subtraction that invents 4 minutes of stopping is not.
+* **Rounded once, at the write.** `_totalPauseDuration += pause.inSeconds` truncated up to 999 ms *per
+  pause*. Auto-pause fires at every stop of a commute, so the error accumulated in one direction: the
+  moving time drifted upwards and the average speed with it. The total is now a `Duration` and the
+  in-progress pause is added on demand (`_pauseTotalAt`), with `_movingSeconds` doing the single
+  rounding — and clamping at 0, so a clock adjustment cannot produce a −3 s ride.
+* **The recovery trusts the snapshot only as far as it goes.** A pause total larger than the span the
+  surviving route points describe (the snapshot outlived the last point that reached disk) is clamped to
+  that span rather than producing a negative duration. What is genuinely lost is at most one flush
+  interval of an in-progress pause — 30 s — which is well inside the noise of a recovered ride.
+
+On the UI: the fourth tile pair appears only when `pauseDuration > 0`, and the existing "Duration" tile is
+relabelled "Moving" only in that case. A "Stopped: 0s" tile on every pre-v3 ride would be a worse lie than
+silence, and renaming a label users already read costs more than it explains when there is nothing beside
+it to confuse it with.
 
 **Decision (2026-09-01) — L-067: the foreground service covers the whole listening window, not just recordings.**
 The service was scoped to a recording (decision (d) of step 4c). That left the detection phase with no

@@ -520,6 +520,89 @@ void main() {
       expect(container.read(tripStateMachineProvider).isRecording, isTrue);
     });
 
+    test('the finalized trip carries the pause total (L-073)', () async {
+      final recorder = await readRecorder();
+
+      fakeRepository.backdateStartBy = const Duration(minutes: 5);
+      await startTrip(recorder, confidenceScore: 0.9);
+
+      // A real pause: paused, some wall-clock time passes, resumed.
+      await recorder.pauseRecording();
+      await Future<void>.delayed(const Duration(milliseconds: 1100));
+      await recorder.resumeRecording();
+
+      final finalTrip = await recorder.stopRecording();
+
+      expect(finalTrip.pauseDuration, greaterThanOrEqualTo(1));
+      expect(finalTrip.pauseDuration, lessThan(5));
+      expect(
+        fakeRepository.updatedTrips.single.pauseDuration,
+        equals(finalTrip.pauseDuration),
+        reason: 'the pause total must reach the database, not just the model',
+      );
+
+      // `duration` is the MOVING time, so the pause is out of it; the two
+      // together account for the elapsed wall clock (± the 1 s rounding of
+      // each counter).
+      final elapsed = finalTrip.tripDuration.inSeconds;
+      expect(finalTrip.duration, lessThanOrEqualTo(elapsed));
+      expect(finalTrip.duration + finalTrip.pauseDuration, closeTo(elapsed, 1));
+    });
+
+    test('a trip with no pause records a zero pause total', () async {
+      final recorder = await readRecorder();
+
+      fakeRepository.backdateStartBy = const Duration(minutes: 5);
+      await startTrip(recorder, confidenceScore: 0.9);
+
+      final finalTrip = await recorder.stopRecording();
+
+      expect(finalTrip.pauseDuration, equals(0));
+      expect(finalTrip.duration, equals(finalTrip.tripDuration.inSeconds));
+    });
+
+    test('a pause still open at stop is counted (L-073)', () async {
+      final recorder = await readRecorder();
+
+      fakeRepository.backdateStartBy = const Duration(minutes: 5);
+      await startTrip(recorder, confidenceScore: 0.9);
+      await recorder.pauseRecording();
+      await Future<void>.delayed(const Duration(milliseconds: 1100));
+
+      // Stopped without resuming first: the in-progress pause is closed by
+      // the stop path itself.
+      final finalTrip = await recorder.stopRecording();
+
+      expect(finalTrip.pauseDuration, greaterThanOrEqualTo(1));
+    });
+
+    test(
+      'many short pauses do not inflate the moving time (rounding, L-073)',
+      () async {
+        final recorder = await readRecorder();
+
+        fakeRepository.backdateStartBy = const Duration(minutes: 5);
+        await startTrip(recorder, confidenceScore: 0.9);
+
+        // Ten sub-second pauses. The old `+= pauseDuration.inSeconds` counted
+        // every one of them as 0 s, so ~2 s of stopping vanished into the
+        // moving time; keeping a Duration and rounding once recovers it.
+        for (var i = 0; i < 10; i++) {
+          await recorder.pauseRecording();
+          await Future<void>.delayed(const Duration(milliseconds: 200));
+          await recorder.resumeRecording();
+        }
+
+        final finalTrip = await recorder.stopRecording();
+
+        expect(
+          finalTrip.pauseDuration,
+          greaterThanOrEqualTo(1),
+          reason: '10 x 200 ms of stopping must not round away to 0 s',
+        );
+      },
+    );
+
     test('stop while paused still finalizes the trip', () async {
       final recorder = await readRecorder();
 
@@ -644,10 +727,50 @@ void main() {
 
         final snapshot = fakeRepository.updatedTrips.single;
         expect(snapshot.status, TripStatus.active);
+        expect(snapshot.pauseDuration, equals(0));
         expect(snapshot.distance, closeTo(22.3, 1.0));
         expect(snapshot.maxSpeed, isNotNull);
         expect(snapshot.endTime.isAfter(snapshot.startTime), isTrue);
         expect(fakeRepository.savedRoutePointBatches.single, hasLength(2));
+      },
+    );
+
+    test('the periodic flush snapshots the pause total too (L-073)', () async {
+      final recorder = await readRecorder();
+      fakeRepository.backdateStartBy = const Duration(minutes: 5);
+      await startTrip(recorder);
+
+      await recorder.pauseRecording();
+      await Future<void>.delayed(const Duration(milliseconds: 1100));
+      await recorder.resumeRecording();
+
+      await recorder.debugFlushProgress();
+
+      final snapshot = fakeRepository.updatedTrips.last;
+      expect(snapshot.status, TripStatus.active);
+      expect(snapshot.pauseDuration, greaterThanOrEqualTo(1));
+      expect(
+        snapshot.duration + snapshot.pauseDuration,
+        closeTo(snapshot.tripDuration.inSeconds, 1),
+        reason: 'the interrupted-trip recovery relies on these adding up',
+      );
+    });
+
+    test(
+      'a snapshot taken mid-pause already counts the open pause (L-073)',
+      () async {
+        final recorder = await readRecorder();
+        fakeRepository.backdateStartBy = const Duration(minutes: 5);
+        await startTrip(recorder);
+
+        await recorder.pauseRecording();
+        await Future<void>.delayed(const Duration(milliseconds: 1100));
+
+        // Killed while stopped at a light: this is the row recovery sees.
+        await recorder.debugFlushProgress();
+
+        final snapshot = fakeRepository.updatedTrips.last;
+        expect(snapshot.pauseDuration, greaterThanOrEqualTo(1));
       },
     );
   });

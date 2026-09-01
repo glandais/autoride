@@ -36,7 +36,10 @@ void main() {
   /// Base time all fixtures hang off, so durations are exact.
   final start = DateTime(2026, 9, 1, 8, 0, 0);
 
-  Future<int> insertActiveTrip({DateTime? startTime}) async {
+  Future<int> insertActiveTrip({
+    DateTime? startTime,
+    int pauseDuration = 0,
+  }) async {
     final trip = Trip(
       startTime: startTime ?? start,
       // What `_startRecording` writes: end == start, no metrics yet.
@@ -46,6 +49,7 @@ void main() {
       detectedActivity: ActivityType.cycling,
       confidenceScore: 0.8,
       status: TripStatus.active,
+      pauseDuration: pauseDuration,
     );
     final saved = await repository.saveTrip(trip);
     return saved.id!;
@@ -178,6 +182,29 @@ void main() {
       },
     );
 
+    test(
+      'an interrupted trip keeps its snapshotted pause total (L-073)',
+      () async {
+        // 20 points, 10 s apart: 190 s of elapsed ride, of which the recorder
+        // had already snapshotted 100 s as stopped.
+        final tripId = await insertActiveTrip(pauseDuration: 100);
+        await insertPoints(tripId, count: 20);
+
+        final report = await recovery.recoverInterruptedTrips();
+
+        expect(report.completed, hasLength(1));
+        final recovered = report.completed.single;
+        expect(recovered.pauseDuration, equals(100));
+        expect(recovered.duration, equals(190 - 100));
+
+        // And it is what the database now holds, not just what was returned.
+        final persisted = await repository.getTripById(tripId);
+        expect(persisted!.pauseDuration, equals(100));
+        expect(persisted.duration, equals(90));
+        expect(persisted.status, TripStatus.completed);
+      },
+    );
+
     test('leaves completed trips untouched', () async {
       final finished = await repository.saveTrip(
         Trip(
@@ -226,6 +253,9 @@ void main() {
       status: TripStatus.active,
     );
 
+    Trip pausedTripAt(DateTime startTime, int pauseSeconds) =>
+        tripAt(startTime).copyWith(pauseDuration: pauseSeconds);
+
     RoutePoint point(int index, {double speed = 5.0}) => RoutePoint(
       tripId: 1,
       latitude: 48.8566 + index * 0.0001,
@@ -257,9 +287,11 @@ void main() {
       expect(rebuilt.distance, closeTo(22.2, 1.0));
     });
 
-    test('duration ignores pauses (they are not recoverable)', () {
-      // A 10-minute gap between two points is indistinguishable from a pause
-      // after the fact, so it counts as ride time — the safe direction.
+    test('an unsnapshotted gap counts as ride time', () {
+      // Nothing was snapshotted onto the row (pre-v3, or killed inside the
+      // first 30 s), and a 10-minute gap between two points is
+      // indistinguishable from a pause after the fact, so it counts as ride
+      // time — the safe direction.
       final rebuilt = TripRecoveryService.rebuildFromRoutePoints(
         tripAt(start),
         [
@@ -275,7 +307,53 @@ void main() {
       )!;
 
       expect(rebuilt.duration, 600);
+      expect(rebuilt.pauseDuration, 0);
       expect(rebuilt.isValidTrip, isTrue);
+    });
+
+    test('subtracts the snapshotted pause total (L-073)', () {
+      // The same 10-minute gap, but this time the recorder's 30 s flush had
+      // written 8 minutes of pause onto the row before the process died.
+      final rebuilt = TripRecoveryService.rebuildFromRoutePoints(
+        pausedTripAt(start, 480),
+        [
+          point(0),
+          RoutePoint(
+            tripId: 1,
+            latitude: 48.8576,
+            longitude: 2.3522,
+            timestamp: start.add(const Duration(minutes: 10)),
+            speed: 5.0,
+          ),
+        ],
+      )!;
+
+      expect(rebuilt.duration, equals(600 - 480));
+      expect(rebuilt.pauseDuration, equals(480));
+      expect(rebuilt.duration + rebuilt.pauseDuration, equals(600));
+    });
+
+    test('avgSpeed is computed against the moving time (L-073)', () {
+      final rebuilt = TripRecoveryService.rebuildFromRoutePoints(
+        pausedTripAt(start, 100),
+        [point(0), point(20)],
+      )!;
+
+      // 200 s elapsed, 100 s of it stopped.
+      expect(rebuilt.duration, equals(100));
+      expect(rebuilt.avgSpeed, closeTo((rebuilt.distance / 100) * 3.6, 0.001));
+    });
+
+    test('a pause longer than the surviving span is floored, not negative', () {
+      // The snapshot can outlive the last route point that reached the disk.
+      final rebuilt = TripRecoveryService.rebuildFromRoutePoints(
+        pausedTripAt(start, 9999),
+        [point(0), point(2)],
+      )!;
+
+      expect(rebuilt.duration, equals(0));
+      expect(rebuilt.pauseDuration, equals(20));
+      expect(rebuilt.isValidTrip, isFalse);
     });
 
     test('keeps the trip identity and marks it completed', () {
@@ -285,6 +363,7 @@ void main() {
       )!;
 
       expect(rebuilt.status, TripStatus.completed);
+      expect(rebuilt.pauseDuration, equals(0));
       expect(rebuilt.startTime, equals(start));
       expect(rebuilt.detectedActivity, ActivityType.cycling);
       expect(

@@ -38,6 +38,13 @@ const String _addTripStatusColumn =
     "ALTER TABLE trips ADD COLUMN status TEXT NOT NULL "
     "DEFAULT '$_defaultTripStatus'";
 
+/// v2 -> v3 migration step (L-073). Rows written before the column existed
+/// have no record of their stops, and the default says so honestly: 0 s of
+/// pause. Their `duration` was already the moving time, so nothing about how
+/// they read changes.
+const String _addTripPauseDurationColumn =
+    'ALTER TABLE trips ADD COLUMN pause_duration INTEGER NOT NULL DEFAULT 0';
+
 /// Database service for AutoRide
 /// Handles database initialization, schema creation, and migrations
 class DatabaseService {
@@ -101,7 +108,8 @@ class DatabaseService {
         detected_activity TEXT NOT NULL,
         confidence_score REAL NOT NULL,
         user_confirmed INTEGER DEFAULT 0,
-        status TEXT NOT NULL DEFAULT '$_defaultTripStatus'
+        status TEXT NOT NULL DEFAULT '$_defaultTripStatus',
+        pause_duration INTEGER NOT NULL DEFAULT 0
       )
     ''');
 
@@ -154,6 +162,17 @@ class DatabaseService {
     if (oldVersion < 2) {
       await db.execute(_addTripStatusColumn);
       await db.execute(_createTripStatusIndex);
+    }
+
+    // v2 -> v3: time spent stopped (L-073).
+    //
+    // `duration` has always been the *moving* time (the recorder subtracts the
+    // pauses before writing it), but the amount subtracted lived only in
+    // memory, so "45 min ride, 8 min of stops" could never be shown after the
+    // fact. This column stores that subtrahend. Existing rows default to 0,
+    // which reads as "no stops recorded" rather than as a wrong number.
+    if (oldVersion < 3) {
+      await db.execute(_addTripPauseDurationColumn);
     }
   }
 

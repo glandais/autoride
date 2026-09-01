@@ -36,7 +36,9 @@ class TripDetailCard extends StatelessWidget {
               icon: Icons.straighten,
             ),
             StatCard(
-              label: 'Duration',
+              // `trip.duration` has always been the moving time. Only say so
+              // when there is a stopped time beside it to be confused with.
+              label: hasStops ? 'Moving' : 'Duration',
               value: _formatDuration(trip.duration),
               icon: Icons.access_time,
             ),
@@ -54,11 +56,30 @@ class TripDetailCard extends StatelessWidget {
                   : 'N/A',
               icon: Icons.trending_up,
             ),
+            // Rides recorded before schema v3 (L-073) carry no pause total, and
+            // a ride without stops has nothing to report — either way, showing
+            // "0s stopped" would be noise. Added in a pair so the two-column
+            // grid stays even.
+            if (hasStops) ...[
+              StatCard(
+                label: 'Stopped',
+                value: _formatDuration(trip.pauseDuration),
+                icon: Icons.pause_circle_outline,
+              ),
+              StatCard(
+                label: 'Total',
+                value: _formatDuration(trip.totalDuration.inSeconds),
+                icon: Icons.timelapse,
+              ),
+            ],
           ],
         ),
       ],
     );
   }
+
+  /// Whether this ride has a recorded stopped time worth showing.
+  bool get hasStops => trip.pauseDuration > 0;
 
   /// Format duration for display
   String _formatDuration(int seconds) {

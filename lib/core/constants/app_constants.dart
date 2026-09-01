@@ -297,7 +297,10 @@ class AppConstants {
   static const String databaseName = 'autoride.db';
   // v2 (L-068): `trips.status` (active/completed/discarded) for trip lifecycle
   // tracking and recovery of recordings interrupted by an app kill.
-  static const int databaseVersion = 2;
+  // v3 (L-073): `trips.pause_duration` (seconds spent stopped), so `duration`
+  // can stay the moving time and the stopped time is still reconstructible
+  // after the fact — for history display and for the startup recovery.
+  static const int databaseVersion = 3;
 
   // Onboarding Configuration (T021)
   static const String onboardingCompleteKey = 'onboarding_complete';

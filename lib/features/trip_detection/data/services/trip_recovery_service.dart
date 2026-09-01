@@ -50,10 +50,14 @@ class TripRecoveryReport {
 ///   which is the most trustworthy record available;
 /// * `endTime` becomes the last point's timestamp, so a trip killed at 09:20
 ///   does not stretch to whenever the app is next opened;
-/// * pauses are unknowable after the fact, so `duration` is simply
-///   end − start. That over-counts a ride with long stops, which is the safe
-///   direction: it keeps the trip above the validity threshold rather than
-///   silently deleting a real ride;
+/// * the pause total is read back off the row: since schema v3 (L-073) the
+///   recorder snapshots it on the same 30 s flush, so `duration` is
+///   (end − start) − `pauseDuration`, floored at 0. Only the pause that was
+///   still in progress when the process died (at most one flush interval) is
+///   lost, and a row with no snapshot — pre-v3, or killed inside the first
+///   30 s — falls back to end − start. That over-counts a ride with long
+///   stops, which is the safe direction: it keeps the trip above the validity
+///   threshold rather than silently deleting a real ride;
 /// * anything still too short (or with no usable points) is deleted, route
 ///   points included, via the `ON DELETE CASCADE` on `route_points.trip_id`.
 class TripRecoveryService {
@@ -144,12 +148,25 @@ class TripRecoveryService {
     final endTime = ordered.last.timestamp;
     // A snapshotted `endTime` can sit past the last point (the recorder writes
     // "now" every 30 s); the points are the harder evidence, so they win.
-    final durationSeconds = endTime.difference(trip.startTime).inSeconds;
+    //
+    // The pause total, by contrast, cannot be derived from the points at all,
+    // so the snapshot is the only source there is. Floored at 0: a snapshot
+    // taken after the last surviving point can carry more pause than the
+    // shortened span contains, and a negative ride is worse than a zero one
+    // (it would be deleted as too short either way).
+    final elapsedSeconds = endTime.difference(trip.startTime).inSeconds;
+    final pauseSeconds = trip.pauseDuration < 0
+        ? 0
+        : (trip.pauseDuration > elapsedSeconds
+              ? (elapsedSeconds > 0 ? elapsedSeconds : 0)
+              : trip.pauseDuration);
+    final durationSeconds = elapsedSeconds - pauseSeconds;
 
     return trip.copyWith(
       endTime: endTime,
       distance: distanceMeters,
       duration: durationSeconds,
+      pauseDuration: pauseSeconds,
       avgSpeed: durationSeconds > 0
           ? (distanceMeters / durationSeconds) * 3.6
           : null,

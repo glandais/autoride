@@ -44,11 +44,27 @@ enum TripStatus {
 sealed class Trip with _$Trip {
   const Trip._();
 
+  /// A recorded ride.
+  ///
+  /// Two duration fields, and they mean different things:
+  ///
+  /// * [duration] is the **moving time** in seconds — the wall clock between
+  ///   [startTime] and [endTime] *minus* every pause. It is what the recorder
+  ///   writes, what `avgSpeed` is computed against and what history shows as
+  ///   "Duration".
+  /// * [pauseDuration] is the **time spent stopped** in seconds, the amount
+  ///   that was subtracted. 0 means "no stops recorded", which is also what
+  ///   rows written before schema v3 (L-073) carry.
+  ///
+  /// `duration + pauseDuration` is the elapsed time, give or take the
+  /// sub-second rounding of the final write; [tripDuration] measures the same
+  /// span straight off the timestamps. See [TripExtensions.movingDuration] and
+  /// [TripExtensions.totalDuration] for the typed accessors.
   const factory Trip({
     required DateTime startTime,
     required DateTime endTime,
     required double distance, // meters
-    required int duration, // seconds
+    required int duration, // seconds MOVING (pauses already subtracted)
     required ActivityType detectedActivity,
     required double confidenceScore, // 0.0-1.0
     int? id, // Nullable for new trips not yet saved
@@ -56,6 +72,7 @@ sealed class Trip with _$Trip {
     double? maxSpeed, // km/h
     @Default(false) bool userConfirmed,
     @Default(TripStatus.completed) TripStatus status,
+    @Default(0) int pauseDuration, // seconds STOPPED
     @Default([]) List<RoutePoint> routePoints,
   }) = _Trip;
 
@@ -76,6 +93,9 @@ sealed class Trip with _$Trip {
       maxSpeed: map['max_speed'] as double?,
       userConfirmed: (map['user_confirmed'] as int) == 1,
       status: TripStatus.fromName(map['status']),
+      // Absent on a database that predates schema v3; NOT NULL DEFAULT 0
+      // afterwards. `as int?` covers both without a separate code path.
+      pauseDuration: (map['pause_duration'] as int?) ?? 0,
       routePoints: points,
     );
   }
@@ -97,11 +117,33 @@ extension TripExtensions on Trip {
       'confidence_score': confidenceScore,
       'user_confirmed': userConfirmed ? 1 : 0,
       'status': status.name,
+      'pause_duration': pauseDuration,
     };
   }
 
-  /// Calculate duration from start/end times
+  /// Elapsed wall-clock time, measured off the timestamps.
+  ///
+  /// Includes the pauses — this is *not* [movingDuration]. It is the
+  /// timestamps' own view of [totalDuration] and can differ from it by the
+  /// sub-second rounding of the persisted second counts.
   Duration get tripDuration => endTime.difference(startTime);
+
+  /// Time actually spent moving: [duration], typed.
+  ///
+  /// This is the headline "Duration" in history, and the denominator of
+  /// [Trip.avgSpeed].
+  Duration get movingDuration => Duration(seconds: duration);
+
+  /// Time spent stopped during the ride: [pauseDuration], typed.
+  ///
+  /// Zero for rides recorded before schema v3 (L-073) — "not recorded" and
+  /// "no stops" are deliberately not distinguished, since neither is worth
+  /// showing.
+  Duration get pausedDuration => Duration(seconds: pauseDuration);
+
+  /// Moving time plus stopped time — start to finish, from the persisted
+  /// counters rather than the timestamps.
+  Duration get totalDuration => movingDuration + pausedDuration;
 
   /// Check if the trip is long enough to be kept.
   ///
