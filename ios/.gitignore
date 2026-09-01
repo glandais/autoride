@@ -32,3 +32,19 @@ Runner/GeneratedPluginRegistrant.*
 !default.mode2v3
 !default.pbxuser
 !default.perspectivev3
+
+# Fastlane
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots
+fastlane/test_output
+
+# Build outputs from `fastlane beta`
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Bundler installs fastlane here when BUNDLE_PATH is set in .bundle/config — Homebrew's
+# shared gem dir symlinks read-only files into the Cellar, so a global install can die with
+# EACCES while regenerating gem plugins.
+vendor/bundle/

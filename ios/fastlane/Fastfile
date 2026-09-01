@@ -1,0 +1,67 @@
+# fastlane configuration for the iOS half of the release pipeline.
+# Documentation: https://docs.fastlane.tools — action list: https://docs.fastlane.tools/actions
+#
+# Both lanes authenticate with an App Store Connect API key rather than an interactive Apple ID
+# session: a session expires roughly monthly and dies in the middle of a release (T039 D3).
+# `./publish_beta.sh` checks the three ASC_* variables before it builds anything.
+
+default_platform(:ios)
+
+# Non-expiring auth for every lane that talks to App Store Connect. ENV.fetch is deliberate:
+# it fails loudly naming the missing variable instead of falling through to an interactive
+# Apple ID prompt in the middle of an unattended release.
+def asc_api_key
+  app_store_connect_api_key(
+    key_id: ENV.fetch("ASC_KEY_ID"),
+    issuer_id: ENV.fetch("ASC_ISSUER_ID"),
+    key_filepath: File.expand_path(ENV.fetch("ASC_KEY_PATH")),
+    in_house: false,
+  )
+end
+
+platform :ios do
+  desc "Push a new beta build to TestFlight. Run `flutter build ios --release --no-codesign` " \
+       "from the project root first (or just run ./publish_beta.sh, which does the whole " \
+       "sequence). Version and build number come from pubspec.yaml."
+  lane :beta do
+    asc_api_key
+
+    # Automatic signing: releases run on this machine, already authenticated, so there is no
+    # provisioning profile to maintain and no ExportOptions.plist to keep in sync (T039 D1).
+    build_app(
+      workspace: "Runner.xcworkspace",
+      scheme: "Runner",
+      export_method: "app-store",
+      export_options: {
+        signingStyle: "automatic",
+      },
+    )
+
+    # Processing is asynchronous; ITMS-* failures arrive by email, not here. Check TestFlight
+    # before telling testers the build is up.
+    upload_to_testflight(skip_waiting_for_build_processing: true)
+  end
+
+  desc "Promote the TestFlight build matching the current pubspec.yaml version to the App Store " \
+       "version in App Store Connect. Run `beta` for that exact version first — this lane does " \
+       "not build or upload a binary. Metadata and screenshots stay untouched (managed by hand " \
+       "in App Store Connect) and the version is left unsubmitted so it can be reviewed in App " \
+       "Store Connect before submitting for review."
+  lane :release do
+    asc_api_key
+
+    version_line = File.read("../../pubspec.yaml")[/^version:\s*(\S+)/, 1]
+    app_version, build_number = version_line.split("+")
+
+    upload_to_app_store(
+      app_version: app_version,
+      build_number: build_number,
+      skip_binary_upload: true,
+      skip_screenshots: true,
+      skip_metadata: true,
+      submit_for_review: false,
+      automatic_release: false,
+      force: true,
+    )
+  end
+end

@@ -1,0 +1,8 @@
+app_identifier("io.github.glandais.autoride") # matches PRODUCT_BUNDLE_IDENTIFIER in the pbxproj
+apple_id("gabriel.landais@gmail.com") # Apple Developer Portal account
+
+itc_team_id("128752970") # App Store Connect team — verify once with `bundle exec fastlane run get_itc_team_id`
+team_id("7Q49262697") # Developer Portal team — matches DEVELOPMENT_TEAM in the pbxproj
+
+# For more information about the Appfile, see:
+#     https://docs.fastlane.tools/advanced/#appfile
