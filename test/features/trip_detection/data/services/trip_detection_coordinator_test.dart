@@ -269,13 +269,48 @@ class _FakeBatteryOptimizer extends BatteryOptimizer {
   void setMode(PowerModeConfig config) => state = AsyncValue.data(config);
 }
 
-/// Coordinator with a short GPS inactivity timeout so the gate's shutdown is
-/// observable without a 30 s wait. Nothing else is overridden.
-class _FastGateCoordinator extends TripDetectionCoordinator {
-  static const timeout = Duration(milliseconds: 20);
+/// Timer double: never runs on the event loop, so the GPS gate's shutdown
+/// happens exactly when the test asks for it.
+class _ManualTimer implements Timer {
+  _ManualTimer(this._onElapsed);
+
+  final void Function() _onElapsed;
+  bool _active = true;
+  int _tick = 0;
 
   @override
-  Duration get gpsInactivityTimeout => timeout;
+  bool get isActive => _active;
+
+  @override
+  int get tick => _tick;
+
+  @override
+  void cancel() => _active = false;
+
+  /// Fire as the real timer would: one-shot, and inert once cancelled.
+  void fire() {
+    if (!_active) return;
+    _active = false;
+    _tick++;
+    _onElapsed();
+  }
+}
+
+/// Coordinator whose GPS inactivity timeout never elapses on its own — the
+/// test fires it through [fireInactivityTimeout]. Waiting out a shortened real
+/// timeout instead made these tests race the event loop: the timeout could
+/// elapse inside a `pumpEventQueue`, closing the gate before the assertion that
+/// it is still open. Nothing else is overridden.
+class _ManualGateCoordinator extends TripDetectionCoordinator {
+  _ManualTimer? _lastTimer;
+
+  /// The armed inactivity timer, or `null` if none was ever armed.
+  _ManualTimer? get inactivityTimer => _lastTimer;
+
+  @override
+  Timer startGpsInactivityTimer(void Function() onElapsed) {
+    return _lastTimer = _ManualTimer(onElapsed);
+  }
 }
 
 /// Name of the current union case (the generated union classes are private).
@@ -792,7 +827,7 @@ void main() {
         overrides: baseOverrides(
           extra: [
             tripDetectionCoordinatorProvider.overrideWith(
-              _FastGateCoordinator.new,
+              _ManualGateCoordinator.new,
             ),
           ],
         ),
@@ -803,9 +838,17 @@ void main() {
       );
     });
 
-    /// Lets the fast inactivity timeout elapse.
-    Future<void> waitOutInactivity() async {
-      await Future<void>.delayed(_FastGateCoordinator.timeout * 3);
+    /// The inactivity timer the coordinator armed, if any.
+    _ManualTimer? armedInactivityTimer() {
+      return (container.read(
+        tripDetectionCoordinatorProvider.notifier,
+      ) as _ManualGateCoordinator).inactivityTimer;
+    }
+
+    /// Makes the inactivity timeout elapse, deterministically. A cancelled or
+    /// never-armed timer is a no-op, exactly like a real one.
+    Future<void> elapseInactivity() async {
+      armedInactivityTimer()?.fire();
       await pumpEventQueue();
     }
 
@@ -848,10 +891,11 @@ void main() {
 
         motionController.add(_stationarySample(2));
         await pumpEventQueue();
-        // Still open: the timeout has not elapsed yet.
+        // Still open: the timeout is armed but has not elapsed yet.
         expect(gpsSubscribed, isTrue);
+        expect(armedInactivityTimer()?.isActive, isTrue);
 
-        await waitOutInactivity();
+        await elapseInactivity();
 
         expect(gpsSubscribed, isFalse);
       },
@@ -863,8 +907,12 @@ void main() {
 
       motionController.add(_stationarySample(2));
       await pumpEventQueue();
+      expect(armedInactivityTimer()?.isActive, isTrue);
+
       await pushMotion(3); // moving again: cancels the pending shutdown
-      await waitOutInactivity();
+      // Cancelled, not merely un-elapsed: firing it now must be a no-op.
+      expect(armedInactivityTimer()?.isActive, isFalse);
+      await elapseInactivity();
 
       expect(gpsSubscribed, isTrue);
       expect(gpsSubscribeCount, 1);
@@ -882,7 +930,7 @@ void main() {
 
         motionController.add(_stationarySample(3));
         await pumpEventQueue();
-        await waitOutInactivity();
+        await elapseInactivity();
         motionController.add(_stationarySample(4));
         await pumpEventQueue();
 
@@ -901,7 +949,9 @@ void main() {
 
       motionController.add(_stationarySample(2));
       await pumpEventQueue();
-      await waitOutInactivity();
+      // No shutdown is even armed while a trip is being recorded.
+      expect(armedInactivityTimer(), isNull);
+      await elapseInactivity();
 
       expect(gpsSubscribed, isTrue);
     });

@@ -81,6 +81,16 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
   @visibleForTesting
   Duration get gpsInactivityTimeout => AppConstants.gpsInactivityTimeout;
 
+  /// Arms the timer whose expiry closes the GPS gate.
+  ///
+  /// Seam for the tests: they substitute a manually fired timer so the gate's
+  /// behaviour is asserted on the state transitions themselves instead of on
+  /// wall-clock delays, which made "the gate closes after gpsInactivityTimeout"
+  /// flaky whenever the shortened timeout elapsed inside a `pumpEventQueue`.
+  @visibleForTesting
+  Timer startGpsInactivityTimer(void Function() onElapsed) =>
+      Timer(gpsInactivityTimeout, onElapsed);
+
   @override
   Future<TripState> build() async {
     // Initialize with idle state
@@ -225,7 +235,7 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
     if (_closeLocationSubscription == null) return;
     if (_gpsInactivityTimer != null) return;
 
-    _gpsInactivityTimer = Timer(gpsInactivityTimeout, () {
+    _gpsInactivityTimer = startGpsInactivityTimer(() {
       _gpsInactivityTimer = null;
       if (_disposed) return;
       if (ref.read(tripStateMachineProvider).hasActiveTrip) return;
