@@ -48,3 +48,4 @@ fastlane/test_output
 # shared gem dir symlinks read-only files into the Cellar, so a global install can die with
 # EACCES while regenerating gem plugins.
 vendor/bundle/
+fastlane/README.md

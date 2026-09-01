@@ -336,7 +336,7 @@
   - *Scope*: Signing, capabilities, export compliance, privacy manifest reconciliation, fastlane + TestFlight
   - *Dependencies*: **T038** (owns the version scheme and `publish_beta.sh`), T033, T036
   - *Estimate*: 3-4 hours
-  - *Status*: in-repo work done 2026-09-01 (`1857040`); ASC verified read-only 2026-09-01 (Chrome + asc CLI) — the record exists since 2026-04-09 (app 6761954840, bundle id matches, cert valid to 2027-04-07, TestFlight group `Test` with two **expired** builds, encryption exempt). Remaining for TestFlight: export `ASC_KEY_ID`/`ASC_ISSUER_ID`/`ASC_KEY_PATH` (the key exists in `~/.blitz`/keychain but isn't wired to fastlane), bump pubspec to ≥ `1.0.0+3` (builds 1 and 2 already exist in the 1.0.0 train — `+1` would be rejected). Remaining for store: 33 `asc validate` errors (metadata, screenshots, age rating…), App Privacy questionnaire never started, pricing/availability unset, ASC version named `1.0` vs pubspec `1.0.0`, app name `Autoride` → `AutoRide` (cosmetic). Plus privacy-manifest reconciliation (detail doc step 6) and the ⚠️ SPM finding below
+  - *Status 2026-09-01*: **pipeline proven end-to-end** — TestFlight build 3 uploaded and VALID via `fastlane beta` (April's App Store profile reused, no signing repair needed); build `1.0.0+4` (with the `856f7a8` crash fix) launched through the first full dual-platform `publish_beta.sh` run. Credentials wired via `~/.secrets/autoride-asc.env` (`0966a0c`). Store surface cleared by agents: name **AutoRide**, version `1.0.0`, full metadata, **App Privacy published**, age rating 4+, content rights, free + 175 territories, App Review contact + notes filed — `asc validate` down from 33 errors to **2** (attach a build — use build 4, build 3 carries the crash — and screenshots). Remaining beyond that: privacy-manifest reconciliation (detail doc step 6), Motion & Fitness prompt still unverified on device (SPM finding below — location/notification prompts confirmed OK on iPhone)
   - *⚠️ New finding*: Flutter 3.47 resolves `permission_handler_apple` via Swift Package Manager, so the Podfile's `PERMISSION_*` post_install macros no longer reach it — the cc1c088 permission fix is bypassed. iOS permission prompts must be re-verified on device (see `tasks/T041-device-validation.md` item 7); plausible TestFlight blocker
 
 - ☐ **T040**: Beta Testing & Feedback
@@ -373,7 +373,7 @@
 
 **Current Phase**: Phase 10 - Release Preparation, alongside the Phase 11 audit backlog
 **Last Completed**: T029/T033 - test-suite recut and code quality (2026-09-01)
-**Current Task**: T041 - Core Tracking-Pipeline Refactor (code complete, awaiting on-device validation — `tasks/T041-device-validation.md`). T038 open on manual Play Console setup; T037 open (§5.6/§5.7).
+**Current Task**: T039/T041 — iOS release is 2 blockers from submittable (build attach + screenshots); T041 device validation under way (first iPhone run done: prompts OK, one crash found and fixed — see `tasks/T041-device-validation.md`). T038 open on manual Play Console setup; T037 open (§5.6/§5.7).
 **Next Task**: T039 - iOS Release Configuration (T038 now owns the version scheme and `publish_beta.sh`, so T039 can extend both)
 **Audit backlog**: `tasks/AUDIT-FINDINGS.md` (2026-06-17) and `tasks/LEDGER.md` (2026-08-31) record open defects that are not otherwise tracked here; the blocked core-pipeline cluster is T041.
 

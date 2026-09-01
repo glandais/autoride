@@ -1,5 +1,11 @@
 # T039 - iOS Release Configuration
 
+> **Status 2026-09-01**: implemented in `1857040`/`0966a0c` on the ../tribly/mobile model and proven
+> with TestFlight builds 3–4. Two claims below are stale: the deployment target was auto-raised to
+> iOS 15 by Flutter 3.47, and D2's premise is gone — `permission_handler_apple` now resolves via
+> Swift Package Manager, bypassing the Podfile `PERMISSION_*` macros (see `tasks/T041-device-validation.md`
+> item 7; location/notification prompts verified working on device). Step 6 (privacy manifest) still open.
+
 **Status**: ☐ Pending
 **Estimated Time**: 3-4 hours (revised up from 2-3h in TASKS.md — App Store Connect setup and
 privacy-manifest reconciliation were not in the original estimate)
