@@ -331,11 +331,13 @@
     - upload keystore — `android/key.properties` (gitignored) → `~/Documents/pedalons/android/tribly-release.keystore`, alias `tribly`. Verified: a release AAB carries SHA-256 `26:24:FF:9B:9E:62:FA:C2:...`, i.e. `CN=Landais Gabriel`, not `CN=Android Debug`.
     - Play service account — `~/.secrets/autoride-play.json` is a **symlink** to tribly's `pedalons-play-store-b3697e930223.json` (`fastlane-supply@pedalons-play-store.iam.gserviceaccount.com`). It holds account-level Administrator, so it already covers this app. Consequence to accept knowingly: one leaked key can publish both Pedalons and AutoRide.
 
-- ☐ **T039**: iOS Release Configuration
+- ⏳ **T039**: iOS Release Configuration
   - *Detail*: `tasks/T039-ios-release.md`
   - *Scope*: Signing, capabilities, export compliance, privacy manifest reconciliation, fastlane + TestFlight
   - *Dependencies*: **T038** (owns the version scheme and `publish_beta.sh`), T033, T036
   - *Estimate*: 3-4 hours
+  - *Status*: in-repo work done 2026-09-01 (`1857040`, modeled on ../tribly/mobile): ios/fastlane beta+release lanes with ASC API-key auth, export compliance, iPhone-only targeting, automatic signing, publish_beta.sh builds iOS before Android. Remaining: one-time manual steps (App ID + ASC app record, ASC API key, first-signing certificate repair), privacy-manifest reconciliation (step 6 of the detail doc), and the ⚠️ SPM finding below
+  - *⚠️ New finding*: Flutter 3.47 resolves `permission_handler_apple` via Swift Package Manager, so the Podfile's `PERMISSION_*` post_install macros no longer reach it — the cc1c088 permission fix is bypassed. iOS permission prompts must be re-verified on device (see `tasks/T041-device-validation.md` item 7); plausible TestFlight blocker
 
 - ☐ **T040**: Beta Testing & Feedback
   - *Detail*: `tasks/T040-beta-testing.md` (create on request)
@@ -365,8 +367,8 @@
 
 **Total Tasks**: 41
 **Completed**: 25
-**In Progress**: 6 (T006, T013, T030, T037, T038, T041)
-**Pending**: 10
+**In Progress**: 7 (T006, T013, T030, T037, T038, T039, T041)
+**Pending**: 9
 **Blocked**: 0
 
 **Current Phase**: Phase 10 - Release Preparation, alongside the Phase 11 audit backlog

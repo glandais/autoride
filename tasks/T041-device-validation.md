@@ -35,8 +35,17 @@ halves of T006/T013) close only when this checklist passes.
 - Exactly one notification (id 888) exists — the foreground service owns it.
 
 ## 6. Toggle and permission semantics (#11 / L-001)
+
 - Turn "Automatic detection" OFF mid-ride: the ride keeps recording and finishes
   normally; no new trip auto-starts afterwards.
 - Turn it back ON: detection resumes without restarting the app.
 - Grant location from system settings while the app is backgrounded: detection
   starts on resume.
+
+## 7. iOS permission prompts (T039 finding — added 2026-09-01)
+Flutter 3.47 resolves `permission_handler_apple` via Swift Package Manager, so the
+Podfile's `PERMISSION_LOCATION/NOTIFICATIONS/SENSORS=1` post_install macros no longer
+reach the plugin (the `cc1c088` fix is bypassed). On a physical iPhone, verify that
+the location (when-in-use → always), notification, and motion permission prompts all
+actually appear and that granted permissions report correctly. If prompts are missing,
+the SPM package needs the compile-time flags supplied another way.
