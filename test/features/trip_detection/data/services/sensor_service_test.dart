@@ -2,255 +2,152 @@ import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:autoride/features/trip_detection/domain/models/motion_data.dart';
+import 'package:sensors_plus/sensors_plus.dart';
+import 'package:autoride/features/trip_detection/data/services/battery_optimizer.dart';
 import 'package:autoride/features/trip_detection/data/services/sensor_service.dart';
-import 'package:autoride/features/trip_detection/data/services/sensor_utils.dart';
+import 'package:autoride/features/trip_detection/domain/models/motion_data.dart';
 
+/// Tests for the units declared in `sensor_service.dart`: the
+/// `accelerometerStream` / `gyroscopeStream` / `motionDataStream` providers and
+/// the `SensorService` availability check.
+///
+/// The sensor value-object and `SensorUtils` tests that used to make up this
+/// file — and never imported anything from `sensor_service.dart` (L-026) — now
+/// live in `test/features/trip_detection/domain/models/motion_data_test.dart`
+/// and `sensor_utils_test.dart`.
 void main() {
-  group('AccelerometerData', () {
-    test('should calculate magnitude correctly', () {
-      // Arrange
-      final data = AccelerometerData(
-        x: 3.0,
-        y: 4.0,
-        z: 0.0,
-        timestamp: DateTime.now(),
-      );
+  late SensorsPlatform originalPlatform;
 
-      // Act & Assert
-      expect(data.magnitude, equals(5.0)); // sqrt(9 + 16 + 0) = 5
-    });
-
-    test('should detect stationary state', () {
-      // Arrange - device at rest, only gravity
-      final data = AccelerometerData(
-        x: 0.0,
-        y: 0.0,
-        z: 9.8, // Standard gravity
-        timestamp: DateTime.now(),
-      );
-
-      // Act & Assert
-      expect(data.isStationary(), isTrue);
-    });
-
-    test('should detect significant movement', () {
-      // Arrange - device with acceleration beyond gravity
-      final data = AccelerometerData(
-        x: 5.0,
-        y: 5.0,
-        z: 9.8,
-        timestamp: DateTime.now(),
-      );
-
-      // Act & Assert
-      expect(data.hasSignificantMovement(), isTrue);
-    });
+  setUp(() {
+    originalPlatform = SensorsPlatform.instance;
   });
 
-  group('GyroscopeData', () {
-    test('should calculate rotation magnitude correctly', () {
-      // Arrange
-      final data = GyroscopeData(
-        x: 0.0,
-        y: 3.0,
-        z: 4.0,
-        timestamp: DateTime.now(),
-      );
-
-      // Act & Assert
-      expect(data.magnitude, equals(5.0)); // sqrt(0 + 9 + 16) = 5
-    });
-
-    test('should detect rotation', () {
-      // Arrange
-      final data = GyroscopeData(
-        x: 1.0,
-        y: 1.0,
-        z: 1.0,
-        timestamp: DateTime.now(),
-      );
-
-      // Act & Assert
-      expect(data.hasRotation(), isTrue);
-    });
+  tearDown(() {
+    SensorsPlatform.instance = originalPlatform;
   });
 
-  group('MotionData', () {
-    test('should detect stationary state', () {
-      // Arrange
-      final accel = AccelerometerData(
-        x: 0.0,
-        y: 0.0,
-        z: 9.8,
-        timestamp: DateTime.now(),
-      );
-      final gyro = GyroscopeData(
-        x: 0.0,
-        y: 0.0,
-        z: 0.0,
-        timestamp: DateTime.now(),
-      );
-      final motion = MotionData(
-        accelerometer: accel,
-        gyroscope: gyro,
-        timestamp: DateTime.now(),
-      );
+  _FakeSensorsPlatform installPlatform({
+    AccelerometerEvent? seedAccel,
+    GyroscopeEvent? seedGyro,
+    bool accelError = false,
+    bool gyroError = false,
+  }) {
+    final platform = _FakeSensorsPlatform(
+      seedAccel: seedAccel,
+      seedGyro: seedGyro,
+      accelError: accelError,
+      gyroError: gyroError,
+    );
+    SensorsPlatform.instance = platform;
+    addTearDown(platform.dispose);
+    return platform;
+  }
 
-      // Act & Assert
-      expect(motion.isStationary, isTrue);
-    });
+  ProviderContainer containerWith({
+    PowerModeConfig powerMode = PowerModeConfig.normal,
+  }) {
+    final container = ProviderContainer(
+      overrides: [
+        currentPowerModeProvider.overrideWith(() => _FixedPowerMode(powerMode)),
+      ],
+    );
+    addTearDown(container.dispose);
+    return container;
+  }
 
-    test('should detect cycling indication', () {
-      // Arrange - movement + rotation
-      final accel = AccelerometerData(
-        x: 5.0,
-        y: 5.0,
-        z: 9.8,
-        timestamp: DateTime.now(),
-      );
-      final gyro = GyroscopeData(
-        x: 1.0,
-        y: 1.0,
-        z: 0.5,
-        timestamp: DateTime.now(),
-      );
-      final motion = MotionData(
-        accelerometer: accel,
-        gyroscope: gyro,
-        timestamp: DateTime.now(),
-      );
+  // ---------------------------------------------------------------------------
+  // accelerometerStream / gyroscopeStream
+  // ---------------------------------------------------------------------------
 
-      // Act & Assert
-      expect(motion.indicatesCycling, isTrue);
-    });
-  });
+  group('accelerometerStream', () {
+    test('maps platform events onto AccelerometerData', () async {
+      final platform = installPlatform();
 
-  group('MotionWindow', () {
-    test('should calculate average acceleration', () {
-      // Arrange
-      final samples = List.generate(10, (i) {
-        return MotionData(
-          accelerometer: AccelerometerData(
-            x: 0.0,
-            y: 0.0,
-            z: 10.0 + i, // Varying acceleration
-            timestamp: DateTime.now(),
-          ),
-          gyroscope: GyroscopeData(
-            x: 0.0,
-            y: 0.0,
-            z: 0.0,
-            timestamp: DateTime.now(),
-          ),
-          timestamp: DateTime.now(),
-        );
+      final container = containerWith();
+      final emitted = <AccelerometerData>[];
+      container.listen(accelerometerStreamProvider, (_, next) {
+        next.whenData(emitted.add);
       });
+      await pumpEventQueue();
 
-      final window = MotionWindow(
-        samples: samples,
-        startTime: DateTime.now().subtract(const Duration(seconds: 1)),
-        endTime: DateTime.now(),
-      );
+      platform.accel.add(AccelerometerEvent(1.0, 2.0, 3.0, DateTime(2026)));
+      await pumpEventQueue();
 
-      // Act
-      final avg = window.averageAcceleration;
-
-      // Assert - average should be around middle of range
-      expect(avg, greaterThan(10.0));
-      expect(avg, lessThan(20.0));
+      expect(emitted, hasLength(1));
+      expect(emitted.single.x, 1.0);
+      expect(emitted.single.y, 2.0);
+      expect(emitted.single.z, 3.0);
     });
 
-    test('should determine motion state from samples', () {
-      // Arrange - cycling-like motion
-      // Need avgAccel > 10.5 and avgRotation > 0.5
-      final samples = List.generate(100, (i) {
-        return MotionData(
-          accelerometer: AccelerometerData(
-            x: 3.0,
-            y: 3.0,
-            z: 10.0, // magnitude = sqrt(9 + 9 + 100) = sqrt(118) ≈ 10.86
-            timestamp: DateTime.now(),
-          ),
-          gyroscope: GyroscopeData(
-            x: 1.0,
-            y: 0.5,
-            z: 0.5, // magnitude = sqrt(1 + 0.25 + 0.25) ≈ 1.22
-            timestamp: DateTime.now(),
-          ),
-          timestamp: DateTime.now(),
-        );
-      });
+    test('requests the sampling period of the current power mode', () async {
+      final platform = installPlatform();
 
-      final window = MotionWindow(
-        samples: samples,
-        startTime: DateTime.now().subtract(const Duration(seconds: 2)),
-        endTime: DateTime.now(),
+      final container = containerWith();
+      container.listen(accelerometerStreamProvider, (_, _) {});
+      await pumpEventQueue();
+
+      // 50 Hz normal mode -> 20 000 µs
+      expect(
+        platform.accelPeriods,
+        equals([const Duration(microseconds: 20000)]),
       );
+    });
 
-      // Act
-      final state = window.state;
+    test('a lower power mode slows the requested period', () async {
+      final platform = installPlatform();
 
-      // Assert
-      expect(state, equals(MotionState.cycling));
+      final container = containerWith(powerMode: PowerModeConfig.critical);
+      container.listen(accelerometerStreamProvider, (_, _) {});
+      await pumpEventQueue();
+
+      // 20 Hz critical mode -> 50 000 µs
+      expect(
+        platform.accelPeriods,
+        equals([const Duration(microseconds: 50000)]),
+      );
     });
   });
 
-  group('SensorUtils', () {
-    test('should calculate magnitude from 3D vector', () {
-      // Act & Assert
-      expect(SensorUtils.magnitude(3.0, 4.0, 0.0), equals(5.0));
-      expect(SensorUtils.magnitude(0.0, 0.0, 0.0), equals(0.0));
+  group('gyroscopeStream', () {
+    test('maps platform events onto GyroscopeData', () async {
+      final platform = installPlatform();
+
+      final container = containerWith();
+      final emitted = <GyroscopeData>[];
+      container.listen(gyroscopeStreamProvider, (_, next) {
+        next.whenData(emitted.add);
+      });
+      await pumpEventQueue();
+
+      platform.gyro.add(GyroscopeEvent(0.1, 0.2, 0.3, DateTime(2026)));
+      await pumpEventQueue();
+
+      expect(emitted, hasLength(1));
+      expect(emitted.single.x, 0.1);
+      expect(emitted.single.z, 0.3);
     });
 
-    test('should apply low-pass filter', () {
-      // Act - apply filter with alpha = 0.5
-      final filtered = SensorUtils.lowPassFilter(10.0, 0.0, 0.5);
+    test('requests the sampling period of the current power mode', () async {
+      final platform = installPlatform();
 
-      // Assert - should be halfway between current and previous
-      expect(filtered, equals(5.0));
-    });
+      final container = containerWith(powerMode: PowerModeConfig.low);
+      container.listen(gyroscopeStreamProvider, (_, _) {});
+      await pumpEventQueue();
 
-    test('should detect peaks in data', () {
-      // Arrange
-      final values = [1.0, 2.0, 5.0, 3.0, 1.0]; // Peak at index 2
-
-      // Act & Assert
-      expect(SensorUtils.isPeak(values, 2), isTrue);
-      expect(SensorUtils.isPeak(values, 1), isFalse);
-    });
-
-    test('should calculate standard deviation', () {
-      // Arrange
-      final values = [2.0, 4.0, 4.0, 4.0, 5.0, 5.0, 7.0, 9.0];
-
-      // Act
-      final stdDev = SensorUtils.standardDeviation(values);
-
-      // Assert - should be around 2.0 for this dataset
-      expect(stdDev, greaterThan(1.5));
-      expect(stdDev, lessThan(2.5));
-    });
-
-    test('should downsample data correctly', () {
-      // Arrange
-      final data = List.generate(100, (i) => i);
-
-      // Act - downsample by factor of 10
-      final downsampled = SensorUtils.downsample(data, 10);
-
-      // Assert
-      expect(downsampled.length, equals(10));
-      expect(downsampled.first, equals(0));
-      expect(downsampled.last, equals(90));
+      // 25 Hz low mode -> 40 000 µs
+      expect(
+        platform.gyroPeriods,
+        equals([const Duration(microseconds: 40000)]),
+      );
     });
   });
 
   // ---------------------------------------------------------------------------
-  // motionDataStream now merges the accelerometer and gyroscope PROVIDERS
+  // motionDataStream merges the accelerometer and gyroscope PROVIDERS
   // (T041 / audit #5), so the merge itself is testable and each sensor is
   // subscribed to exactly once instead of once per consumer.
   // ---------------------------------------------------------------------------
+
   group('motionDataStream merge', () {
     late StreamController<AccelerometerData> accelController;
     late StreamController<GyroscopeData> gyroController;
@@ -305,4 +202,128 @@ void main() {
       expect(container.read(motionDataStreamProvider).hasError, isTrue);
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // SensorService — the availability probe
+  // ---------------------------------------------------------------------------
+
+  group('SensorService', () {
+    test('reports available when both sensors produce a reading', () async {
+      installPlatform(
+        seedAccel: AccelerometerEvent(0.0, 0.0, 9.8, DateTime(2026)),
+        seedGyro: GyroscopeEvent(0.0, 0.0, 0.0, DateTime(2026)),
+      );
+
+      final container = containerWith();
+
+      expect(await container.read(sensorServiceProvider.future), isTrue);
+    });
+
+    test('reports unavailable when the accelerometer errors', () async {
+      installPlatform(accelError: true);
+
+      final container = containerWith();
+
+      expect(await container.read(sensorServiceProvider.future), isFalse);
+    });
+
+    test('reports unavailable when only the accelerometer works', () async {
+      installPlatform(
+        seedAccel: AccelerometerEvent(0.0, 0.0, 9.8, DateTime(2026)),
+        gyroError: true,
+      );
+
+      final container = containerWith();
+
+      expect(await container.read(sensorServiceProvider.future), isFalse);
+    });
+
+    test('areSensorsWorking() re-probes the platform', () async {
+      final platform = installPlatform(
+        seedAccel: AccelerometerEvent(0.0, 0.0, 9.8, DateTime(2026)),
+        seedGyro: GyroscopeEvent(0.0, 0.0, 0.0, DateTime(2026)),
+      );
+
+      final container = containerWith();
+      await container.read(sensorServiceProvider.future);
+      final probesAfterBuild = platform.accelSubscriptions;
+
+      final notifier = container.read(sensorServiceProvider.notifier);
+      expect(await notifier.areSensorsWorking(), isTrue);
+      expect(platform.accelSubscriptions, greaterThan(probesAfterBuild));
+    });
+  });
+}
+
+/// Pins the power mode so the sampling-period conversion is deterministic.
+class _FixedPowerMode extends CurrentPowerMode {
+  _FixedPowerMode(this._config);
+
+  final PowerModeConfig _config;
+
+  @override
+  PowerModeConfig build() => _config;
+}
+
+/// A `sensors_plus` platform that feeds controllable streams instead of the
+/// device. `SensorsPlatform.instance` is the plugin's own seam, so no
+/// production code needs a test-only hook.
+class _FakeSensorsPlatform extends SensorsPlatform {
+  _FakeSensorsPlatform({
+    this.seedAccel,
+    this.seedGyro,
+    this.accelError = false,
+    this.gyroError = false,
+  });
+
+  final AccelerometerEvent? seedAccel;
+  final GyroscopeEvent? seedGyro;
+  final bool accelError;
+  final bool gyroError;
+
+  final accel = StreamController<AccelerometerEvent>.broadcast();
+  final gyro = StreamController<GyroscopeEvent>.broadcast();
+
+  final accelPeriods = <Duration>[];
+  final gyroPeriods = <Duration>[];
+
+  int accelSubscriptions = 0;
+  int gyroSubscriptions = 0;
+
+  Future<void> dispose() async {
+    await accel.close();
+    await gyro.close();
+  }
+
+  @override
+  Stream<AccelerometerEvent> accelerometerEventStream({
+    Duration samplingPeriod = SensorInterval.normalInterval,
+  }) {
+    accelPeriods.add(samplingPeriod);
+    accelSubscriptions++;
+    if (accelError) {
+      return Stream<AccelerometerEvent>.error(StateError('no accelerometer'));
+    }
+    final seed = seedAccel;
+    if (seed != null) {
+      return Stream<AccelerometerEvent>.value(seed);
+    }
+    return accel.stream;
+  }
+
+  @override
+  Stream<GyroscopeEvent> gyroscopeEventStream({
+    Duration samplingPeriod = SensorInterval.normalInterval,
+  }) {
+    gyroPeriods.add(samplingPeriod);
+    gyroSubscriptions++;
+    if (gyroError) {
+      return Stream<GyroscopeEvent>.error(StateError('no gyroscope'));
+    }
+    final seed = seedGyro;
+    if (seed != null) {
+      return Stream<GyroscopeEvent>.value(seed);
+    }
+    return gyro.stream;
+  }
 }

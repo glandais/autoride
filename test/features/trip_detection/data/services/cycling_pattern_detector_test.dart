@@ -1,395 +1,416 @@
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:autoride/features/trip_detection/domain/models/motion_data.dart';
-import 'package:autoride/features/trip_detection/domain/models/activity_confidence.dart';
-import 'package:autoride/features/trip_detection/domain/models/location_data.dart';
 import 'package:autoride/core/constants/app_constants.dart';
-import 'dart:math';
+import 'package:autoride/features/trip_detection/data/services/cycling_pattern_detector.dart';
+import 'package:autoride/features/trip_detection/data/services/motion_detection_service.dart';
+import 'package:autoride/features/trip_detection/domain/models/activity_confidence.dart';
+import 'package:autoride/features/trip_detection/domain/models/motion_data.dart';
 
+/// Tests for the real [CyclingPatternDetector] — the three-layer detector the
+/// README and CLAUDE.md document.
+///
+/// IMPORTANT: this service is still deliberately **unwired**. `TripStartDetector`
+/// is what actually decides a trip start; `cyclingPatternDetectorProvider` has no
+/// consumer in `lib/` pending a product decision (L-011). These tests therefore
+/// characterise the detector as it stands — including the layer-3 defect below —
+/// rather than assert the pipeline uses it.
 void main() {
-  group('ActivityConfidence', () {
-    test('should create cycling activity with high confidence', () {
-      final confidence = ActivityConfidence.cycling(
-        confidence: 0.85,
-        motionScore: 0.9,
-        speedScore: 0.8,
-        frequencyScore: 0.85,
-      );
+  // ---------------------------------------------------------------------------
+  // Fixtures
+  // ---------------------------------------------------------------------------
 
-      expect(confidence.activity, equals(ActivityType.cycling));
-      expect(confidence.confidence, equals(0.85));
-      expect(confidence.isCyclingDetected, isTrue);
-      expect(confidence.level, equals(ConfidenceLevel.high));
-    });
-
-    test('should identify ambiguous detection', () {
-      final confidence = ActivityConfidence.cycling(
-        confidence: 0.5,
-        motionScore: 0.6,
-        speedScore: 0.4,
-        frequencyScore: 0.5,
-      );
-
-      expect(confidence.isAmbiguous, isTrue);
-      expect(confidence.level, equals(ConfidenceLevel.low));
-    });
-
-    test('should calculate correct confidence level', () {
-      expect(
-        ActivityConfidence.cycling(
-          confidence: 0.95,
-          motionScore: 1.0,
-          speedScore: 0.9,
-          frequencyScore: 0.95,
-        ).level,
-        equals(ConfidenceLevel.veryHigh),
-      );
-
-      expect(
-        ActivityConfidence.cycling(
-          confidence: 0.3,
-          motionScore: 0.4,
-          speedScore: 0.2,
-          frequencyScore: 0.3,
-        ).level,
-        equals(ConfidenceLevel.veryLow),
+  /// Builds a window of [count] samples, 20 ms apart (50 Hz).
+  ///
+  /// [accelMagnitude] is placed on z alone so `magnitude == accelMagnitude`.
+  /// If [peakEvery] is set, every n-th sample is raised to [peakMagnitude],
+  /// producing exactly one detectable local maximum per n samples — i.e. a
+  /// pedaling frequency of `1000 / (peakEvery * 20)` Hz.
+  MotionWindow buildWindow({
+    required int count,
+    double accelMagnitude = 12.0,
+    double gyroMagnitude = 1.0,
+    int? peakEvery,
+    double peakMagnitude = 15.0,
+    int samplePeriodMs = 20,
+    bool identicalTimestamps = false,
+  }) {
+    final base = DateTime(2026, 1, 1);
+    final samples = List.generate(count, (i) {
+      final stamp = identicalTimestamps
+          ? base
+          : base.add(Duration(milliseconds: i * samplePeriodMs));
+      final isPeak = peakEvery != null && i > 0 && i % peakEvery == 0;
+      return MotionData(
+        accelerometer: AccelerometerData(
+          x: 0.0,
+          y: 0.0,
+          z: isPeak ? peakMagnitude : accelMagnitude,
+          timestamp: stamp,
+        ),
+        gyroscope: GyroscopeData(
+          x: gyroMagnitude,
+          y: 0.0,
+          z: 0.0,
+          timestamp: stamp,
+        ),
+        timestamp: stamp,
       );
     });
 
-    test('should create from scores and find best activity', () {
-      final activityScores = {
-        ActivityType.cycling: 0.85,
-        ActivityType.walking: 0.3,
-        ActivityType.stationary: 0.1,
-        ActivityType.driving: 0.2,
-        ActivityType.running: 0.25,
-        ActivityType.unknown: 0.0,
-      };
+    return MotionWindow(
+      samples: samples,
+      startTime: samples.first.timestamp,
+      endTime: samples.last.timestamp,
+    );
+  }
 
-      final confidence = ActivityConfidence.fromScores(
-        motionScore: 0.9,
-        speedScore: 0.8,
-        frequencyScore: 0.85,
-        activityScores: activityScores,
-      );
+  ProviderContainer containerFor(MotionWindow? window) {
+    final container = ProviderContainer(
+      overrides: [
+        motionDetectionServiceProvider
+            .overrideWith(() => _FakeMotionDetectionService(window)),
+      ],
+    );
+    addTearDown(container.dispose);
+    return container;
+  }
 
-      expect(confidence.activity, equals(ActivityType.cycling));
-      expect(confidence.secondBestActivity, equals(ActivityType.walking));
-    });
-  });
+  Future<ActivityConfidence> analyse(MotionWindow? window) {
+    return containerFor(window)
+        .read(cyclingPatternDetectorProvider.notifier)
+        .getCurrentActivity();
+  }
 
-  group('CyclingPatternDetector - Motion Analysis', () {
-    test('should detect cycling motion pattern', () {
-      // Create cycling-like motion data
-      // x=3, y=3, z=10 → sqrt(9 + 9 + 100) = sqrt(118) ≈ 10.86 > 10.5 ✓
-      final samples = List.generate(150, (i) {
-        return MotionData(
-          accelerometer: AccelerometerData(
-            x: 3.0,
-            y: 3.0,
-            z: 10.0, // magnitude ≈ 10.86
-            timestamp: DateTime.now().add(Duration(milliseconds: i * 20)),
-          ),
-          gyroscope: GyroscopeData(
-            x: 1.0,
-            y: 0.5,
-            z: 0.5, // magnitude ≈ 1.22 > 0.5 ✓
-            timestamp: DateTime.now().add(Duration(milliseconds: i * 20)),
-          ),
-          timestamp: DateTime.now().add(Duration(milliseconds: i * 20)),
-        );
-      });
+  // ---------------------------------------------------------------------------
+  // Gating
+  // ---------------------------------------------------------------------------
 
-      final window = MotionWindow(
-        samples: samples,
-        startTime: samples.first.timestamp,
-        endTime: samples.last.timestamp,
-      );
+  group('CyclingPatternDetector - window gating', () {
+    test('returns unknown when there is no motion window', () async {
+      final result = await analyse(null);
 
-      // Check motion pattern
-      expect(window.averageAcceleration, greaterThan(10.0));
-      expect(window.averageRotation, greaterThan(0.5));
-      expect(window.hasEnoughSamples, isTrue);
+      expect(result.activity, equals(ActivityType.unknown));
+      expect(result.confidence, equals(0.0));
     });
 
-    test('should detect stationary pattern', () {
-      final samples = List.generate(150, (i) {
-        return MotionData(
-          accelerometer: AccelerometerData(
-            x: 0.0,
-            y: 0.0,
-            z: 9.8, // Only gravity
-            timestamp: DateTime.now().add(Duration(milliseconds: i * 20)),
-          ),
-          gyroscope: GyroscopeData(
-            x: 0.0,
-            y: 0.0,
-            z: 0.0,
-            timestamp: DateTime.now().add(Duration(milliseconds: i * 20)),
-          ),
-          timestamp: DateTime.now().add(Duration(milliseconds: i * 20)),
-        );
-      });
-
-      final window = MotionWindow(
-        samples: samples,
-        startTime: samples.first.timestamp,
-        endTime: samples.last.timestamp,
+    test('returns unknown below AppConstants.pedalingCycleSamples', () async {
+      final result = await analyse(
+        buildWindow(count: AppConstants.pedalingCycleSamples - 1),
       );
 
-      expect(window.averageAcceleration, lessThan(10.0));
-      expect(window.averageRotation, lessThan(0.3));
-      expect(window.state, equals(MotionState.stationary));
+      expect(result.activity, equals(ActivityType.unknown));
+      expect(result.confidence, equals(0.0));
+    });
+
+    test('analyses once the window has enough samples', () async {
+      final result = await analyse(
+        buildWindow(count: AppConstants.pedalingCycleSamples),
+      );
+
+      expect(result.activity, isNot(equals(ActivityType.unknown)));
     });
   });
 
-  group('CyclingPatternDetector - Frequency Analysis', () {
-    test('should detect pedaling frequency', () {
-      // Generate periodic acceleration pattern (1 Hz = 60 RPM)
-      final samples = <MotionData>[];
-      final baseTime = DateTime.now();
+  // ---------------------------------------------------------------------------
+  // Layer 1 — motion pattern (accel + rotation), 40% of the final score
+  // ---------------------------------------------------------------------------
 
-      for (var i = 0; i < 200; i++) {
-        final t = i * 0.01; // 100 Hz sampling
-        // Simulate pedaling: periodic acceleration
-        final accelValue = 11.0 + 2.0 * sin(2 * pi * 1.0 * t); // 1 Hz
+  group('CyclingPatternDetector - layer 1 (motion pattern)', () {
+    test('scores 1.0 when accel and rotation are both in cycling range',
+        () async {
+      final result = await analyse(buildWindow(
+        count: 150,
+        accelMagnitude: 12.0, // within [10, 20]
+        gyroMagnitude: 1.0, // within [0.5, 3.0]
+      ));
 
-        samples.add(MotionData(
-          accelerometer: AccelerometerData(
-            x: accelValue * 0.5,
-            y: accelValue * 0.5,
-            z: accelValue,
-            timestamp: baseTime.add(Duration(milliseconds: (t * 1000).round())),
-          ),
-          gyroscope: GyroscopeData(
-            x: 1.0,
-            y: 0.5,
-            z: 0.5,
-            timestamp: baseTime.add(Duration(milliseconds: (t * 1000).round())),
-          ),
-          timestamp: baseTime.add(Duration(milliseconds: (t * 1000).round())),
-        ));
-      }
-
-      final window = MotionWindow(
-        samples: samples,
-        startTime: samples.first.timestamp,
-        endTime: samples.last.timestamp,
-      );
-
-      // Should have periodic pattern
-      expect(window.indicatesCyclingEnhanced, isTrue);
+      expect(result.motionScore, equals(1.0));
     });
 
-    test('should not detect cycling in random motion', () {
-      // Generate random acceleration pattern
-      final samples = List.generate(150, (i) {
-        final random = Random(i); // Seeded for consistency
-        return MotionData(
-          accelerometer: AccelerometerData(
-            x: random.nextDouble() * 2,
-            y: random.nextDouble() * 2,
-            z: 9.0 + random.nextDouble() * 2,
-            timestamp: DateTime.now().add(Duration(milliseconds: i * 20)),
-          ),
-          gyroscope: GyroscopeData(
-            x: random.nextDouble() * 0.5,
-            y: random.nextDouble() * 0.5,
-            z: random.nextDouble() * 0.5,
-            timestamp: DateTime.now().add(Duration(milliseconds: i * 20)),
-          ),
-          timestamp: DateTime.now().add(Duration(milliseconds: i * 20)),
-        );
-      });
+    test('scores 0.5 when only the acceleration fits', () async {
+      final result = await analyse(buildWindow(
+        count: 150,
+        accelMagnitude: 12.0,
+        gyroMagnitude: 0.1, // below cyclingRotationMin
+      ));
 
-      final window = MotionWindow(
-        samples: samples,
-        startTime: samples.first.timestamp,
-        endTime: samples.last.timestamp,
-      );
+      expect(result.motionScore, equals(0.5));
+    });
 
-      // Random motion should not have enough periodic patterns
-      expect(window.averageRotation, lessThan(0.5));
+    test('scores 0.5 when only the rotation fits', () async {
+      final result = await analyse(buildWindow(
+        count: 150,
+        accelMagnitude: 25.0, // above cyclingAccelerationMax
+        gyroMagnitude: 1.0,
+      ));
+
+      expect(result.motionScore, equals(0.5));
+    });
+
+    test('gives the below-range accel consolation 0.2', () async {
+      final result = await analyse(buildWindow(
+        count: 150,
+        accelMagnitude: 9.0, // below cyclingAccelerationMin
+        gyroMagnitude: 0.1,
+      ));
+
+      expect(result.motionScore, closeTo(0.2, 1e-9));
+    });
+
+    test('scores 0.0 when accel is above range and rotation is not', () async {
+      final result = await analyse(buildWindow(
+        count: 150,
+        accelMagnitude: 25.0,
+        gyroMagnitude: 5.0, // above cyclingRotationMax
+      ));
+
+      expect(result.motionScore, equals(0.0));
     });
   });
 
-  group('CyclingPatternDetector - Speed Validation', () {
-    test('should validate cycling speed range', () {
-      // Cycling speed: 18 km/h = 5 m/s
-      final location = LocationData(
-        latitude: 48.8566,
-        longitude: 2.3522,
-        altitude: 35.0,
-        accuracy: 10.0,
-        speed: 5.0, // m/s
-        heading: 90.0, // Heading east
-        timestamp: DateTime.now(),
-      );
+  // ---------------------------------------------------------------------------
+  // Layer 2 — pedaling frequency, 25% of the final score
+  // ---------------------------------------------------------------------------
 
-      final speedKmh = location.speed * 3.6;
+  group('CyclingPatternDetector - layer 2 (pedaling frequency)', () {
+    test('scores 0.0 below AppConstants.minSamplesForPattern', () async {
+      // Enough to be analysed (>= 50) but not to look for a cadence (< 100).
+      final result = await analyse(buildWindow(
+        count: AppConstants.minSamplesForPattern - 1,
+        peakEvery: 42,
+      ));
 
-      expect(speedKmh, greaterThanOrEqualTo(AppConstants.cyclingSpeedMin));
-      expect(speedKmh, lessThanOrEqualTo(AppConstants.cyclingSpeedMax));
+      expect(result.frequencyScore, equals(0.0));
     });
 
-    test('should reject walking speed', () {
-      // Walking speed: 5 km/h = 1.39 m/s
-      final location = LocationData(
-        latitude: 48.8566,
-        longitude: 2.3522,
-        altitude: 35.0,
-        accuracy: 10.0,
-        speed: 1.39, // m/s
-        heading: 90.0,
-        timestamp: DateTime.now(),
-      );
+    test('scores 0.0 when the signal has no peaks at all', () async {
+      final result = await analyse(buildWindow(count: 150));
 
-      final speedKmh = location.speed * 3.6;
-
-      expect(speedKmh, lessThan(AppConstants.cyclingSpeedMin));
+      expect(result.frequencyScore, equals(0.0));
     });
 
-    test('should reject driving speed', () {
-      // Driving speed: 50 km/h = 13.89 m/s
-      final location = LocationData(
-        latitude: 48.8566,
-        longitude: 2.3522,
-        altitude: 35.0,
-        accuracy: 10.0,
-        speed: 13.89, // m/s
-        heading: 90.0,
-        timestamp: DateTime.now(),
-      );
+    test('scores 0.0 when fewer than two peaks are found', () async {
+      // A single peak at index 100 of 150.
+      final result = await analyse(buildWindow(count: 150, peakEvery: 100));
 
-      final speedKmh = location.speed * 3.6;
-
-      expect(speedKmh, greaterThan(AppConstants.cyclingSpeedMax));
+      expect(result.frequencyScore, equals(0.0));
     });
 
-    test('should validate typical cycling speed', () {
-      // Typical cycling: 18 km/h = 5 m/s
-      final location = LocationData(
-        latitude: 48.8566,
-        longitude: 2.3522,
-        altitude: 35.0,
-        accuracy: 10.0,
-        speed: 5.0, // m/s
-        heading: 90.0,
-        timestamp: DateTime.now(),
-      );
+    test('ignores peaks below the 10.0 m/s² amplitude threshold', () async {
+      final result = await analyse(buildWindow(
+        count: 150,
+        accelMagnitude: 8.0,
+        peakEvery: 42,
+        peakMagnitude: 9.5, // still under the isPeak threshold of 10.0
+      ));
 
-      final speedKmh = location.speed * 3.6;
+      expect(result.frequencyScore, equals(0.0));
+    });
 
-      // Should be close to typical cycling speed
+    test('scores near 1.0 at the typical cadence (~1.2 Hz)', () async {
+      // 42 samples * 20 ms = 840 ms between peaks ≈ 1.19 Hz.
+      final result = await analyse(buildWindow(count: 300, peakEvery: 42));
+
+      expect(result.frequencyScore, greaterThan(0.98));
+      expect(result.frequencyScore, lessThanOrEqualTo(1.0));
+    });
+
+    test('clamps to 0.6 at the edge of the cycling cadence band', () async {
+      // 25 samples * 20 ms = 500 ms → 2.0 Hz == pedalingFrequencyMax.
+      final result = await analyse(buildWindow(count: 300, peakEvery: 25));
+
+      expect(result.frequencyScore, closeTo(0.6, 1e-9));
+    });
+
+    test('scores 0.3 for periodic motion outside the cadence band', () async {
+      // 5 samples * 20 ms = 100 ms → 10 Hz, far above pedalingFrequencyMax.
+      final result = await analyse(buildWindow(count: 300, peakEvery: 5));
+
+      expect(result.frequencyScore, closeTo(0.3, 1e-9));
+    });
+
+    test('scores 0.0 on a degenerate (zero-length) peak span', () async {
+      final result = await analyse(buildWindow(
+        count: 300,
+        peakEvery: 42,
+        identicalTimestamps: true,
+      ));
+
+      expect(result.frequencyScore, equals(0.0));
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Layer 3 — GPS speed. Known defect, pinned deliberately.
+  // ---------------------------------------------------------------------------
+
+  group('CyclingPatternDetector - layer 3 (GPS speed) is never fed', () {
+    // `build()` declares `LocationData? currentLocation` and never assigns it,
+    // and `getCurrentActivity()` declares a `location` local it never assigns
+    // either. So `_analyzeSpeedPattern` — the code that would map 8-40 km/h to
+    // 0.6-1.0, <8 km/h to 0.3 and >40 km/h to 0.2 — is unreachable, and the
+    // 35%-weighted speed term is hardcoded to the neutral 0.5 for every input.
+    //
+    // These tests pin that behaviour so wiring GPS in later is a visible,
+    // deliberate change rather than a silent one. There is no seam that lets a
+    // test drive `_analyzeSpeedPattern`; it stays uncovered until the detector
+    // is wired to a location source (L-011).
+
+    test('speedScore is the neutral 0.5 for a cycling-shaped window', () async {
+      final result = await analyse(buildWindow(count: 300, peakEvery: 42));
+
+      expect(result.speedScore, equals(0.5));
+    });
+
+    test('speedScore is the neutral 0.5 for a stationary window too', () async {
+      final result = await analyse(buildWindow(
+        count: 150,
+        accelMagnitude: 9.8,
+        gyroMagnitude: 0.0,
+      ));
+
+      expect(result.speedScore, equals(0.5));
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Fusion — the documented 40/35/25 weighting and per-activity scores
+  // ---------------------------------------------------------------------------
+
+  group('CyclingPatternDetector - classification', () {
+    test('classifies a full cycling signature as cycling', () async {
+      final result = await analyse(buildWindow(count: 300, peakEvery: 42));
+
+      expect(result.activity, equals(ActivityType.cycling));
+      expect(result.isCyclingDetected, isTrue);
       expect(
-        (speedKmh - AppConstants.cyclingSpeedTypical).abs(),
-        lessThan(5.0),
+        result.confidence,
+        greaterThanOrEqualTo(AppConstants.minConfidenceForDetection),
+      );
+    });
+
+    test('combines the layers with the documented 40/35/25 weights', () async {
+      final result = await analyse(buildWindow(count: 300, peakEvery: 42));
+
+      final expected = result.motionScore * AppConstants.motionScoreWeight +
+          result.speedScore * AppConstants.speedScoreWeight +
+          result.frequencyScore * AppConstants.frequencyScoreWeight;
+
+      expect(result.confidence, closeTo(expected, 1e-9));
+      expect(result.allScores?[ActivityType.cycling], closeTo(expected, 1e-9));
+    });
+
+    test('classifies a resting device as stationary', () async {
+      final result = await analyse(buildWindow(
+        count: 150,
+        accelMagnitude: 9.8,
+        gyroMagnitude: 0.0,
+      ));
+
+      expect(result.activity, equals(ActivityType.stationary));
+      expect(result.isCyclingDetected, isFalse);
+      expect(result.allScores?[ActivityType.stationary], equals(0.9));
+    });
+
+    test('scores walking above the default when the shape fits', () async {
+      // accel in [10, 12), no cadence, speed 0.5 -> walking arm requires
+      // speedScore < 0.4, which the hardcoded 0.5 can never satisfy. This pins
+      // the second consequence of the layer-3 defect: the walking branch of
+      // `_calculateActivityScores` is dead too.
+      final result = await analyse(buildWindow(
+        count: 150,
+        accelMagnitude: 11.0,
+        gyroMagnitude: 0.1,
+      ));
+
+      expect(result.allScores?[ActivityType.walking], equals(0.2));
+    });
+
+    test('never selects unknown once a window is analysed', () async {
+      final result = await analyse(buildWindow(count: 150));
+
+      expect(result.allScores?[ActivityType.unknown], equals(0.0));
+      expect(result.activity, isNot(equals(ActivityType.unknown)));
+    });
+  });
+
+  group('CyclingPatternDetector - isCycling()', () {
+    test('is true for a cycling signature', () async {
+      final container = containerFor(buildWindow(count: 300, peakEvery: 42));
+
+      expect(
+        await container.read(cyclingPatternDetectorProvider.notifier).isCycling(),
+        isTrue,
+      );
+    });
+
+    test('is false for a resting device', () async {
+      final container = containerFor(
+        buildWindow(count: 150, accelMagnitude: 9.8, gyroMagnitude: 0.0),
+      );
+
+      expect(
+        await container.read(cyclingPatternDetectorProvider.notifier).isCycling(),
+        isFalse,
+      );
+    });
+
+    test('is false when no window is available', () async {
+      final container = containerFor(null);
+
+      expect(
+        await container.read(cyclingPatternDetectorProvider.notifier).isCycling(),
+        isFalse,
       );
     });
   });
 
-  group('MotionWindow - Enhanced Detection', () {
-    test('should use enhanced cycling detection', () {
-      // Generate cycling pattern with peaks
-      final samples = <MotionData>[];
-      final baseTime = DateTime.now();
+  // ---------------------------------------------------------------------------
+  // The stream itself (polls the motion service once a second)
+  // ---------------------------------------------------------------------------
 
-      for (var i = 0; i < 150; i++) {
-        final t = i * 0.02; // 50 Hz sampling
-        // Simulate pedaling with peaks
-        final accelValue = 12.0 + 3.0 * sin(2 * pi * 1.2 * t); // 1.2 Hz
+  group('CyclingPatternDetector - stream', () {
+    test('emits a classification about once a second', () async {
+      final container = containerFor(buildWindow(count: 300, peakEvery: 42));
+      // Hold a subscription so the auto-dispose provider stays alive while the
+      // 1 s poll ticks.
+      final sub = container.listen(cyclingPatternDetectorProvider, (_, _) {});
+      addTearDown(sub.close);
 
-        samples.add(MotionData(
-          accelerometer: AccelerometerData(
-            x: accelValue * 0.3,
-            y: accelValue * 0.3,
-            z: accelValue * 0.9,
-            timestamp: baseTime.add(Duration(milliseconds: (t * 1000).round())),
-          ),
-          gyroscope: GyroscopeData(
-            x: 1.0 + 0.5 * sin(2 * pi * 1.2 * t),
-            y: 0.8,
-            z: 0.6,
-            timestamp: baseTime.add(Duration(milliseconds: (t * 1000).round())),
-          ),
-          timestamp: baseTime.add(Duration(milliseconds: (t * 1000).round())),
-        ));
-      }
+      final first = await container
+          .read(cyclingPatternDetectorProvider.future)
+          .timeout(const Duration(seconds: 5));
 
-      final window = MotionWindow(
-        samples: samples,
-        startTime: samples.first.timestamp,
-        endTime: samples.last.timestamp,
-      );
+      expect(first.activity, equals(ActivityType.cycling));
+    });
 
-      // Enhanced detection should find periodic pattern
-      expect(window.hasEnoughSamples, isTrue);
-      expect(window.averageAcceleration, greaterThan(10.0));
-      expect(window.averageRotation, greaterThan(0.5));
+    test('emits unknown while the motion buffer is empty', () async {
+      final container = containerFor(null);
+      final sub = container.listen(cyclingPatternDetectorProvider, (_, _) {});
+      addTearDown(sub.close);
+
+      final first = await container
+          .read(cyclingPatternDetectorProvider.future)
+          .timeout(const Duration(seconds: 5));
+
+      expect(first.activity, equals(ActivityType.unknown));
     });
   });
+}
 
-  group('AppConstants - Cycling Thresholds', () {
-    test('should have valid acceleration thresholds', () {
-      expect(AppConstants.cyclingAccelerationMin, equals(10.0));
-      expect(AppConstants.cyclingAccelerationMax, equals(20.0));
-      expect(AppConstants.walkingAccelerationMax, equals(12.0));
-      expect(
-        AppConstants.cyclingAccelerationMin,
-        lessThan(AppConstants.cyclingAccelerationMax),
-      );
-    });
+/// Feeds the detector a fixed motion window.
+///
+/// Overriding `build()` keeps the real service's `ref.listen` on the sensor
+/// stream out of the way; `getCurrentWindow()` is the only thing the detector
+/// actually calls.
+class _FakeMotionDetectionService extends MotionDetectionService {
+  _FakeMotionDetectionService(this._window);
 
-    test('should have valid rotation thresholds', () {
-      expect(AppConstants.cyclingRotationMin, equals(0.5));
-      expect(AppConstants.cyclingRotationMax, equals(3.0));
-      expect(
-        AppConstants.cyclingRotationMin,
-        lessThan(AppConstants.cyclingRotationMax),
-      );
-    });
+  final MotionWindow? _window;
 
-    test('should have valid frequency thresholds', () {
-      expect(AppConstants.pedalingFrequencyMin, equals(0.5)); // 30 RPM
-      expect(AppConstants.pedalingFrequencyMax, equals(2.0)); // 120 RPM
-      expect(
-        AppConstants.pedalingFrequencyMin,
-        lessThan(AppConstants.pedalingFrequencyMax),
-      );
-    });
+  @override
+  Stream<MotionState> build() => const Stream<MotionState>.empty();
 
-    test('should have valid speed thresholds', () {
-      expect(AppConstants.cyclingSpeedMin, equals(8.0));
-      expect(AppConstants.cyclingSpeedMax, equals(40.0));
-      expect(AppConstants.cyclingSpeedTypical, equals(18.0));
-      expect(
-        AppConstants.cyclingSpeedMin,
-        lessThan(AppConstants.cyclingSpeedTypical),
-      );
-      expect(
-        AppConstants.cyclingSpeedTypical,
-        lessThan(AppConstants.cyclingSpeedMax),
-      );
-    });
-
-    test('should have valid confidence thresholds', () {
-      expect(AppConstants.minConfidenceForDetection, equals(0.6));
-      expect(AppConstants.highConfidenceThreshold, equals(0.8));
-      expect(
-        AppConstants.minConfidenceForDetection,
-        lessThan(AppConstants.highConfidenceThreshold),
-      );
-    });
-
-    test('should have valid classification weights', () {
-      expect(AppConstants.motionScoreWeight, equals(0.4));
-      expect(AppConstants.speedScoreWeight, equals(0.35));
-      expect(AppConstants.frequencyScoreWeight, equals(0.25));
-
-      // Weights should sum to 1.0
-      const total = AppConstants.motionScoreWeight +
-          AppConstants.speedScoreWeight +
-          AppConstants.frequencyScoreWeight;
-      expect(total, closeTo(1.0, 0.01));
-    });
-  });
+  @override
+  MotionWindow? getCurrentWindow() => _window;
 }

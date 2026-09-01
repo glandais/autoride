@@ -42,9 +42,9 @@ class DatabaseService {
       return await openDatabase(
         path,
         version: AppConstants.databaseVersion,
-        onCreate: _onCreate,
-        onUpgrade: _onUpgrade,
-        onConfigure: _onConfigure,
+        onCreate: onCreate,
+        onUpgrade: onUpgrade,
+        onConfigure: onConfigure,
       );
     } catch (e, stackTrace) {
       // ignore: avoid_print
@@ -57,13 +57,19 @@ class DatabaseService {
 
   /// Configure database settings
   /// Enables foreign key constraints
-  Future<void> _onConfigure(Database db) async {
+  ///
+  /// Public so tests can open the *production* configuration against an
+  /// in-memory database instead of re-declaring it (L-014).
+  Future<void> onConfigure(Database db) async {
     await db.execute('PRAGMA foreign_keys = ON');
   }
 
   /// Create database schema
   /// Called when database is created for the first time
-  Future<void> _onCreate(Database db, int version) async {
+  ///
+  /// Public so tests can execute the *production* DDL against an in-memory
+  /// database instead of re-declaring it (L-014).
+  Future<void> onCreate(Database db, int version) async {
     // Create trips table
     // FIXME(T009): Add a 'status' column (e.g. active/completed/discarded) for
     // trip lifecycle tracking. Currently only user_confirmed boolean exists.
@@ -117,7 +123,10 @@ class DatabaseService {
 
   /// Upgrade database schema
   /// Called when database version changes
-  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+  ///
+  /// Public so tests can drive the *production* migration path (L-014).
+  /// Currently a no-op: schema version 1 is the only version ever shipped.
+  Future<void> onUpgrade(Database db, int oldVersion, int newVersion) async {
     // Future migrations will go here
     // Example:
     // if (oldVersion < 2) {
