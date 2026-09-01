@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'core/permissions/providers/background_location_status.dart';
+import 'core/permissions/widgets/background_location_banner.dart';
 import 'core/theme/app_theme.dart';
 import 'core/theme/theme_provider.dart';
 import 'core/utils/platform_config_validator.dart';
@@ -44,13 +46,19 @@ class _AutoRideAppState extends ConsumerState<AutoRideApp>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    // The user may have granted location in system settings while the app was
-    // backgrounded; without a re-read, automatic detection would stay off until
-    // the next cold start.
-    if (state == AppLifecycleState.resumed &&
-        !ref.read(autoDetectionControllerProvider).permissionGranted) {
+    // The user may have changed location permission in system settings while
+    // the app was backgrounded; without a re-read, automatic detection would
+    // stay off until the next cold start.
+    if (state != AppLifecycleState.resumed) return;
+
+    if (!ref.read(autoDetectionControllerProvider).permissionGranted) {
       ref.read(autoDetectionControllerProvider.notifier).refreshPermission();
     }
+
+    // Unconditional: the background permission can have been downgraded as
+    // well as upgraded ("Always" back to "While Using"), and the banner has to
+    // follow both directions.
+    ref.read(backgroundLocationStatusProvider.notifier).refresh();
   }
 
   @override
@@ -196,24 +204,33 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     // start a trip at all, and this tab was permanently disabled).
     return Scaffold(
       body: _screens[_currentIndex],
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _currentIndex,
-        onDestinationSelected: _onTabTapped,
-        destinations: [
-          const NavigationDestination(
-            icon: Icon(Icons.history),
-            selectedIcon: Icon(Icons.history),
-            label: 'History',
-          ),
-          NavigationDestination(
-            icon: const Icon(Icons.directions_bike),
-            selectedIcon: const Icon(Icons.directions_bike),
-            label: hasActiveTrip ? 'Active Trip' : 'Trip',
-          ),
-          const NavigationDestination(
-            icon: Icon(Icons.settings),
-            selectedIcon: Icon(Icons.settings),
-            label: 'Settings',
+      // The banner sits between the tab content and the navigation bar: each
+      // tab owns its app bar, so the top of the shell would put it above the
+      // title and under the status bar.
+      bottomNavigationBar: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const BackgroundLocationBanner(),
+          NavigationBar(
+            selectedIndex: _currentIndex,
+            onDestinationSelected: _onTabTapped,
+            destinations: [
+              const NavigationDestination(
+                icon: Icon(Icons.history),
+                selectedIcon: Icon(Icons.history),
+                label: 'History',
+              ),
+              NavigationDestination(
+                icon: const Icon(Icons.directions_bike),
+                selectedIcon: const Icon(Icons.directions_bike),
+                label: hasActiveTrip ? 'Active Trip' : 'Trip',
+              ),
+              const NavigationDestination(
+                icon: Icon(Icons.settings),
+                selectedIcon: Icon(Icons.settings),
+                label: 'Settings',
+              ),
+            ],
           ),
         ],
       ),

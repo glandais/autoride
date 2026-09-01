@@ -144,6 +144,33 @@ void main() {
 
       expect(await serviceOn().isLocationServiceEnabled(), isFalse);
     });
+
+    test(
+      'locationAccuracy reports the reduced accuracy geolocator gives',
+      () async {
+        // iOS 14+ "Precise Location" off, or Android 12+ coarse-only.
+        geolocator.accuracy = LocationAccuracyStatus.reduced;
+
+        expect(
+          await serviceOn().locationAccuracy(),
+          equals(LocationAccuracyStatus.reduced),
+        );
+      },
+    );
+
+    test(
+      'locationAccuracy falls back to precise when the platform throws',
+      () async {
+        // Accuracy must never block the app: a platform that does not implement
+        // the call is treated as precise rather than as a missing capability.
+        geolocator.accuracyError = UnimplementedError('no getLocationAccuracy');
+
+        expect(
+          await serviceOn().locationAccuracy(),
+          equals(LocationAccuracyStatus.precise),
+        );
+      },
+    );
   });
 
   // ---------------------------------------------------------------------------
@@ -507,7 +534,16 @@ class _FakePermissionHandler extends PermissionHandlerPlatform {
 /// Only `isLocationServiceEnabled` is reached from this service.
 class _FakeGeolocator extends GeolocatorPlatform {
   bool serviceEnabled = true;
+  LocationAccuracyStatus accuracy = LocationAccuracyStatus.precise;
+  Object? accuracyError;
 
   @override
   Future<bool> isLocationServiceEnabled() async => serviceEnabled;
+
+  @override
+  Future<LocationAccuracyStatus> getLocationAccuracy() async {
+    final error = accuracyError;
+    if (error != null) throw error;
+    return accuracy;
+  }
 }

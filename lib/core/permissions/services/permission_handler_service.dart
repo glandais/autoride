@@ -42,6 +42,23 @@ class PermissionHandlerService extends _$PermissionHandlerService {
     return await Geolocator.isLocationServiceEnabled();
   }
 
+  /// Whether the OS grants precise or only approximate location.
+  ///
+  /// `permission_handler` has no notion of accuracy, so "granted" alone is not
+  /// enough: iOS 14+ lets the user turn "Precise Location" off and Android 12+
+  /// lets them grant only `ACCESS_COARSE_LOCATION` (reported as
+  /// [LocationAccuracyStatus.reduced]), which puts GPS points kilometres off.
+  Future<LocationAccuracyStatus> locationAccuracy() async {
+    try {
+      return await Geolocator.getLocationAccuracy();
+    } catch (_) {
+      // Accuracy must never block the app: platforms that do not implement the
+      // call (and plugin failures) are treated as precise. When the permission
+      // itself is missing, that missing permission is the issue to report.
+      return LocationAccuracyStatus.precise;
+    }
+  }
+
   /// Check permission status
   Future<AppPermissionStatus> checkPermission(AppPermission permission) async {
     final phPermission = _toPermissionHandler(permission);

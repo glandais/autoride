@@ -124,19 +124,26 @@ class PermissionRationaleDialog extends StatelessWidget {
 
   /// Show the dialog
   ///
-  /// Returns true if user tapped Allow, false if denied/skipped, null if dismissed
+  /// Returns true if user tapped Allow, false if denied/skipped, null if dismissed.
+  ///
+  /// The buttons pop the dialog themselves before invoking the callbacks, so
+  /// the answer is captured here rather than popped a second time — a second
+  /// pop would close the *caller's* route (settings screen, onboarding page)
+  /// and the returned value was always null.
   static Future<bool?> show(
     BuildContext context,
     PermissionRationale rationale,
-  ) {
-    return showDialog<bool>(
+  ) async {
+    bool? answer;
+    await showDialog<void>(
       context: context,
       barrierDismissible: false,
       builder: (context) => PermissionRationaleDialog(
         rationale: rationale,
-        onAllow: () => Navigator.of(context).pop(true),
-        onDeny: () => Navigator.of(context).pop(false),
+        onAllow: () => answer = true,
+        onDeny: () => answer = false,
       ),
     );
+    return answer;
   }
 }

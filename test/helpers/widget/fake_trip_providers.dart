@@ -2,6 +2,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 // `Override` is not re-exported by flutter_riverpod.
 import 'package:riverpod_annotation/riverpod_annotation.dart' show Override;
 
+import 'package:geolocator/geolocator.dart' show LocationAccuracyStatus;
+
+import 'package:autoride/core/permissions/exceptions/permission_exceptions.dart';
+import 'package:autoride/core/permissions/models/background_location_state.dart';
+import 'package:autoride/core/permissions/models/permission_status.dart';
+import 'package:autoride/core/permissions/providers/background_location_status.dart';
+import 'package:autoride/core/platform/models/platform_info.dart';
+import 'package:autoride/core/platform/services/platform_info_service.dart';
 import 'package:autoride/features/onboarding/data/services/onboarding_service.dart';
 import 'package:autoride/features/settings/data/services/settings_service.dart';
 import 'package:autoride/features/settings/domain/models/detection_settings.dart';
@@ -242,6 +250,66 @@ class FakeOnboardingService extends OnboardingService {
   }
 }
 
+/// A background-location state without the permission or location plugins.
+BackgroundLocationState backgroundLocationState({
+  bool granted = true,
+  bool precise = true,
+}) => BackgroundLocationState(
+  permission: AppPermissionStatus(
+    permission: AppPermission.locationAlways,
+    isGranted: granted,
+    isDenied: !granted,
+    // What permission_handler reports on iOS for "While Using", and on
+    // Android when "Allow all the time" was not picked.
+    isPermanentlyDenied: !granted,
+    isRestricted: false,
+    isLimited: false,
+  ),
+  accuracy: precise
+      ? LocationAccuracyStatus.precise
+      : LocationAccuracyStatus.reduced,
+);
+
+class FakeBackgroundLocationStatus extends BackgroundLocationStatus {
+  FakeBackgroundLocationStatus({this.granted = true, this.precise = true});
+
+  final bool granted;
+  final bool precise;
+  int refreshCalls = 0;
+
+  @override
+  Future<BackgroundLocationState> build() async =>
+      backgroundLocationState(granted: granted, precise: precise);
+
+  @override
+  void refresh() {
+    refreshCalls++;
+  }
+}
+
+class FakePlatformInfoService extends PlatformInfoService {
+  FakePlatformInfoService([this.info = androidPlatform]);
+
+  final PlatformInfo info;
+
+  @override
+  Future<PlatformInfo> build() async => info;
+}
+
+const androidPlatform = PlatformInfo(
+  type: PlatformType.android,
+  version: '14',
+  apiLevel: 34,
+  isPhysicalDevice: true,
+);
+
+const iosPlatform = PlatformInfo(
+  type: PlatformType.ios,
+  version: '17.4',
+  apiLevel: 0,
+  isPhysicalDevice: true,
+);
+
 class FakeTripHistory extends TripHistory {
   FakeTripHistory([this.trips = const []]);
 
@@ -262,8 +330,20 @@ List<Override> tripSurfaceOverrides({
   required AutoDetectionLog detection,
   TripState initialTripState = const TripState.idle(),
   bool automaticDetectionEnabled = true,
+  bool backgroundLocationGranted = true,
+  bool backgroundLocationPrecise = true,
+  PlatformInfo platform = androidPlatform,
   List<Trip> trips = const [],
 }) => [
+  backgroundLocationStatusProvider.overrideWith(
+    () => FakeBackgroundLocationStatus(
+      granted: backgroundLocationGranted,
+      precise: backgroundLocationPrecise,
+    ),
+  ),
+  platformInfoServiceProvider.overrideWith(
+    () => FakePlatformInfoService(platform),
+  ),
   tripStateMachineProvider.overrideWith(
     () => FakeTripStateMachine(initialTripState),
   ),

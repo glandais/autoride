@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:autoride/core/permissions/exceptions/permission_exceptions.dart';
+import 'package:autoride/core/permissions/providers/background_location_status.dart';
 import 'package:autoride/core/permissions/services/permission_handler_service.dart';
 import 'package:autoride/features/onboarding/data/services/onboarding_service.dart';
 import 'package:autoride/features/onboarding/presentation/providers/onboarding_provider.dart';
@@ -24,10 +25,12 @@ import '../../../../helpers/widget/pump_app.dart';
 void main() {
   late PermissionScript script;
   late FakeOnboardingService onboardingService;
+  late FakeBackgroundLocationStatus backgroundStatus;
 
   setUp(() {
     script = PermissionScript();
     onboardingService = FakeOnboardingService(firstLaunch: true);
+    backgroundStatus = FakeBackgroundLocationStatus(granted: false);
   });
 
   /// Only the page the user is actually looking at.
@@ -45,6 +48,7 @@ void main() {
           () => FakePermissionHandlerService(script),
         ),
         onboardingServiceProvider.overrideWith(() => onboardingService),
+        backgroundLocationStatusProvider.overrideWith(() => backgroundStatus),
       ],
     );
     await tester.pumpAndSettle();
@@ -176,6 +180,9 @@ void main() {
         expect(state.backgroundPermissionGranted, isTrue);
         expect(state.notificationPermissionGranted, isTrue);
         expect(currentPage(container), 4);
+        // The app-wide background-location status is re-read: it was built
+        // before the request and would otherwise stay "not granted" forever.
+        expect(backgroundStatus.refreshCalls, 1);
       },
     );
 

@@ -34,6 +34,11 @@
 	<string>AutoRide needs background location access to automatically detect when you start cycling, even when the app is closed. This enables hands-free trip tracking without needing to manually start or stop recording. Your location data stays private on your device and is never shared.</string>
 	<key>NSLocationAlwaysUsageDescription</key>
 	<string>AutoRide needs background location access to automatically detect your cycling trips when the app is closed.</string>
+	<key>NSLocationTemporaryUsageDescriptionDictionary</key>
+	<dict>
+		<key>TripRecording</key>
+		<string>AutoRide needs your precise location to record the distance, speed and route of a bike trip.</string>
+	</dict>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>AutoRide tracks your location to record cycling routes, calculate distance and speed, and map your trips while you're using the app.</string>
 	<key>UIApplicationSceneManifest</key>

@@ -3,6 +3,7 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../../domain/models/onboarding_state.dart';
 import '../../data/services/onboarding_service.dart';
+import '../../../../core/permissions/providers/background_location_status.dart';
 import '../../../../core/permissions/services/permission_handler_service.dart';
 import '../../../../core/permissions/exceptions/permission_exceptions.dart';
 import '../../../../core/utils/logger.dart';
@@ -166,6 +167,12 @@ class Onboarding extends _$Onboarding {
       // Permission denied or other error - continue anyway
       if (!ref.mounted) return;
       state = state.copyWith(backgroundPermissionGranted: false);
+    } finally {
+      // Whatever the OS answered, the cached status is now stale - and the
+      // permanently-denied path even sent the user to app settings.
+      if (ref.mounted) {
+        ref.read(backgroundLocationStatusProvider.notifier).refresh();
+      }
     }
 
     // Can proceed even if denied (background is optional for manual trips)

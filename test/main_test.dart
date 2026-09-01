@@ -33,6 +33,8 @@ void main() {
   Future<ProviderContainer> pumpShell(
     WidgetTester tester, {
     TripState initialTripState = const TripState.idle(),
+    bool backgroundLocationGranted = true,
+    bool backgroundLocationPrecise = true,
   }) async {
     await pumpAppWidget(
       tester,
@@ -42,6 +44,8 @@ void main() {
           recorder: recorder,
           detection: detection,
           initialTripState: initialTripState,
+          backgroundLocationGranted: backgroundLocationGranted,
+          backgroundLocationPrecise: backgroundLocationPrecise,
         ),
         locationStreamProvider.overrideWith(
           (ref, settings) => const Stream<LocationData>.empty(),
@@ -93,6 +97,38 @@ void main() {
 
       expect(find.byType(TripTrackingScreen), findsOneWidget);
       expect(find.text('Pause Trip'), findsOneWidget);
+    });
+  });
+
+  group('HomeShell - background location banner', () {
+    const bannerTitle = 'Automatic detection needs background location';
+    const preciseBannerTitle = 'Automatic detection needs precise location';
+
+    testWidgets('warns next to the navigation bar when "Always" is missing', (
+      tester,
+    ) async {
+      await pumpShell(tester, backgroundLocationGranted: false);
+
+      expect(find.text(bannerTitle), findsOneWidget);
+      // The banner sits above the navigation bar, it does not replace the tab.
+      expect(find.byType(TripHistoryScreen), findsOneWidget);
+    });
+
+    testWidgets(
+      'warns next to the navigation bar when precise location is off',
+      (tester) async {
+        await pumpShell(tester, backgroundLocationPrecise: false);
+
+        expect(find.text(preciseBannerTitle), findsOneWidget);
+        expect(find.byType(TripHistoryScreen), findsOneWidget);
+      },
+    );
+
+    testWidgets('says nothing once the permission is granted', (tester) async {
+      await pumpShell(tester);
+
+      expect(find.text(bannerTitle), findsNothing);
+      expect(find.text(preciseBannerTitle), findsNothing);
     });
   });
 
