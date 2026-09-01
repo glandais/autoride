@@ -53,6 +53,29 @@ class AppConstants {
   // coordinator cancels its GPS subscription. See TripDetectionCoordinator.
   static const Duration gpsInactivityTimeout = Duration(seconds: 30);
 
+  /// How long a recording trip may go without a single GPS fix before the
+  /// coordinator stops it (L-074). Counted from the last fix, or from the start
+  /// of the trip while no fix has arrived yet.
+  ///
+  /// 10 minutes is chosen against the two failure modes it has to separate:
+  /// - a *recoverable* outage — a tunnel, an underground car park, a dense
+  ///   urban canyon, a cold restart of the location stream — where fixes come
+  ///   back within a couple of minutes and the ride must survive intact. The
+  ///   longest realistic road tunnel a cyclist rides through is well under
+  ///   5 minutes, so a threshold at 10 minutes leaves a 2x margin;
+  /// - a *terminal* one — the phone left in a building, location services
+  ///   switched off mid-ride, the GPS chip wedged — where the trip would
+  ///   otherwise stay "active" for hours on stray gyroscope noise.
+  ///
+  /// The cost of the false negative (waiting 10 min) is bounded and cheap: the
+  /// tail of the trip carries no route points anyway, and the moving time is
+  /// only over-counted by the outage. The cost of stopping too early is losing
+  /// the second half of a real ride, so the threshold is deliberately generous.
+  /// Note that `maxPauseDurationSeconds` (5 min) already auto-stops any trip
+  /// whose *sensors* also go quiet; this timeout only catches the case where
+  /// motion continues but positions do not.
+  static const Duration gpsLossStopTimeout = Duration(minutes: 10);
+
   // Distance Filters by State
   static const int distanceFilterStationary = 100; // meters
   static const int distanceFilterMoving = 20; // meters

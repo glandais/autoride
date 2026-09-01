@@ -68,6 +68,14 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
   void Function()? _releaseSessionLink;
 
   LocationData? _lastLocation;
+
+  /// Reference instant for the GPS-loss watchdog (L-074): the reception time of
+  /// the last fix, or the moment the current trip started while none has
+  /// arrived yet. `null` disarms the watchdog — there is nothing to watch
+  /// outside a trip, and it is cleared while a stop is already in flight so the
+  /// 1 s tick cannot fire the stop twice.
+  DateTime? _gpsWatchdogReference;
+
   bool _isAnalyzing = false;
   bool _disposed = false;
 
@@ -90,6 +98,23 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
   @visibleForTesting
   Timer startGpsInactivityTimer(void Function() onElapsed) =>
       Timer(gpsInactivityTimeout, onElapsed);
+
+  /// How long a recording trip may go without a GPS fix before it is stopped.
+  /// Overridden in tests, like [gpsInactivityTimeout].
+  @visibleForTesting
+  Duration get gpsLossStopTimeout => AppConstants.gpsLossStopTimeout;
+
+  /// Wall clock, as a seam: the GPS-loss watchdog compares instants, and tests
+  /// move this forward instead of waiting ten real minutes.
+  @visibleForTesting
+  DateTime now() => DateTime.now();
+
+  /// Arms the 1 Hz periodic check that drives [_checkDetectionTimeout] and the
+  /// GPS-loss watchdog. Seam for the tests, for the same reason as
+  /// [startGpsInactivityTimer]: they fire the tick by hand.
+  @visibleForTesting
+  Timer startDetectionTimer(void Function() onTick) =>
+      Timer.periodic(const Duration(seconds: 1), (_) => onTick());
 
   @override
   Future<TripState> build() async {
@@ -143,11 +168,24 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
     // immediately in that case.
     _updateGpsGate(MotionState.unknown);
 
-    // Set up periodic check for detection timeout
-    _detectionTimer = Timer.periodic(
-      const Duration(seconds: 1),
-      (_) => _checkDetectionTimeout(),
-    );
+    // A trip already in progress when the session starts (automatic detection
+    // switched on mid-ride, a trip recovered at launch) sees no state
+    // transition, so `_onTripStateChanged` will never arm its watchdog: do it
+    // here instead.
+    if (ref.read(tripStateMachineProvider).hasActiveTrip) {
+      _gpsWatchdogReference ??= now();
+    }
+
+    // Set up the periodic checks: detection timeout, and the GPS-loss watchdog
+    // that ends a trip whose positions stopped arriving.
+    _detectionTimer = startDetectionTimer(_onDetectionTick);
+  }
+
+  /// One tick of the 1 Hz supervisor.
+  void _onDetectionTick() {
+    if (_disposed) return;
+    _checkGpsLossTimeout();
+    _checkDetectionTimeout();
   }
 
   // ---------------------------------------------------------------------------
@@ -295,6 +333,17 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
   /// ends — including when the trip is stopped from the UI or a notification
   /// action, which never reaches [_finalizeAndStopTrip].
   void _onTripStateChanged(TripState? previous, TripState next) {
+    // Arm the GPS-loss watchdog on every transition into a recording, whoever
+    // started it — the automatic path below, the manual start button or a
+    // recovered trip. Counting from here (and not from the first fix) is what
+    // makes "a trip that never got a fix at all" stoppable, while the grace
+    // period before the first fix is exactly `gpsLossStopTimeout`.
+    if (next.hasActiveTrip && previous?.hasActiveTrip != true) {
+      _gpsWatchdogReference = now();
+    } else if (!next.hasActiveTrip) {
+      _gpsWatchdogReference = null;
+    }
+
     if (!_stopRequestedAfterTrip) return;
     if (next.hasActiveTrip) return;
 
@@ -352,6 +401,43 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
   /// Handle incoming location data
   void _onLocationData(LocationData location) {
     _lastLocation = location;
+
+    // Reception time, not `location.timestamp`: a fix replayed from a plugin
+    // cache (or one carrying a skewed device clock) still proves the position
+    // stream is alive, which is the only thing the watchdog measures. Only
+    // armed while a trip is recording — outside one there is nothing to stop.
+    if (_gpsWatchdogReference != null) {
+      _gpsWatchdogReference = now();
+    }
+  }
+
+  /// Stop a recording trip that has gone [gpsLossStopTimeout] without a fix.
+  ///
+  /// The gate is pinned open for the whole recording ([_updateGpsGate]), so
+  /// "no fix" here really means the OS is not delivering positions — the phone
+  /// left indoors, location services switched off mid-ride, a wedged GPS chip
+  /// — and not that the coordinator stopped asking. Without this the trip stays
+  /// active for as long as the gyroscope sees any movement at all.
+  void _checkGpsLossTimeout() {
+    final reference = _gpsWatchdogReference;
+    if (reference == null) return;
+    if (!ref.read(tripStateMachineProvider).hasActiveTrip) {
+      _gpsWatchdogReference = null;
+      return;
+    }
+
+    final elapsed = now().difference(reference);
+    if (elapsed < gpsLossStopTimeout) return;
+
+    _logger.warning(
+      'No GPS fix for ${elapsed.inSeconds}s (limit '
+      '${gpsLossStopTimeout.inSeconds}s) — stopping the trip',
+    );
+
+    // Cleared before the await so a tick landing during the stop cannot
+    // re-enter; the trip-state transition would clear it too, but only later.
+    _gpsWatchdogReference = null;
+    unawaited(_finalizeAndStopTrip());
   }
 
   /// Analyze motion and location for trip start
@@ -388,6 +474,12 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
         }
         return;
       }
+
+      // The stop detector inherits whatever it accumulated during the previous
+      // ride (or during a paused-then-resumed one), so a new recording starts
+      // from a clean pause timer instead of one that may already be most of the
+      // way to `maxPauseDurationSeconds`.
+      ref.read(tripStopDetectorProvider.notifier).reset();
 
       // Update coordinator state
       final stateMachineState = ref.read(tripStateMachineProvider);
@@ -468,8 +560,13 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
     // trip completion notification (implemented in T025)
     await ref.read(tripRecorderServiceProvider.notifier).stopRecording();
 
-    // Reset stop detector
+    // Reset both detectors. The START detector matters as much as the stop one:
+    // its `consecutiveDetections` streak survives a recording, so without this
+    // a single strong sample arriving within `tripStartDetectionWindowSeconds`
+    // of the last positive detection would start the *next* trip on that one
+    // sample, defeating the consecutive-detection rule entirely (L-074).
     ref.read(tripStopDetectorProvider.notifier).reset();
+    ref.read(tripStartDetectorProvider.notifier).reset();
 
     // Update coordinator state
     final stateMachineState = ref.read(tripStateMachineProvider);
@@ -500,7 +597,9 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
       // Detection timed out - return to idle
       stateMachine.stopTrip();
 
-      // Activate cooldown to prevent immediate restart
+      // Clear the streak first, then activate the cooldown: `reset()` returns
+      // the state to `initial()`, so the two calls only compose in this order.
+      ref.read(tripStartDetectorProvider.notifier).reset();
       ref.read(tripStartDetectorProvider.notifier).activateCooldown();
 
       // Reset and restart listening (same session).
@@ -520,6 +619,9 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
 
     _closeMotionSubscription?.call();
     _closeMotionSubscription = null;
+
+    // Nothing supervises the watchdog while the timer is down.
+    _gpsWatchdogReference = null;
 
     // Suspending the session also closes the GPS gate: the recorder owns its
     // own location subscription while a trip runs, so nothing is lost.

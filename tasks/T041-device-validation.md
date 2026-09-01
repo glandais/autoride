@@ -132,3 +132,32 @@ on the bars), automatic detection ON:
   climbs (< 8 km/h) must produce no unintended pause.
 - **Basket case**: phone lying flat and still in a basket/pannier while riding — no
   pause must occur (GPS speed must win over the calm sensors).
+
+## 10. Trip ends when GPS is lost for good (L-074, added 2026-09-01)
+A recording trip is now stopped by the coordinator when no GPS fix has been received for
+`AppConstants.gpsLossStopTimeout` (10 min), counted from the last fix or, while none has
+arrived yet, from the start of the trip. Before this, a trip could stay active for hours
+on stray gyroscope motion alone — the phone forgotten indoors, location services turned
+off mid-ride — because `locationStreamProvider` re-subscribes forever with backoff and
+the stop detector falls back to sensors when the fix is stale.
+
+**To validate:**
+
+- **Terminal loss**: start a trip (manual start is enough), ride a few minutes, then turn
+  **Location services off** at the OS level and keep the phone moving (walk with it). The
+  trip must finalize ~10 min after the last fix, appear in History with the distance
+  recorded up to the outage, and the foreground notification must return to the
+  "detecting" phase. Log line to look for: `No GPS fix for …s (limit 600s) — stopping the
+  trip`.
+- **Recoverable outage must NOT stop the trip**: ride through a tunnel / underground car
+  park for 2–4 min. The trip must survive and resume accumulating points on the far side.
+- **Slow first fix**: start a trip indoors (manual start) and step outside within a couple
+  of minutes. The trip must not be stopped while waiting for the first fix.
+- **Sub-60 s case**: the L-068 rule is unchanged — a trip stopped this way that lasted
+  less than `minTripDurationSeconds` is deleted, not saved, and shows no end-of-trip
+  notification.
+
+**Known gap**: the watchdog lives in the coordinator, so it only supervises a trip while a
+detection session is running. A manual ride started with *automatic detection off* has no
+coordinator session at all, and therefore no GPS-loss stop (it has no auto-pause or
+auto-stop either — same pre-existing limitation).

@@ -43,6 +43,7 @@ Executed the same day as the audit, one commit per step, each by an Opus subagen
 | 12 — the app survives its own first launch | (this change) | **L-072** (new) | `BackgroundLocationService.initialize()` awaits `notificationServiceProvider.future` before `configure()`. The foreground-service notification posts on `AppConstants.tripTrackingChannelId`, but that channel is created by `NotificationService.build()`, which nothing awaited: on a device where the channel did not already exist, `startService()` raised `CannotPostForegroundServiceNotificationException: Bad notification for startForeground` and Android crash-looped the process until `AppStandbyController` restricted the app — it simply vanished. Notification channels persist across launches, so every dev and TestFlight/Play device that had ever run the app was immune; only a **first launch after a clean install** hit it, i.e. exactly what a new Play Store user gets. Found on Pixel 6a (Android 17) after uninstalling the Play build to sideload a local release APK. |
 
 | 13 — a trip records how long it stood still | (this change) | **L-073** (new) | `trips.pause_duration` (seconds, `INTEGER NOT NULL DEFAULT 0`) added in schema **v3**. `duration` has always been the *moving* time — the recorder subtracts the pauses before writing it — but the subtrahend lived only in `TripRecorderService`'s memory, so "45 min moving, 8 min stopped" was unreconstructible and the startup recovery had to assume `duration = end − start`. The recorder now writes the pause total on the final update *and* on the 30 s snapshot, so an interrupted trip recovers as `(end − start) − pauseDuration` (floored at 0, clamped to the surviving span) instead of over-counting every stop as ride time. Rounding fixed while in there: `_totalPauseDuration` is a `Duration` (ms) rounded once at the write, not `+= pauseDuration.inSeconds` per pause — ten 200 ms stops used to round away to 0 s and inflate the moving time. `Trip` gains `pauseDuration` plus `movingDuration` / `pausedDuration` / `totalDuration`, and the detail screen shows **Moving / Stopped / Total** tiles when `pauseDuration > 0` (otherwise the grid is unchanged, down to the "Duration" label). Tests 408 → 423 (+15). |
+| 14 — a trip cannot outlive its GPS, and a finished trip resets the detectors | (this change) | **L-074** (new) | The coordinator now runs a **GPS-loss watchdog** on its existing 1 Hz supervisor: a recording (active *or* paused) trip with no fix for `AppConstants.gpsLossStopTimeout` (**10 min**) is finalized through the same `_finalizeAndStopTrip` path as an automatic stop, with an explicit warning log. The reference instant is the *reception* time of the last fix, or the trip's own start while none has arrived yet, so a slow first fix cannot end a ride. Two detector-reset bugs closed in the same file: `TripStartDetector.reset()` was called only on the `startRecording` **error** path, so a finished trip left `consecutiveDetections ≥ 3` in place and a single strong sample arriving within `tripStartDetectionWindowSeconds` of the last positive detection started the next trip on **one** sample (the streak rule silently defeated after every ride); and `TripStopDetector.reset()` is now called when a trip *starts*, not only when one ends. `TripRecorderService.stopRecording()` returns `Future<Trip?>` and logs a warning instead of throwing `StateError` when nothing is recording. Tests 423 → 430 (+7 coordinator tests, each mutation-checked: removing the watchdog tick or either detector reset fails them). |
 
 **Decision (2026-09-01) — L-071: the app reports the OS grant it actually has, and the fix is a settings link.**
 Two facts about iOS drove this. First, "Always" is never offered in the first location prompt: the
@@ -225,6 +226,65 @@ detector the way the coordinator does — several samples per second with inject
 pocketed phone (pauses at 30 s), steady riding (never pauses), calm phone in a basket at 15 km/h (never pauses),
 paused with 2 s of movement every 10 s (auto-stops at 300 s), paused with 5 s of continuous movement (resumes).
 On-device confirmation is item 9 of `tasks/T041-device-validation.md`.
+
+
+**Decision (2026-09-01) — L-074: the watchdog counts silence, not staleness, and it lives in the coordinator.**
+A trip could stay "active" for hours with the phone forgotten in a building: `locationStreamProvider`
+re-subscribes forever with backoff (2 s → 30 s) and never signals defeat, and `TripStopDetector` treats a
+fix older than `stationaryGpsMaxAge` (10 s) as *GPS absent* and falls back to the sensors — so any stray
+gyroscope motion kept the ride alive. What was missing was not a better stop rule but an upper bound on
+how long a recording may go with no positions at all. Choices made:
+
+1. **Where.** In `TripDetectionCoordinator`, not in the location service or the recorder. The coordinator
+   already owns the 1 Hz `_detectionTimer` and the GPS gate, and it is the only place that both sees
+   every fix and can end a trip through the same path as an automatic stop (`_finalizeAndStopTrip` — so
+   the end-of-trip notification, the L-068 sub-60 s deletion and the session restart all behave
+   identically to a sensor-driven stop). The gate is pinned open for the whole recording, so "no fix"
+   here provably means the OS is not delivering positions rather than that we stopped asking.
+2. **What is measured.** Silence since the last *received* fix — not `LocationData.timestamp`, and not
+   the fix's age. A position replayed from the plugin's cache, or one carrying a skewed device clock,
+   still proves the stream is alive, which is the only property the watchdog cares about; the *quality*
+   of a fix stays the stop detector's business (`stationaryGpsMaxAge`). While no fix has arrived at all,
+   the clock runs from the start of the trip, which makes "a trip that never got a single fix" stoppable
+   while giving the first fix a full `gpsLossStopTimeout` of grace.
+3. **10 minutes.** It has to sit above every *recoverable* outage and below anything a user would call
+   "stuck". The longest road tunnel a cyclist realistically rides is under 5 min, so 10 min leaves a 2x
+   margin; the cost of waiting is bounded and cheap (the tail carries no route points anyway), while
+   stopping too early loses the second half of a real ride. Note `maxPauseDurationSeconds` (5 min)
+   already covers the case where the *sensors* also go quiet: this timeout only catches "motion
+   continues, positions do not".
+4. **Known gap, deliberately not closed.** The watchdog only supervises while a detection session runs,
+   so a manual ride started with automatic detection *off* has no watchdog — exactly as it has no
+   auto-pause and no auto-stop today. Giving the recorder its own watchdog would duplicate the stop
+   path; the honest fix is the pre-existing question of whether a manual ride should start a coordinator
+   session at all, which is out of scope here. Recorded as item 10 of `tasks/T041-device-validation.md`.
+
+**Decision (2026-09-01) — L-074b: a finished trip resets the start detector.**
+`_analyzeForTripStart` called `tripStartDetector.reset()` only when `startRecording` **threw**. On the
+success path the streak survived the entire ride: after `_finalizeAndStopTrip` suspends and (100 ms later)
+restarts listening, `TripStartState.consecutiveDetections` was still ≥ 3, so the very first sample scoring
+≥ `tripStartConfidenceThreshold` within `tripStartDetectionWindowSeconds` of the last positive detection
+started a *new* trip — the consecutive-detection rule, the whole defence against single-bump false starts
+(L-022), applied to the first trip of a session only. Reset now happens on every stop path, and also
+before `activateCooldown()` on the detection-timeout path (`reset()` returns the state to `initial()`, so
+the two only compose in that order). `TripStopDetector.reset()` was symmetrically missing at trip
+*start*: a new recording inherited whatever pause the previous one had accumulated. The scoring logic and
+every threshold are untouched — this is purely about when the accumulators are cleared.
+
+**Decision (2026-09-01) — L-074c: `stopRecording()` returns `null` instead of throwing, and an
+unflushed buffer stays a documented risk.**
+"Stop" arrives from three places — the tracking screen's button, the notification's Stop action and the
+coordinator — and the first two race with the third and with themselves (a double tap, a notification
+whose trip was auto-stopped a second earlier). The `StateError('No active trip to stop')` was already
+meaningless to all of them: the notification path logged and swallowed it, the coordinator only reaches
+it with a trip in flight, and the tracking screen let it escape into an *unhandled* async error. It is
+now a warning log and a `null` return (`Future<Trip?>`; the existing test asserting `throwsStateError`
+became one asserting a no-op). The route-point buffer is deliberately left as it is: if the final flush
+fails all `routePointFlushMaxAttempts` times the points stay in memory, carry their own trip id and are
+retried by the next `startRecording`, and are lost only if the process dies before then. Persisting them
+elsewhere would mean a second write path with its own failure mode to guard a scenario — three
+consecutive SQLite write failures *and* a process death — that is far rarer than the bug such a path
+would introduce.
 
 
 ## Method

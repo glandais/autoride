@@ -367,11 +367,23 @@ void main() {
       );
     });
 
-    test('stopRecording with no active trip throws StateError', () async {
-      final recorder = await readRecorder();
+    test(
+      'stopRecording with no active trip returns null and is a no-op',
+      () async {
+        final recorder = await readRecorder();
+        final machine = container.read(
+          tripStateMachineProvider.notifier,
+        ) as _TestTripStateMachine;
 
-      expect(recorder.stopRecording, throwsStateError);
-    });
+        // A double tap on Stop, or the notification's Stop action on a trip the
+        // coordinator already finalized, is an ordinary race — not an error to
+        // throw at three call sites that all swallow it (L-074).
+        await expectLater(recorder.stopRecording(), completion(isNull));
+        expect(fakeRepository.savedTrips, isEmpty);
+        expect(fakeRepository.updatedTrips, isEmpty);
+        expect(machine.stopTripDiscardedFlags, isEmpty);
+      },
+    );
 
     test('stopRecording persists final trip and resets metrics', () async {
       final recorder = await readRecorder();
@@ -381,7 +393,7 @@ void main() {
       fakeRepository.backdateStartBy = const Duration(minutes: 5);
       await startTrip(recorder, confidenceScore: 0.9);
 
-      final finalTrip = await recorder.stopRecording();
+      final finalTrip = (await recorder.stopRecording())!;
 
       // Final trip persisted via updateTrip exactly once.
       expect(fakeRepository.updatedTrips, hasLength(1));
@@ -531,7 +543,7 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 1100));
       await recorder.resumeRecording();
 
-      final finalTrip = await recorder.stopRecording();
+      final finalTrip = (await recorder.stopRecording())!;
 
       expect(finalTrip.pauseDuration, greaterThanOrEqualTo(1));
       expect(finalTrip.pauseDuration, lessThan(5));
@@ -555,7 +567,7 @@ void main() {
       fakeRepository.backdateStartBy = const Duration(minutes: 5);
       await startTrip(recorder, confidenceScore: 0.9);
 
-      final finalTrip = await recorder.stopRecording();
+      final finalTrip = (await recorder.stopRecording())!;
 
       expect(finalTrip.pauseDuration, equals(0));
       expect(finalTrip.duration, equals(finalTrip.tripDuration.inSeconds));
@@ -571,7 +583,7 @@ void main() {
 
       // Stopped without resuming first: the in-progress pause is closed by
       // the stop path itself.
-      final finalTrip = await recorder.stopRecording();
+      final finalTrip = (await recorder.stopRecording())!;
 
       expect(finalTrip.pauseDuration, greaterThanOrEqualTo(1));
     });
@@ -593,7 +605,7 @@ void main() {
           await recorder.resumeRecording();
         }
 
-        final finalTrip = await recorder.stopRecording();
+        final finalTrip = (await recorder.stopRecording())!;
 
         expect(
           finalTrip.pauseDuration,
@@ -610,7 +622,7 @@ void main() {
       await startTrip(recorder, confidenceScore: 0.9);
       await recorder.pauseRecording();
 
-      final finalTrip = await recorder.stopRecording();
+      final finalTrip = (await recorder.stopRecording())!;
 
       expect(fakeRepository.updatedTrips, hasLength(1));
       expect(finalTrip.id, 1);
@@ -625,7 +637,7 @@ void main() {
         final recorder = await readRecorder();
 
         await startTrip(recorder, confidenceScore: 0.9);
-        final finalTrip = await recorder.stopRecording();
+        final finalTrip = (await recorder.stopRecording())!;
 
         // Nothing was kept: the row (and its route points, by cascade) is gone.
         expect(fakeRepository.deletedTripIds, equals([1]));
@@ -663,7 +675,7 @@ void main() {
         await pushFix(_fix(0));
         await pushFix(_fix(2)); // ~22 m further north
 
-        final returned = await recorder.stopRecording();
+        final returned = (await recorder.stopRecording())!;
 
         // The trip handed over is the one written to the database, complete
         // with its distance and its active (pause-excluded) duration — not the
@@ -841,7 +853,7 @@ void main() {
       final metrics = container.read(tripRecorderServiceProvider).value!;
       expect(metrics.maxSpeedKmh, closeTo(28.8, 0.1));
 
-      final finalTrip = await recorder.stopRecording();
+      final finalTrip = (await recorder.stopRecording())!;
       expect(finalTrip.maxSpeed, closeTo(28.8, 0.1));
       expect(finalTrip.distance, closeTo(44.5, 1.5));
     });
@@ -901,7 +913,7 @@ void main() {
         await pushFix(_fix(2));
 
         fakeRepository.throwOnSaveRoutePoints = true;
-        final finalTrip = await recorder.stopRecording();
+        final finalTrip = (await recorder.stopRecording())!;
 
         // Nothing persisted, but the trip itself was finalized.
         expect(fakeRepository.savedRoutePointBatches, isEmpty);
@@ -941,7 +953,7 @@ void main() {
       await pushFix(_fix(2));
       expect(currentDistance(), closeTo(22.3, 1.0));
 
-      final finalTrip = await recorder.stopRecording();
+      final finalTrip = (await recorder.stopRecording())!;
       expect(finalTrip.distance, closeTo(22.3, 1.0));
     });
 

@@ -272,10 +272,20 @@ class TripRecorderService extends _$TripRecorderService {
     _updateMetrics();
   }
 
-  /// Stop recording and save final trip
-  Future<Trip> stopRecording() async {
+  /// Stop recording and save the final trip.
+  ///
+  /// Returns `null` — and changes nothing — when no trip is being recorded.
+  /// "Stop" is a request from a human (the tracking screen's button, the
+  /// notification's Stop action) that races with the automatic stop and with
+  /// itself: a second tap, or a tap on a notification whose trip the
+  /// coordinator has just finalized, is an ordinary outcome, not a programming
+  /// error. It used to throw a `StateError` that all three call sites either
+  /// logged and swallowed or — in the tracking screen — let escape into an
+  /// unhandled async error, so nothing ever depended on the exception (L-074).
+  Future<Trip?> stopRecording() async {
     if (_activeTrip == null) {
-      throw StateError('No active trip to stop');
+      _logger.warning('stopRecording() called with no active trip - ignoring');
+      return null;
     }
 
     try {

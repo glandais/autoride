@@ -9,6 +9,7 @@ import 'package:geolocator/geolocator.dart' show LocationSettings;
 import 'package:riverpod_annotation/riverpod_annotation.dart' show Override;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:autoride/core/constants/app_constants.dart';
 import 'package:autoride/features/trip_detection/data/services/adaptive_location_settings.dart';
 import 'package:autoride/features/trip_detection/data/services/battery_optimizer.dart';
 import 'package:autoride/features/trip_detection/data/services/location_service.dart';
@@ -313,6 +314,76 @@ class _ManualGateCoordinator extends TripDetectionCoordinator {
   }
 }
 
+/// Start-detector double that reproduces just enough of the real streak rule
+/// to make "one strong sample must not start a trip" observable at the
+/// coordinator level: it says yes only on the
+/// `tripStartMinConsecutiveDetections`-th sample, and [reset] clears the count.
+class _StreakStartDetector extends TripStartDetector {
+  _StreakStartDetector(this.script);
+
+  final _StartDetectorScript script;
+
+  int strongSamples = 0;
+
+  @override
+  TripStartState build() => TripStartState.initial();
+
+  @override
+  Future<bool> analyzeForTripStart(
+    MotionData motion,
+    LocationData? location, {
+    DateTime? now,
+  }) async {
+    script.seenLocations.add(location);
+    strongSamples++;
+    state = state.copyWith(
+      confidence: script.reportedConfidence,
+      consecutiveDetections: strongSamples,
+    );
+    return strongSamples >= AppConstants.tripStartMinConsecutiveDetections;
+  }
+
+  @override
+  void reset() {
+    script.resetCalls++;
+    strongSamples = 0;
+    state = TripStartState.initial();
+  }
+
+  @override
+  void activateCooldown() {
+    script.cooldownCalls++;
+  }
+}
+
+/// Coordinator with a frozen, movable clock and a hand-fired 1 Hz supervisor,
+/// so the GPS-loss watchdog is asserted on state transitions instead of on ten
+/// real minutes of wall clock. Same rationale as [_ManualGateCoordinator].
+class _WatchdogCoordinator extends TripDetectionCoordinator {
+  DateTime clock = DateTime(2026, 1, 1, 12);
+  void Function()? _onTick;
+
+  @override
+  DateTime now() => clock;
+
+  @override
+  Timer startDetectionTimer(void Function() onTick) {
+    _onTick = onTick;
+    // Inert: nothing fires unless the test asks.
+    return _ManualTimer(() {});
+  }
+
+  @override
+  Timer startGpsInactivityTimer(void Function() onElapsed) =>
+      _ManualTimer(onElapsed);
+
+  /// Advance the clock as [by] would.
+  void advance(Duration by) => clock = clock.add(by);
+
+  /// Run one tick of the supervisor.
+  void tick() => _onTick?.call();
+}
+
 /// Name of the current union case (the generated union classes are private).
 String _stateName(TripState state) => state.map(
   idle: (_) => 'idle',
@@ -396,6 +467,7 @@ void main() {
 
   List<Override> baseOverrides({
     Override? location,
+    Override? startDetectorOverride,
     List<Override> extra = const [],
   }) => [
     motionDataStreamProvider.overrideWith((ref) => motionController.stream),
@@ -407,9 +479,10 @@ void main() {
     tripRecorderServiceProvider.overrideWith(
       () => _SpyTripRecorderService(recorder),
     ),
-    tripStartDetectorProvider.overrideWith(
-      () => _FakeTripStartDetector(startDetector),
-    ),
+    startDetectorOverride ??
+        tripStartDetectorProvider.overrideWith(
+          () => _FakeTripStartDetector(startDetector),
+        ),
     tripStopDetectorProvider.overrideWith(
       () => _FakeTripStopDetector(stopDetector),
     ),
@@ -1088,6 +1161,207 @@ void main() {
         observedSettings.last.distanceFilter,
         PowerModeConfig.low.distanceFilter,
       );
+    });
+  });
+
+  group('TripDetectionCoordinator - GPS-loss auto-stop (L-074)', () {
+    late _WatchdogCoordinator watchdog;
+
+    setUp(() {
+      container.dispose();
+      container = ProviderContainer(
+        overrides: baseOverrides(
+          extra: [
+            tripDetectionCoordinatorProvider.overrideWith(
+              _WatchdogCoordinator.new,
+            ),
+          ],
+        ),
+      );
+      coordinatorSubscription = container.listen(
+        tripDetectionCoordinatorProvider,
+        (_, _) {},
+      );
+    });
+
+    /// Starts a session and a trip, and returns with the watchdog armed at the
+    /// coordinator's frozen "now".
+    Future<void> startTrip() async {
+      startDetector.verdict = true;
+      final coordinator = await startedCoordinator();
+      watchdog = coordinator as _WatchdogCoordinator;
+      await pushMotion(1);
+      expect(_stateName(container.read(tripStateMachineProvider)), 'active');
+    }
+
+    Future<void> pushFix(int index) async {
+      locationController.add(_location(index: index));
+      await pumpEventQueue();
+    }
+
+    Future<void> tick() async {
+      watchdog.tick();
+      await pumpEventQueue();
+    }
+
+    test('a trip with no fix past the timeout is stopped', () async {
+      await startTrip();
+
+      watchdog.advance(
+        AppConstants.gpsLossStopTimeout + const Duration(seconds: 1),
+      );
+      await tick();
+
+      expect(recorder.stopCalls, 1);
+      expect(_stateName(container.read(tripStateMachineProvider)), 'idle');
+    });
+
+    test('a trip that just started is not stopped before the timeout', () async {
+      await startTrip();
+
+      // The first fix legitimately takes a while; the grace period is the full
+      // timeout, counted from the start of the trip.
+      watchdog.advance(
+        AppConstants.gpsLossStopTimeout - const Duration(seconds: 1),
+      );
+      await tick();
+
+      expect(recorder.stopCalls, 0);
+      expect(_stateName(container.read(tripStateMachineProvider)), 'active');
+    });
+
+    test('a fresh fix restarts the countdown', () async {
+      await startTrip();
+
+      // Nearly out of time, then a fix arrives.
+      watchdog.advance(
+        AppConstants.gpsLossStopTimeout - const Duration(seconds: 1),
+      );
+      await pushFix(1);
+      await tick();
+      expect(recorder.stopCalls, 0);
+
+      // The same amount of time again: still short of the timeout measured
+      // from the fix, so the trip survives.
+      watchdog.advance(
+        AppConstants.gpsLossStopTimeout - const Duration(seconds: 1),
+      );
+      await tick();
+      expect(recorder.stopCalls, 0);
+      expect(_stateName(container.read(tripStateMachineProvider)), 'active');
+
+      // Past it now.
+      watchdog.advance(const Duration(seconds: 2));
+      await tick();
+      expect(recorder.stopCalls, 1);
+      expect(_stateName(container.read(tripStateMachineProvider)), 'idle');
+    });
+
+    test('the watchdog never stops a trip that is not running', () async {
+      final coordinator = await startedCoordinator();
+      watchdog = coordinator as _WatchdogCoordinator;
+
+      await pushMotion(1); // detecting, no trip
+      watchdog.advance(AppConstants.gpsLossStopTimeout * 3);
+      await tick();
+
+      expect(recorder.stopCalls, 0);
+    });
+
+    test('a paused trip is stopped on GPS loss too', () async {
+      await startTrip();
+
+      stopDetector.decision = StopDecision.pauseTrip;
+      await pushMotion(2);
+      expect(_stateName(container.read(tripStateMachineProvider)), 'paused');
+
+      // Back to "continue" so the paused branch's own stop decision cannot be
+      // what ends the trip - only the watchdog can.
+      stopDetector.decision = StopDecision.continueTrip;
+      watchdog.advance(
+        AppConstants.gpsLossStopTimeout + const Duration(seconds: 1),
+      );
+      await tick();
+
+      expect(recorder.stopCalls, 1);
+      expect(_stateName(container.read(tripStateMachineProvider)), 'idle');
+    });
+  });
+
+  group('TripDetectionCoordinator - detector resets (L-074)', () {
+    late _StreakStartDetector streakDetector;
+
+    setUp(() {
+      container.dispose();
+      container = ProviderContainer(
+        overrides: baseOverrides(
+          startDetectorOverride: tripStartDetectorProvider.overrideWith(
+            () => _StreakStartDetector(startDetector),
+          ),
+        ),
+      );
+      coordinatorSubscription = container.listen(
+        tripDetectionCoordinatorProvider,
+        (_, _) {},
+      );
+    });
+
+    /// Lets the 100 ms restart delay in `_finalizeAndStopTrip` elapse so the
+    /// motion subscription is live again.
+    Future<void> awaitSessionRestart() async {
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+      await pumpEventQueue();
+    }
+
+    test(
+      'a single strong sample after a trip ends does not start a new one',
+      () async {
+        await startedCoordinator();
+        streakDetector = container.read(
+          tripStartDetectorProvider.notifier,
+        ) as _StreakStartDetector;
+
+        // Three sustained samples start the trip, as the real streak rule
+        // requires.
+        await pushMotion(1);
+        await pushMotion(2);
+        expect(recorder.startedWithConfidence, isEmpty);
+        await pushMotion(3);
+        expect(recorder.startedWithConfidence, hasLength(1));
+
+        // End it.
+        stopDetector.decision = StopDecision.stopTrip;
+        await pushMotion(4);
+        expect(recorder.stopCalls, 1);
+        expect(streakDetector.strongSamples, 0);
+
+        await awaitSessionRestart();
+
+        // One strong sample must NOT be enough: before the reset the streak
+        // survived the ride and the very next sample restarted a trip.
+        stopDetector.decision = StopDecision.continueTrip;
+        await pushMotion(5);
+        expect(recorder.startedWithConfidence, hasLength(1));
+        expect(
+          _stateName(container.read(tripStateMachineProvider)),
+          'detecting',
+        );
+      },
+    );
+
+    test('starting a trip resets the stop detector', () async {
+      startDetector.verdict = true;
+      await startedCoordinator();
+      final before = stopDetector.resetCalls;
+
+      // The default fake start detector is not in play here, so drive the
+      // streak one to a start.
+      await pushMotion(1);
+      await pushMotion(2);
+      await pushMotion(3);
+
+      expect(recorder.startedWithConfidence, hasLength(1));
+      expect(stopDetector.resetCalls, greaterThan(before));
     });
   });
 }
