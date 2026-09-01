@@ -32,6 +32,22 @@ Executed the same day as the audit, one commit per step, each by an Opus subagen
 
 | 6d — review details + build 4 | ASC mutations | — | App Review contact details completed (name/email/phone — the number stays out of git — plus reviewer notes: no sign-in, "Always" rationale, manual start as the no-motion test path, OSM attribution). `asc validate` now shows **2 blocking errors**: build attach and screenshots (plus one info: App Privacy publish state unverifiable via API — it was published through the UI). The maintainer launched the first full dual-platform `publish_beta.sh` run (build `1.0.0+4`, carrying the `856f7a8` crash fix); the script commits its own bump on success. Build 4 is the one to attach — build 3 carries the manual-start crash. |
 
+| 7 — FGS covers the detection phase | (this change) | **L-067** (new) | `AutoDetectionController` now starts the Android foreground service as soon as the coordinator starts listening, not only while a trip records, and stops it when listening stops (setting off / permission revoked). Two notification phases (`AppConstants.notificationTitleDetecting`/`notificationContentDetecting` vs the trip's distance • duration). Manual-ride-with-detection-off behaviour is unchanged. Tests 331 → 339. |
+
+**Decision (2026-09-01) — L-067: the foreground service covers the whole listening window, not just recordings.**
+The service was scoped to a recording (decision (d) of step 4c). That left the detection phase with no
+foreground service and no wake lock, so with the screen off Android suspends the process under Doze,
+`sensors_plus` stops delivering and automatic detection can never fire with the phone in a pocket — the
+app's headline feature. The alternatives considered were a wake lock (`wakelock_plus` is declared but
+unused) and `WorkManager`-style periodic wakeups; both are strictly worse (a wake lock without a
+foreground service is still killable, and periodic wakeups miss the start of a ride). Cost: a permanent
+ongoing notification and a continuously-running service while detection is on — the battery figure of
+`tasks/T041-device-validation.md` item 4 must be re-measured, and item 8 was added to validate the
+screen-off auto-start. No manifest change: the service is already `foregroundServiceType="location"` with
+`FOREGROUND_SERVICE_LOCATION` declared, and both start paths run with the app in the foreground (Android
+12+ forbids background FGS starts) with the location permission already granted (Android 14+ requires it
+for a `location`-type service).
+
 Gates after step 5: `flutter analyze` clean, **331/331 tests**. T029 and T033 closed in the tracker (T033's leftover — the CI format gate — is step 6's L-050; the T038/T039 dependency caveat L-053 is thereby resolved).
 
 **Code-complete but pending on-device validation** (`tasks/T041-device-validation.md`): the entire step-4 cluster — GPS-stops-when-stationary, trip-survives-backgrounding, recording under OS suspension, ≤5 %/hr drain, notification behaviour. T041/T006/T013 stay ⏳ until it passes.

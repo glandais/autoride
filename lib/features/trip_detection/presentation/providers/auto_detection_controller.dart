@@ -31,9 +31,12 @@ const _logger = Logger('AutoDetectionController');
 ///   * whether onboarding is complete,
 ///
 /// and starting or stopping the coordinator whenever their conjunction flips.
-/// It also owns the Android foreground service, which is started while a trip
-/// is being recorded (so the OS keeps the process — and with it the main
-/// isolate's GPS stream — alive) and whose notification it keeps up to date.
+/// It also owns the Android foreground service. That service runs for the whole
+/// time the coordinator is listening — not just while a trip is being recorded —
+/// because without it the process is suspended by Doze as soon as the screen
+/// goes off, `sensors_plus` stops delivering, and automatic detection can never
+/// fire with the phone in a pocket. Its notification has two phases (waiting for
+/// a trip / live trip metrics) and this provider keeps it up to date.
 @Riverpod(keepAlive: true)
 class AutoDetectionController extends _$AutoDetectionController {
   /// Container-owned (see [TripDetectionCoordinator] for why): kept open for
@@ -49,6 +52,13 @@ class AutoDetectionController extends _$AutoDetectionController {
   bool _appliedShouldListen = false;
 
   bool _permissionRechecked = false;
+
+  /// Mirrors the state machine: true exactly while a trip is being recorded.
+  bool _recording = false;
+
+  /// True while the foreground service has been asked to run. It is the
+  /// disjunction of "detection is listening" and "a trip is recording", so
+  /// neither phase can pull the service out from under the other.
   bool _foregroundServiceRunning = false;
   String? _lastNotificationContent;
   DateTime? _lastNotificationAt;
@@ -124,6 +134,10 @@ class AutoDetectionController extends _$AutoDetectionController {
       _logger.info('Automatic detection disabled - stopping coordinator');
       coordinator.stopListening();
     }
+
+    // The sensors are only delivered while the process is alive, which off a
+    // foreground service means "while the screen is on".
+    _syncForegroundService();
   }
 
   /// Start a trip right now, whatever the "Automatic detection" setting says.
@@ -161,31 +175,86 @@ class AutoDetectionController extends _$AutoDetectionController {
   }
 
   // ---------------------------------------------------------------------------
-  // Foreground service (audit #7/#8 / L-007)
+  // Foreground service (audit #7/#8 / L-007, then L-067)
   //
-  // The service no longer polls GPS of its own; the foreground stream is the
+  // The service does no GPS work of its own; the foreground stream is the
   // single source of truth. Its only job is to hold the foreground-service
-  // notification for the duration of a recording so Android keeps the process
-  // (and therefore the main isolate's position stream) alive.
+  // notification — and with it a running process — for as long as the app needs
+  // sensors or GPS: the whole detection session, plus any recording. Running it
+  // only during a recording (the original scope) meant the detection phase was
+  // Doze-suspended with the screen off, so a trip could never start
+  // automatically with the phone in a pocket.
+  //
+  // Android constraints this relies on:
+  //   * the service type is `location`, so it may only be started while the
+  //     location permission is granted — guaranteed here, since
+  //     `shouldListen` requires it;
+  //   * Android 12+ forbids starting a foreground service from the background.
+  //     Both start paths run with the app in the foreground (app launch, the
+  //     settings toggle, the manual start button).
   // ---------------------------------------------------------------------------
 
   void _onTripStateChanged(TripState? previous, TripState next) {
     final recording = next.hasActiveTrip;
+    if (recording == _recording) return;
+    _recording = recording;
 
-    if (recording && !_foregroundServiceRunning) {
-      _foregroundServiceRunning = true;
-      _lastNotificationContent = null;
-      _lastNotificationAt = null;
-      unawaited(_startForegroundService());
+    if (recording) {
       _closeMetricsSubscription ??= ref.container
           .listen(tripRecorderServiceProvider, _onMetrics)
           .close;
-    } else if (!recording && _foregroundServiceRunning) {
-      _foregroundServiceRunning = false;
+    } else {
       _closeMetricsSubscription?.call();
       _closeMetricsSubscription = null;
+    }
+
+    _syncForegroundService();
+  }
+
+  /// Brings the foreground service in line with the two things that need it.
+  ///
+  /// Idempotent, and called from both the detection path and the trip path so
+  /// that a trip starting or ending inside a live detection session neither
+  /// restarts nor stops the service — only its notification changes phase.
+  void _syncForegroundService() {
+    final shouldRun = _appliedShouldListen || _recording;
+
+    if (shouldRun == _foregroundServiceRunning) {
+      // Already in the right place; only the phase may have changed.
+      if (shouldRun && !_recording) {
+        _resetNotificationThrottle();
+        _pushDetectingNotification();
+      } else if (shouldRun) {
+        // Entering a recording: let the first metrics tick through at once.
+        _resetNotificationThrottle();
+      }
+      return;
+    }
+
+    _foregroundServiceRunning = shouldRun;
+    _resetNotificationThrottle();
+
+    if (shouldRun) {
+      unawaited(_startForegroundService());
+    } else {
       unawaited(_stopForegroundService());
     }
+  }
+
+  void _resetNotificationThrottle() {
+    _lastNotificationContent = null;
+    _lastNotificationAt = null;
+  }
+
+  void _pushDetectingNotification() {
+    _lastNotificationContent = AppConstants.notificationContentDetecting;
+    _lastNotificationAt = DateTime.now();
+    ref
+        .read(backgroundLocationServiceProvider.notifier)
+        .updateNotification(
+          title: AppConstants.notificationTitleDetecting,
+          content: AppConstants.notificationContentDetecting,
+        );
   }
 
   Future<void> _startForegroundService() async {
@@ -194,8 +263,8 @@ class AutoDetectionController extends _$AutoDetectionController {
       await service.initialize();
       await service.startTracking();
     } catch (e, stackTrace) {
-      // Recording continues without it (the app is then only reliable in the
-      // foreground), so this must not take the trip down.
+      // Detection and recording continue without it (the app is then only
+      // reliable while the screen is on), so this must not take them down.
       _logger.error('Failed to start the foreground service', e, stackTrace);
     }
   }
@@ -236,7 +305,7 @@ class AutoDetectionController extends _$AutoDetectionController {
     ref
         .read(backgroundLocationServiceProvider.notifier)
         .updateNotification(
-          title: 'AutoRide - Trip in progress',
+          title: AppConstants.notificationTitleTrip,
           content: content,
         );
   }

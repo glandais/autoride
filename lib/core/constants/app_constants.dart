@@ -259,6 +259,16 @@ class AppConstants {
   static const String tripEventsChannelId = 'autoride_trip_events';
   static const String tripEventsChannelName = 'Trip Events';
 
+  // Notification Texts
+  //
+  // The foreground service runs for the whole time automatic detection is
+  // listening (not just while recording), so its notification has two phases.
+  // Kept here rather than inline so both the isolate's initial notification and
+  // the live updates pushed by `AutoDetectionController` say the same thing.
+  static const String notificationTitleDetecting = 'AutoRide - Auto detection';
+  static const String notificationContentDetecting = 'Waiting for a bike trip';
+  static const String notificationTitleTrip = 'AutoRide - Trip in progress';
+
   // Notification Update Intervals
   //
   // Throttles the trip status pushed into the foreground-service notification

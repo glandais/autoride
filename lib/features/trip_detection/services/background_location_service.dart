@@ -14,8 +14,9 @@ part 'background_location_service.g.dart';
 /// foreground stream (`locationStreamProvider`, consumed by the recorder and
 /// the detection coordinator) is the single source of truth for a trip; the
 /// isolate's only job is to hold the Android foreground-service notification
-/// so the OS keeps the process — and with it that stream — alive for the
-/// duration of a recording.
+/// so the OS keeps the process — and with it that stream — alive for as long
+/// as automatic detection is listening (and, of course, for the duration of a
+/// recording).
 ///
 /// Riverpod is unavailable here, so the main isolate pushes notification text
 /// across with `service.invoke('updateNotification', …)`.
@@ -69,8 +70,8 @@ class BackgroundLocationService extends _$BackgroundLocationService {
         autoStart: false, // Don't auto-start on boot
         isForegroundMode: true, // Critical: keeps service alive
         notificationChannelId: AppConstants.tripTrackingChannelId,
-        initialNotificationTitle: 'AutoRide',
-        initialNotificationContent: 'Trip in progress',
+        initialNotificationTitle: AppConstants.notificationTitleDetecting,
+        initialNotificationContent: AppConstants.notificationContentDetecting,
         foregroundServiceNotificationId: AppConstants.foregroundNotificationId,
         foregroundServiceTypes: [AndroidForegroundType.location],
       ),

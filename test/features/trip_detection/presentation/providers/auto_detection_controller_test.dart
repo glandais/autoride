@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 // `Override` is not re-exported by flutter_riverpod.
 import 'package:riverpod_annotation/riverpod_annotation.dart' show Override;
 
+import 'package:autoride/core/constants/app_constants.dart';
 import 'package:autoride/features/onboarding/data/services/onboarding_service.dart';
 import 'package:autoride/features/settings/data/services/settings_service.dart';
 import 'package:autoride/features/settings/domain/models/detection_settings.dart';
@@ -440,14 +441,108 @@ void main() {
   });
 
   group('AutoDetectionController - foreground service (audit #7/#8)', () {
-    test('runs only for the duration of a recording', () async {
+    // Detection listens to the sensors from the main isolate. Without a
+    // foreground service that isolate is Doze-suspended as soon as the screen
+    // goes off, so the service must cover the whole listening window, not just
+    // the recording (L-067).
+    test('starts as soon as automatic detection begins listening', () async {
+      await startController(overridesFor());
+
+      expect(backgroundService.initializeCalls, 1);
+      expect(backgroundService.startCalls, 1);
+      expect(backgroundService.stopCalls, 0);
+    });
+
+    test('does not start while the setting is off', () async {
+      await startController(overridesFor(enabled: false));
+      expect(backgroundService.startCalls, 0);
+    });
+
+    test('does not start while the permission is missing', () async {
+      await startController(
+        overridesFor(permission: LocationPermissionStatus.denied),
+      );
+      expect(backgroundService.startCalls, 0);
+    });
+
+    test('stops when automatic detection is turned off', () async {
+      final settings = _FakeSettingsService(enabled: true);
+      await startController(overridesFor(settings: settings));
+      expect(backgroundService.startCalls, 1);
+
+      settings.setEnabled(false);
+      await pumpEventQueue();
+
+      expect(backgroundService.stopCalls, 1);
+    });
+
+    test('stops when the location permission is revoked', () async {
+      final permission = _PermissionLog(LocationPermissionStatus.granted);
+      final controller = await startController(
+        overridesFor(permissionLog: permission),
+      );
+      expect(backgroundService.startCalls, 1);
+
+      permission.status = LocationPermissionStatus.denied;
+      controller.refreshPermission();
+      await pumpEventQueue();
+
+      expect(backgroundService.stopCalls, 1);
+    });
+
+    // The trip must not restart (or, at its end, stop) a service the detection
+    // session still needs.
+    test('keeps running across a trip started while listening', () async {
       final controller = await startController(overridesFor());
+      expect(backgroundService.startCalls, 1);
+
+      await controller.startTripManually();
+      await pumpEventQueue();
+      expect(backgroundService.startCalls, 1);
+      expect(backgroundService.stopCalls, 0);
+
+      await container
+          .read(tripRecorderServiceProvider.notifier)
+          .stopRecording();
+      await pumpEventQueue();
+      expect(backgroundService.startCalls, 1);
+      expect(backgroundService.stopCalls, 0);
+      // Back to the waiting phase.
+      expect(
+        backgroundService.notificationContents.last,
+        AppConstants.notificationContentDetecting,
+      );
+    });
+
+    // Manual ride with automatic detection off: the service exists only for
+    // that trip, exactly as before.
+    test('runs only for the trip when detection is off', () async {
+      final controller = await startController(overridesFor(enabled: false));
       expect(backgroundService.startCalls, 0);
 
       await controller.startTripManually();
       await pumpEventQueue();
       expect(backgroundService.initializeCalls, 1);
       expect(backgroundService.startCalls, 1);
+
+      await container
+          .read(tripRecorderServiceProvider.notifier)
+          .stopRecording();
+      await pumpEventQueue();
+      expect(backgroundService.stopCalls, 1);
+    });
+
+    test('survives detection being turned off mid-trip', () async {
+      final settings = _FakeSettingsService(enabled: true);
+      final controller = await startController(
+        overridesFor(settings: settings),
+      );
+      await controller.startTripManually();
+      await pumpEventQueue();
+
+      settings.setEnabled(false);
+      await pumpEventQueue();
+      expect(backgroundService.stopCalls, 0);
 
       await container
           .read(tripRecorderServiceProvider.notifier)
