@@ -10,6 +10,7 @@ import '../widgets/privacy_settings_section.dart';
 import '../widgets/display_settings_section.dart';
 import '../widgets/data_management_section.dart';
 import '../widgets/developer_settings_section.dart';
+import '../../../diagnostics/presentation/widgets/audit_log_section.dart';
 import '../../../../shared/widgets/error_view.dart';
 import '../../../../shared/widgets/loading_view.dart';
 import '../../../../core/theme/app_spacing.dart';
@@ -78,6 +79,12 @@ class SettingsScreen extends ConsumerWidget {
 
               // Data Management
               DataManagementSection(settings: settings),
+              const SizedBox(height: AppSpacing.md),
+
+              // Diagnostic log — visible in release builds, unlike the
+              // developer section below: a tester on a TestFlight or Play
+              // build is exactly who needs to turn it on.
+              AuditLogSection(settings: settings),
 
               // Developer Settings (only in debug builds)
               DeveloperSettingsSection(settings: settings),
