@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -8,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:autoride/core/audit/audit_log.dart';
 import 'package:autoride/core/audit/audit_sink.dart';
+import 'package:autoride/core/navigation/app_navigator.dart';
 import 'package:autoride/features/trip_detection/data/services/notification_service.dart';
 
 /// The channel `flutter_local_notifications` talks to.
@@ -17,6 +19,8 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   late _RecordingAuditSink sink;
+  late _RecordingNavigator navigator;
+  late List<MethodCall> platformCalls;
   late ProviderContainer container;
 
   setUp(() {
@@ -32,12 +36,16 @@ void main() {
     // point of these tests is the audit line, not the plugin — so the channel
     // it then talks to is mocked away.
     AndroidFlutterLocalNotificationsPlugin.registerWith();
+    platformCalls = <MethodCall>[];
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
           _channel,
           // `initialize` is typed `Future<bool>`; everything else ignores the
           // reply.
-          (call) async => call.method == 'initialize' ? true : null,
+          (call) async {
+            platformCalls.add(call);
+            return call.method == 'initialize' ? true : null;
+          },
         );
     addTearDown(
       () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -48,7 +56,10 @@ void main() {
     AuditLog.install(sink, verbose: true);
     addTearDown(AuditLog.uninstall);
 
-    container = ProviderContainer();
+    navigator = _RecordingNavigator();
+    container = ProviderContainer(
+      overrides: [appNavigatorProvider.overrideWithValue(navigator)],
+    );
     addTearDown(container.dispose);
   });
 
@@ -56,6 +67,12 @@ void main() {
     await container.read(notificationServiceProvider.future);
     return container.read(notificationServiceProvider.notifier);
   }
+
+  /// Payload of the last notification handed to the plugin.
+  String? lastShownPayload() =>
+      (platformCalls.lastWhere((c) => c.method == 'show').arguments
+              as Map<Object?, Object?>)['payload']
+          as String?;
 
   Iterable<Map<String, dynamic>> notifications() => sink.lines
       .map((l) => jsonDecode(l) as Map<String, dynamic>)
@@ -117,6 +134,143 @@ void main() {
       expect(cancelled['k'], 'fg');
     });
   });
+
+  group('NotificationService - tap routing', () {
+    // A tap has no BuildContext: the payload is the only thing that says
+    // where the notification points.
+    test('the ongoing notification points at the tracking screen', () async {
+      await (await service()).showForegroundNotification(
+        distance: 100,
+        duration: const Duration(minutes: 1),
+        currentSpeed: 4.0,
+      );
+      final payload = lastShownPayload();
+
+      (await service()).handleNotificationResponse(
+        NotificationResponse(
+          notificationResponseType:
+              NotificationResponseType.selectedNotification,
+          payload: payload,
+        ),
+      );
+
+      expect(navigator.destinations, ['tracking']);
+    });
+
+    test('the trip-start notification points at the tracking screen', () async {
+      await (await service()).showTripStartNotification();
+      final payload = lastShownPayload();
+
+      (await service()).handleNotificationResponse(
+        NotificationResponse(
+          notificationResponseType:
+              NotificationResponseType.selectedNotification,
+          payload: payload,
+        ),
+      );
+
+      expect(navigator.destinations, ['tracking']);
+    });
+
+    test('tapping a completed trip opens its detail screen', () async {
+      await (await service()).showTripStopNotification(
+        distance: 4200,
+        duration: const Duration(minutes: 18),
+        avgSpeed: 14.0,
+        tripId: 42,
+      );
+
+      (await service()).handleNotificationResponse(
+        NotificationResponse(
+          notificationResponseType:
+              NotificationResponseType.selectedNotification,
+          payload: lastShownPayload(),
+        ),
+      );
+
+      expect(navigator.destinations, ['detail:42']);
+    });
+
+    // A ride that failed to persist still gets announced, with no id to open.
+    test('a completed trip with no id carries no payload', () async {
+      await (await service()).showTripStopNotification(
+        distance: 4200,
+        duration: const Duration(minutes: 18),
+        avgSpeed: 14.0,
+      );
+
+      // The plugin serialises a null payload as an empty string; either way
+      // the tap has no id to open and falls back to the history list.
+      expect(lastShownPayload() ?? '', isEmpty);
+    });
+
+    test('the View Details action routes like a body tap', () async {
+      (await service()).handleNotificationResponse(
+        const NotificationResponse(
+          notificationResponseType:
+              NotificationResponseType.selectedNotificationAction,
+          actionId: 'view_details',
+          payload: 'trip:7',
+        ),
+      );
+
+      expect(navigator.destinations, ['detail:7']);
+    });
+
+    // Opening the app on nothing at all would read as a broken notification.
+    test('a payload with no usable id falls back to the home shell', () async {
+      (await service()).handleNotificationResponse(
+        const NotificationResponse(
+          notificationResponseType:
+              NotificationResponseType.selectedNotification,
+        ),
+      );
+
+      expect(navigator.destinations, ['home']);
+    });
+
+    test('a routed tap is audited', () async {
+      (await service()).handleNotificationResponse(
+        const NotificationResponse(
+          notificationResponseType:
+              NotificationResponseType.selectedNotification,
+          payload: 'trip:42',
+        ),
+      );
+
+      final nav = notifications().where((n) => n['a'] == 'nav').single;
+      expect(nav['k'], 'detail');
+    });
+
+    // Action taps still run their action and must not navigate on top of it.
+    test('the stop action does not navigate', () async {
+      (await service()).handleNotificationResponse(
+        const NotificationResponse(
+          notificationResponseType:
+              NotificationResponseType.selectedNotificationAction,
+          actionId: 'stop',
+        ),
+      );
+
+      expect(navigator.destinations, isEmpty);
+    });
+  });
+}
+
+/// Records where the service asked to go instead of touching a real navigator.
+class _RecordingNavigator extends AppNavigator {
+  _RecordingNavigator() : super(GlobalKey<NavigatorState>());
+
+  final List<String> destinations = <String>[];
+
+  @override
+  void goToTripTracking() => destinations.add('tracking');
+
+  @override
+  void goToTripDetail(int tripId) => destinations.add('detail:$tripId');
+
+  @override
+  void goToHome() => destinations.add('home');
 }
 
 /// Collects audit lines and decodes them on demand.

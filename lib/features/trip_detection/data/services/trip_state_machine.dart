@@ -105,6 +105,9 @@ class TripStateMachine extends _$TripStateMachine {
         distance: finalTrip.distance,
         duration: Duration(seconds: finalTrip.duration),
         avgSpeed: finalTrip.avgSpeed ?? 0.0,
+        // Null only if the row was never persisted; the notification then
+        // opens the history list instead of a detail screen.
+        tripId: finalTrip.id,
       );
     }
 

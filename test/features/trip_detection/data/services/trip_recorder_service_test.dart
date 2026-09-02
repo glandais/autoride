@@ -206,6 +206,7 @@ class _MockNotificationService extends NotificationService {
     required double distance,
     required Duration duration,
     required double avgSpeed,
+    int? tripId,
   }) async {}
 
   @override

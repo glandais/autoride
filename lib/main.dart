@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'core/navigation/app_navigator.dart';
 import 'core/permissions/providers/background_location_status.dart';
 import 'core/permissions/widgets/background_location_banner.dart';
 import 'core/theme/app_theme.dart';
@@ -19,9 +20,6 @@ import 'features/trip_detection/presentation/providers/auto_detection_controller
 import 'features/trip_detection/presentation/screens/trip_tracking_screen.dart';
 import 'features/trip_history/presentation/screens/trip_detail_screen.dart';
 import 'features/trip_history/presentation/screens/trip_history_screen.dart';
-
-// Global navigator key for auto-navigation
-final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -118,7 +116,7 @@ class _AutoRideAppState extends ConsumerState<AutoRideApp>
 
         if (wasNotActive && isNowActive) {
           // Navigate to trip tracking screen
-          navigatorKey.currentState?.pushNamed('/trip-tracking');
+          ref.read(appNavigatorProvider).goToTripTracking();
         }
       });
     });
@@ -129,22 +127,28 @@ class _AutoRideAppState extends ConsumerState<AutoRideApp>
     // Watch theme mode provider for dynamic theme switching
     final themeMode = ref.watch(themeModeProvider);
 
+    final navigator = ref.watch(appNavigatorProvider);
+
     return MaterialApp(
       title: 'AutoRide',
       debugShowCheckedModeBanner: false,
-      navigatorKey: navigatorKey,
+      navigatorKey: navigator.navigatorKey,
+      // The navigator doubles as the observer that tracks the current route,
+      // which is what stops a repeated notification tap from stacking a second
+      // copy of the same screen.
+      navigatorObservers: [navigator],
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.darkTheme,
       themeMode: themeMode,
       home: const InitialRouteScreen(),
       routes: {
-        '/home': (context) => const HomeShell(),
-        '/trip-tracking': (context) => const TripTrackingScreen(),
-        '/settings': (context) => const SettingsScreen(),
+        AppRoutes.home: (context) => const HomeShell(),
+        AppRoutes.tripTracking: (context) => const TripTrackingScreen(),
+        AppRoutes.settings: (context) => const SettingsScreen(),
       },
       onGenerateRoute: (settings) {
         // Handle trip detail route with arguments
-        if (settings.name == '/trip-detail') {
+        if (settings.name == AppRoutes.tripDetail) {
           final tripId = settings.arguments as int?;
           if (tripId != null) {
             return MaterialPageRoute(

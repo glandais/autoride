@@ -1,8 +1,10 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:autoride/core/audit/audit_event.dart';
 import 'package:autoride/core/audit/audit_log.dart';
 import 'package:autoride/core/constants/app_constants.dart';
+import 'package:autoride/core/navigation/app_navigator.dart';
 import 'package:autoride/features/settings/data/services/settings_service.dart';
 import 'package:autoride/features/trip_detection/data/services/trip_recorder_service.dart';
 import 'package:autoride/core/utils/logger.dart';
@@ -10,6 +12,12 @@ import 'package:autoride/core/utils/logger.dart';
 part 'notification_service.g.dart';
 
 const _logger = Logger('NotificationService');
+
+/// Payload of the notifications that point at the live tracking screen.
+const _trackingPayload = 'tracking';
+
+/// Payload prefix of the trip-completed notification: `trip:<id>`.
+const _tripPayloadPrefix = 'trip:';
 
 @riverpod
 class NotificationService extends _$NotificationService {
@@ -41,7 +49,7 @@ class NotificationService extends _$NotificationService {
 
     await _notifications.initialize(
       settings: settings,
-      onDidReceiveNotificationResponse: _onNotificationTap,
+      onDidReceiveNotificationResponse: handleNotificationResponse,
     );
 
     await _createNotificationChannels();
@@ -82,7 +90,13 @@ class NotificationService extends _$NotificationService {
         ?.createNotificationChannel(eventsChannel);
   }
 
-  void _onNotificationTap(NotificationResponse response) {
+  /// Route a notification tap.
+  ///
+  /// Public (and not `_onNotificationTap`) so tests can drive a tap without a
+  /// platform channel; production only ever reaches it through the plugin's
+  /// `onDidReceiveNotificationResponse`.
+  @visibleForTesting
+  void handleNotificationResponse(NotificationResponse response) {
     // Handle notification actions
     final action = response.actionId;
 
@@ -106,22 +120,59 @@ class NotificationService extends _$NotificationService {
         () => ref.read(tripRecorderServiceProvider.notifier).stopRecording(),
       );
     } else if (action == 'view_details') {
-      // User tapped "View Details" on trip completion notification
-      // TODO: Navigate to trip history/details screen
-      // Note: Navigation from notification requires app-level navigation service
-      // or deep linking, which is beyond scope of T025
+      // User tapped "View Details" on the trip completion notification.
+      _navigate(response.payload);
     } else if (response.notificationResponseType ==
         NotificationResponseType.selectedNotification) {
-      // User tapped notification body during active trip
-      // TODO: Navigate to tracking screen
-      // Note: Navigation from notification requires app-level navigation service
-      // or deep linking, which is beyond scope of T025
+      // User tapped the notification body.
+      _navigate(response.payload);
     }
+  }
+
+  /// Send the user where the tapped notification points.
+  ///
+  /// The payload is what carries the destination: the ongoing and trip-start
+  /// notifications say `tracking`, the completion one says `trip:<id>`. An
+  /// unknown or id-less payload falls back to the home shell rather than doing
+  /// nothing — a tap that opens the app on nothing reads as a broken
+  /// notification.
+  void _navigate(String? payload) {
+    final navigator = ref.read(appNavigatorProvider);
+
+    if (payload == _trackingPayload) {
+      _emitNavigation('track');
+      navigator.goToTripTracking();
+      return;
+    }
+
+    final tripId = payload != null && payload.startsWith(_tripPayloadPrefix)
+        ? int.tryParse(payload.substring(_tripPayloadPrefix.length))
+        : null;
+
+    if (tripId != null) {
+      _emitNavigation('detail');
+      navigator.goToTripDetail(tripId);
+      return;
+    }
+
+    _emitNavigation('home');
+    navigator.goToHome();
+  }
+
+  /// A tap is a user action the pipeline never sees; without this line the log
+  /// shows a screen change with no cause.
+  void _emitNavigation(String destination) {
+    AuditLog.emit(
+      AuditEvent.notification,
+      () => <String, Object?>{'a': 'nav', 'k': destination},
+      critical: true,
+    );
   }
 
   /// Run a notification action, swallowing the result but never the error.
   ///
-  /// `_onNotificationTap` is a synchronous platform callback, so these actions
+  /// `handleNotificationResponse` is a synchronous platform callback, so these
+  /// actions
   /// are fire-and-forget. Without this guard a thrown StateError (e.g. stop with
   /// no active trip) or a repository exception becomes an unhandled async error.
   void _runAction(String name, Future<void> Function() action) {
@@ -215,6 +266,7 @@ class NotificationService extends _$NotificationService {
         android: androidDetails,
         iOS: iosDetails,
       ),
+      payload: _trackingPayload,
     );
   }
 
@@ -258,6 +310,7 @@ class NotificationService extends _$NotificationService {
         android: androidDetails,
         iOS: iosDetails,
       ),
+      payload: _trackingPayload,
     );
 
     // Auto-dismiss after 5 seconds
@@ -271,10 +324,16 @@ class NotificationService extends _$NotificationService {
   }
 
   // Show trip stop notification
+  /// Announce a finished ride.
+  ///
+  /// [tripId] is the row the "View Details" action opens. It is nullable
+  /// because a ride that failed to persist still has to be announced — the tap
+  /// then falls back to the history list.
   Future<void> showTripStopNotification({
     required double distance,
     required Duration duration,
     required double avgSpeed,
+    int? tripId,
   }) async {
     final settings = await ref.read(settingsServiceProvider.future);
 
@@ -329,6 +388,7 @@ class NotificationService extends _$NotificationService {
         android: androidDetails,
         iOS: iosDetails,
       ),
+      payload: tripId == null ? null : '$_tripPayloadPrefix$tripId',
     );
   }
 

@@ -12,11 +12,17 @@ import 'package:autoride/core/constants/app_constants.dart';
 
 /// One recorded call to [NotificationService.showTripStopNotification].
 class _StopNotification {
-  const _StopNotification(this.distance, this.duration, this.avgSpeed);
+  const _StopNotification(
+    this.distance,
+    this.duration,
+    this.avgSpeed,
+    this.tripId,
+  );
 
   final double distance;
   final Duration duration;
   final double avgSpeed;
+  final int? tripId;
 }
 
 /// Mock NotificationService that skips all plugin calls and records what the
@@ -38,8 +44,11 @@ class _MockNotificationService extends NotificationService {
     required double distance,
     required Duration duration,
     required double avgSpeed,
+    int? tripId,
   }) async {
-    stopNotifications.add(_StopNotification(distance, duration, avgSpeed));
+    stopNotifications.add(
+      _StopNotification(distance, duration, avgSpeed, tripId),
+    );
   }
 
   @override
@@ -252,6 +261,9 @@ void main() {
       expect(notification.distance, equals(4200.0));
       expect(notification.duration, equals(const Duration(seconds: 900)));
       expect(notification.avgSpeed, equals(16.8));
+      // The id is what the "View Details" action opens; without it the tap
+      // can only fall back to the history list.
+      expect(notification.tripId, equals(1));
       expect(notifications.foregroundCancelCount, equals(1));
     });
 
