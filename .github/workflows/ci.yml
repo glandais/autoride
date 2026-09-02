@@ -85,13 +85,22 @@ jobs:
           # $ANDROID_HOME but does not put sdkmanager on PATH, so resolve it instead of
           # calling it bare (that failed with "sdkmanager: command not found").
           sdk_root="${ANDROID_SDK_ROOT:-${ANDROID_HOME:?Android SDK not found on this runner}}"
-          sdkmanager="$(find "$sdk_root/cmdline-tools" -type f -name sdkmanager | sort | tail -n 1)"
+          resolve_sdkmanager() {
+            find "$sdk_root/cmdline-tools" -type f -name sdkmanager | sort | tail -n 1
+          }
+          sdkmanager="$(resolve_sdkmanager)"
           if [ -z "$sdkmanager" ]; then
             echo "::error::sdkmanager not found under $sdk_root/cmdline-tools"
             exit 1
           fi
           yes | "$sdkmanager" --licenses > /dev/null 2>&1 || true
-          "$sdkmanager" "platforms;android-37"
+          # The platform IDs now carry a minor version ("platforms;android-37.0", installed as
+          # platforms/android-37.0); an sdkmanager older than that scheme cannot resolve them
+          # ("Failed to find package"), so refresh cmdline-tools first and re-resolve the binary.
+          "$sdkmanager" "cmdline-tools;latest"
+          sdkmanager="$(resolve_sdkmanager)"
+          yes | "$sdkmanager" --licenses > /dev/null 2>&1 || true
+          "$sdkmanager" "platforms;android-37.0"
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
