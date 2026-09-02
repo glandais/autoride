@@ -81,8 +81,17 @@ jobs:
       # platforms, so install it explicitly instead of relying on AGP's auto-download.
       - name: Install Android SDK platform 37
         run: |
-          sdkmanager --licenses > /dev/null 2>&1 || true
-          sdkmanager "platforms;android-37"
+          # The runner image ships the command-line tools under a versioned directory inside
+          # $ANDROID_HOME but does not put sdkmanager on PATH, so resolve it instead of
+          # calling it bare (that failed with "sdkmanager: command not found").
+          sdk_root="${ANDROID_SDK_ROOT:-${ANDROID_HOME:?Android SDK not found on this runner}}"
+          sdkmanager="$(find "$sdk_root/cmdline-tools" -type f -name sdkmanager | sort | tail -n 1)"
+          if [ -z "$sdkmanager" ]; then
+            echo "::error::sdkmanager not found under $sdk_root/cmdline-tools"
+            exit 1
+          fi
+          yes | "$sdkmanager" --licenses > /dev/null 2>&1 || true
+          "$sdkmanager" "platforms;android-37"
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
