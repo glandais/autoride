@@ -369,6 +369,44 @@
   - *References*: `tasks/BLOCKED-pipeline-refactor.md` (decisions + dependency order), `tasks/AUDIT-FINDINGS.md` (2026-06-17, deferred cluster), `tasks/LEDGER.md` (2026-08-31, §3 findings and §5 step 4)
   - *Retires*: the blocked halves of T006 and T013; unblocks T032 and the recorder/coordinator tests under T029/T031
 
+### 11.2 Field findings — control run without a ride (2026-09-02)
+
+The first log of an outing with **no bike** (shopping on foot and by transport, both phones on
+1.0.0+9, verbose log) is the false-positive control the T041 checklist never had. Expected: zero
+trips. Observed: four trips of 0 m on the Pixel, and an outing the iPhone never saw. The diagnoses
+are ledger §6 (L-079…L-086); the four tasks below group them into units that share one cause and one
+acceptance test. **Diagnosis only at this stage — no solution has been chosen for any of them.**
+
+- ☐ **T044**: Trip Start Decision — one departure, one trip, and only a real one
+  - *Detail*: ledger L-079, L-080, L-081 (create `tasks/T044-trip-start-decision.md` on request)
+  - *Scope*: the three defects between "the detector says go" and "a ride is in History". Walking scores as cycling when no GPS speed is there to correct it (L-079); one departure starts two trips because nothing is re-entrant between the go and the state transition, leaving an orphan `active` row (L-080); a trip with no route point is saved, and only ever ends through the watchdog or `maxPause` (L-081). One task because the three share the same evidence and the same acceptance test: repeat the shopping run and expect zero trips in History and zero `active` rows in the database.
+  - *Dependencies*: T041 (the pipeline), T043 (the log that decides it)
+  - *Cross-refs*: L-011 (dead three-layer detector), L-022 (streak fixed, confidence not), L-068 (sub-60 s rule), L-074, L-075
+  - *Estimate*: multi-session — the L-080 half is bounded, the L-079 half is the detection problem itself
+
+- ☐ **T045**: Carried-Phone Motion Semantics — counters in seconds, a gate that closes on a walker
+  - *Detail*: ledger L-082, L-083
+  - *Scope*: the per-sample residue of L-022 on the resume path (5 samples ≈ 100 ms, L-082) and the GPS gate a walker's pocket keeps open indefinitely (56 min for 4 fixes, L-083). Same root: motion arithmetic that assumes a phone on a bar mount or a table, evaluated per 50 Hz sample. Decides T041 items 1, 4 and 9 for a carried phone.
+  - *Dependencies*: T041; `07fabee`'s `MotionStateWindow` is the base it extends or replaces
+  - *Cross-refs*: L-022, L-070, T006 (the battery target is unmeasurable while the gate stays open)
+  - *Estimate*: 1 session + device runs
+
+- ☐ **T046**: iOS Background Survival — the gate must not be the only thing keeping the process alive
+  - *Detail*: ledger L-084; the case the L-078 decision explicitly deferred
+  - *Scope*: with "Always" granted, iOS suspended the process 40 s after the GPS gate closed and kept it suspended for 2 h 31 (L-084). Motion-gated GPS, as designed for Android, removes the only CoreLocation session iOS keeps a backgrounded process alive for. This is a *behaviour* decision — what the app asks CoreLocation for while idle, traded against the battery target — not instrumentation. T041 item 8 on iOS is blocked on it.
+  - *Dependencies*: T041 decision (b) (gate inside the coordinator) is what this revisits for iOS
+  - *Cross-refs*: L-067, L-078, T041 item 8, `platform-config` skill
+  - *Estimate*: decision first, then 1 session + iPhone runs
+
+- ☐ **T047**: Audit Log Cost and Honesty — a verbose level that does not purge its own session
+  - *Detail*: ledger L-085, L-086
+  - *Scope*: `win`/`stop`/`res` emitted per motion sample (90 % of a verbose file, self-purge in ~2 h, L-085) — the same class as the `start` emit `07fabee` throttled — plus the duplicate `perm`/`bat` lines, the `pau` vs `pd` disagreement and the 55/83 Hz sample rate that contradicts the "configured rate exactly" claim (L-086). Without it every verbose run of T044–T046 loses its own header, session start, `fgs` and `perm` lines.
+  - *Dependencies*: T043
+  - *Cross-refs*: L-077 (silent retention purge, by design), T041 §0 table
+  - *Estimate*: half a session
+
+- *Recommended order*: T047 → T044 (L-080 half) → T045 → T046 (decision first). Ledger §6 says why.
+
 ---
 
 ## Phase 12: Data Portability
@@ -406,15 +444,15 @@
 
 ## Progress Summary
 
-**Total Tasks**: 43
+**Total Tasks**: 47
 **Completed**: 25
 **In Progress**: 9 (T006, T013, T030, T037, T038, T039, T041, T042, T043)
-**Pending**: 9
+**Pending**: 13
 **Blocked**: 0
 
 **Current Phase**: Phase 10 - Release Preparation, alongside the Phase 11 audit backlog and the Phase 12 export work
 **Last Completed**: T029/T033 - test-suite recut and code quality (2026-09-01)
-**Current Task**: T039/T041 — iOS release is 2 blockers from submittable (build attach + screenshots); T041 device validation under way (first iPhone run done: prompts OK, one crash found and fixed — see `tasks/T041-device-validation.md`). T038 open on manual Play Console setup; T037 open (§5.6/§5.7).
+**Current Task**: T044–T047 (Phase 11.2) — the 2026-09-02 control run without a ride produced four 0 m trips on the Pixel and an invisible outing on the iPhone; ledger §6 holds the diagnoses. Then T039/T041 — iOS release is 2 blockers from submittable (build attach + screenshots); T041 device validation under way (first iPhone run done: prompts OK, one crash found and fixed — see `tasks/T041-device-validation.md`). T038 open on manual Play Console setup; T037 open (§5.6/§5.7).
 **Next Task**: T039 - iOS Release Configuration (T038 now owns the version scheme and `publish_beta.sh`, so T039 can extend both)
 **Audit backlog**: `tasks/AUDIT-FINDINGS.md` (2026-06-17) and `tasks/LEDGER.md` (2026-08-31) record open defects that are not otherwise tracked here; the blocked core-pipeline cluster is T041.
 

@@ -36,6 +36,28 @@ foreground service's notification channel did not exist yet. Fixed by awaiting
 then launches and reaches the "Always"/precise-location settings prompt of item 6.
 The checklist items below are still unrun on Android.
 
+**2026-09-02, iPhone 14,3 / iOS 26.6.1 and Pixel 6a (release, 1.0.0+9) — control run
+without a ride.** Shopping on foot and by transport, no bike, verbose log on both phones.
+Full analysis: ledger §6 (L-079…L-086); follow-up tasks T044–T047 in `TASKS.md` 11.2.
+- Pixel: the foreground service holds the process for the whole 2 h (245 heartbeats, `mn` > 0,
+  no `app resumed`) — item 8's Android prerequisite passes; the ride itself is still unrun.
+  But **four trips of 0 m** were recorded while walking in a shop: the start detector scores
+  walking as cycling with no GPS speed to correct it (L-079), one departure started two trips
+  in the same millisecond, leaving an orphan `active` row (L-080), and both surviving trips
+  were saved with zero route points, ended only by the L-074 watchdog after 600 s and by
+  `maxPause` (L-081). Resume fired on 5 samples (L-082); the gate stayed open 56 min for
+  4 fixes while walking (L-083). The verbose log purged its own first hour, so this session's
+  `fgs`/`perm` lines are gone (L-085).
+- iPhone: `alw:true`, `fgs start plat:ios` — and still nothing, this time a **suspension**,
+  not a termination: heartbeats at 16:21, 16:36 and 19:07 with `dt` up to 2 h 31 and no launch
+  header. The gate closed at 16:04:51 and the process was gone 40 s later; iOS keeps a
+  backgrounded process alive only while a location session runs (L-084). Item 8 on iOS is
+  blocked on T046, a behaviour decision, not on more instrumentation.
+- Items settled by this run: **10 ✅** (watchdog fired at `el` 600, `ref lastFix`, warning
+  logged, trip stopped, session restarted). **1**: ✅ for a phone at rest (7 min open at home,
+  then one close — against "never" on +8), ❌ for a carried phone (L-083). Items 4, 9, 11: not
+  measurable (verbose level / no ride).
+
 Code complete on `develop` (`7afb833` → `529db42` → `da3ad62`, 245 tests green).
 None of the items below are observable from `flutter analyze`/`flutter test` or on an
 emulator — run them on a physical device in `--release` mode. T041 (and the reopened
@@ -179,6 +201,13 @@ Android unrun.**
   `alw` (Always granted), `acc` (precise/reduced) and `issue`, emitted on every session
   start and on every change, plus `plat` on every `fgs` line. Reading it settles the
   question above in one grep instead of a second field session.
+
+**2026-09-02, 1.0.0+9 — the `perm` line answered, and the answer is a second cause.** `alw` is
+true, `fgs start plat:ios` is there, and the process was still suspended for 2 h 31 — a suspension
+this time (no launch header), starting 40 s after the gate's `inactivityTimeout` close. "While
+Using" was one way to fail this item; a gate that closes the only CoreLocation session is the
+other, and it fails with "Always" too. Ledger L-084, task T046. Android's prerequisite holds
+(2 h of heartbeats, no `app resumed`); the screen-off ride itself is still unrun.
 
 ## 9. Auto-pause / auto-stop with the phone carried (L-070, added 2026-09-01)
 The stationary verdict is now computed over a 1.5 s sliding window (accelerometer

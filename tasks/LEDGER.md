@@ -698,3 +698,44 @@ Deliberately not done here: the iOS background strategy itself. If the next log 
 the heartbeats still stop, the cause is in CoreLocation configuration (a gate that closes the only
 subscription holding the process, `showBackgroundLocationIndicator`) and is a change of behaviour, not
 of instrumentation.
+
+
+## 6. Field findings — 2026-09-02 control run without a ride (build 1.0.0+9)
+
+**Source**: two verbose audit logs exported the same evening — iPhone 14,3 / iOS 26.6.1
+(`autoride-audit-20260902-1908.ndjson.gz`, 1 929 lines, 15:50→19:08 CEST) and Pixel 6a / Android 17
+(`autoride-audit-20260902-1911.ndjson.gz`, 151 212 lines, 17:05→19:11 CEST). The maintainer went
+shopping on foot and by transport, **no bike**. Both phones ran 1.0.0+9, i.e. `07fabee` + `2b0440d`
+on top of 1.0.0+8 (the `start` emit is at 1 Hz and `fgs start plat:ios` is present, so both fixes
+were in). A run with no ride is the false-positive control the checklist never had: the only correct
+outcome is zero trips. The Pixel recorded four, all 0 m; the iPhone saw nothing of the outing.
+
+Diagnoses only. Each row names the task that owns it (T044–T047 in `TASKS.md`, section 11.2); no
+solution has been chosen for any of them yet.
+
+### High
+
+| ID | Dim | Where | Finding | Status | Evidence |
+|---|---|---|---|---|---|
+| L-079 | pipeline | `trip_start_detector.dart` | Walking scores as cycling, and with no GPS the score is 100 % motion | Confirmed (device) | Every `start go:true` and every aborted `detecting` window (9 `dto` in 30 min of walking in a shop, 2 starts) carries `mag` 12–15 m/s² and `gyr` 1.4–2.0 rad/s — inside the single-sample cycling fit. `spk` is absent on all 6 389 evaluations, so the speed weight never applied. L-022's fix made the *streak* 1 Hz; the *confidence* is still a one-sample fit, and the three-layer detector (L-011) is still dead. The vehicle ride home (13 gate openings, 18:16–18:38) produced no false start: the failure is specific to walking. → **T044** |
+| L-080 | pipeline · arch | coordinator `_analyzeForTripStart` / recorder `startRecording` | Two trips started from one departure (trips 5 and 6, same millisecond) | Confirmed (device) | Two `start go:true` in the same second each reached `startRecording`. The recorder's `_activeTrip != null` guard is only set after the `await saveTrip`, the state machine stays `detecting` until `startTripWithId`, and the detector keeps answering `shouldStart` for every sample inside the evaluation interval. Trip 5 got a database row and nothing else — no `st`, no stop — and is left `active` for `TripRecoveryService` (L-068) to close at the next launch. L-075's cooldown never armed: neither trip is a "false start" by its definition. → **T044** |
+| L-081 | pipeline | recorder stop path / L-068 rule | A trip with zero route points is saved as a ride | Confirmed (device) | Trip 4: 627 s, one fix (accuracy 100 m, dropped by `rpAcc` 50), `dist` 0, saved. Trip 6: 134 s, no fix at all, saved. L-068 deletes only trips shorter than `minTripDurationSeconds`; nothing looks at distance or point count. Both ended through safety nets rather than a decision: trip 4 by the L-074 watchdog after the full 600 s, trip 6 by `maxPause` (`pd` 299). Three pause/resume cycles on trip 4 came from `gps+vib` windows whose network fixes all read 0 km/h. → **T044** |
+| L-082 | pipeline | `trip_stop_detector.dart`, resume path | Resume is decided over 5 *samples*, not 5 seconds | Confirmed (device) | All three `res go:true` on trip 4 carry `cm:5` while `res` is evaluated per motion sample (~54 Hz): ~100 ms of "moving" resumes a paused trip. L-070 moved the stationary verdict to a 1.5 s window but left the movement counter per sample — the resume-side residue of L-022. T041 item 9 expects "within ~5 s". → **T045** |
+| L-083 | pipeline · battery | coordinator GPS gate / `MotionStateWindow` | The gate never closes while the phone is carried on foot | Confirmed (device) | Pixel: one continuous open interval 17:16:38→18:13:03 (56 min) for 4 usable fixes; 195 `gate sched` for 15 closes; 4 058 s open in 2 h 05. Every "moving" window verdict re-arms the 30 s timer, so a walker keeps GPS on for nothing. `07fabee`'s window fixes the phone lying still (iPhone at home: 7 min open then one close, against "never" on +8) — not the phone in a pocket. Item 4 cannot be quoted from this run (verbose level). → **T045** |
+| L-084 | platform · pipeline | iOS background / GPS gate | iOS suspends the process the moment the gate closes, "Always" or not | Confirmed (device) | `perm {alw:true, acc:precise}`, `fgs start plat:ios`, `app paused` 16:05:32, gate `close inactivityTimeout` 16:04:51. Heartbeats after that: 16:21:01 (`dt` 946 s), 16:36:04 (`dt` 903 s), 19:07:29 (`dt` 9 085 s = 2 h 31). No launch header in between → a **suspension**, not the 1.0.0+8 termination. The 16:36 wake (gate open, one 27 m fix at 12 km/h) lasted one tick. The whole outing is invisible on iOS. This is precisely the case the L-078 decision set aside ("a gate that closes the only subscription holding the process"): T041 item 8's iOS verdict ("While Using") was one of two causes, and this is the other. → **T046** |
+
+### Medium
+
+| ID | Dim | Where | Finding | Status | Evidence |
+|---|---|---|---|---|---|
+| L-085 | gates · battery | coordinator `_analyzeForTripStop` / `_analyzeForResume` audit emits | Verbose `win`/`stop`/`res` fire per motion sample, and the log purges its own session | Confirmed (device) | Inter-event gaps 1–12 ms; 80 103 `win` + 33 036 `stop` + 23 535 `res` = 90 % of the Pixel file for ~26 min of recording; 12 MB uncompressed for 2 h. The 20 MB byte bound (`auditMaxBytes`) purged everything before 17:05:54 **silently** (a retention purge is not an `aud` event, by the L-077 design): no launch header, no `sess start`, no `fgs`, no `perm`, and trip 4 starts mid-flight — T041 item 8 is unverifiable from this log on Android. Same defect class as the `start` emit throttled in `07fabee`, on the two paths it did not touch. → **T047** |
+
+### Low
+
+| ID | Dim | Where | Finding | Status | Evidence |
+|---|---|---|---|---|---|
+| L-086 | gates | audit emit sites, sensor pacing | Duplicate and mutually inconsistent emissions | Confirmed (device) | `perm k:background why:change` emitted twice, identical, on every `app resumed` (iOS ×4, Pixel ×1); two `bat` lines in the same second at every session restart; trip 6 reports `pau` 269 (recorder, from the pause transition) while the detector's `pd` reads 299 (from stationary onset) — two clocks for one pause; Pixel `hb.mn` median 1 669 per 30 s = 55.6 Hz against `hzN` 50, and 2 493 (83 Hz) once foregrounded, where `07fabee` claims "the configured rate exactly" (iPhone: 1 542 = 51.4 Hz). → **T047** |
+
+**Confirmed healthy on the same run**: Android background survival (245 heartbeats, `n` 30/31, `mn` > 0, no `app resumed` for 2 h — item 8's Android prerequisite holds); the L-074 watchdog fired at exactly `el` 600 with `ref lastFix`, logged its warning, stopped the trip and restarted the session; the L-076 buffer emptied on every `inactivityTimeout`; no `err` and no `aud overflow` on either phone; Pixel battery 100 → 97 % in 2 h (verbose — indicative only).
+
+**Recommended order**: T047 first (half a session, and every later verbose run otherwise loses its own header), then the bounded half of T044 (L-080), then T045, then the T046 decision — the iOS strategy is a trade-off against the battery target and deserves its own decision paragraph here before any code.
