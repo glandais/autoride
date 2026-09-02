@@ -36,7 +36,7 @@ class TripListItem extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   StatusBadge(
-                    label: _getActivityLabel(trip.detectedActivity),
+                    label: trip.detectedActivity.label,
                     color: _getActivityColor(trip.detectedActivity),
                     icon: _getActivityIcon(trip.detectedActivity),
                   ),
@@ -121,24 +121,6 @@ class TripListItem extends StatelessWidget {
         ),
       ),
     );
-  }
-
-  /// Get activity label for display
-  String _getActivityLabel(ActivityType activity) {
-    switch (activity) {
-      case ActivityType.cycling:
-        return 'Cycling';
-      case ActivityType.walking:
-        return 'Walking';
-      case ActivityType.running:
-        return 'Running';
-      case ActivityType.driving:
-        return 'Driving';
-      case ActivityType.stationary:
-        return 'Stationary';
-      case ActivityType.unknown:
-        return 'Unknown';
-    }
   }
 
   /// Get activity icon

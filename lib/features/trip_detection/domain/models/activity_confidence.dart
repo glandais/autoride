@@ -131,3 +131,16 @@ extension ActivityConfidenceExtensions on ActivityConfidence {
     return sorted.length > 1 ? sorted[1].key : null;
   }
 }
+
+extension ActivityTypeDisplay on ActivityType {
+  /// Human-readable name, shared by the history list and the filter dialog so
+  /// the same activity never reads two different ways.
+  String get label => switch (this) {
+    ActivityType.cycling => 'Cycling',
+    ActivityType.walking => 'Walking',
+    ActivityType.running => 'Running',
+    ActivityType.driving => 'Driving',
+    ActivityType.stationary => 'Stationary',
+    ActivityType.unknown => 'Unknown',
+  };
+}

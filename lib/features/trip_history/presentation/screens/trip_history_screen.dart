@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:autoride/features/trip_history/domain/models/trip_filter.dart';
+import 'package:autoride/features/trip_history/presentation/providers/trip_filter_provider.dart';
 import 'package:autoride/features/trip_history/presentation/providers/trip_history_provider.dart';
+import 'package:autoride/features/trip_history/presentation/widgets/trip_filter_dialog.dart';
 import 'package:autoride/features/trip_history/presentation/widgets/trip_list_item.dart';
 import 'package:autoride/features/trip_history/presentation/screens/trip_detail_screen.dart';
 import 'package:autoride/shared/widgets/empty_state.dart';
@@ -21,17 +24,24 @@ class TripHistoryScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final tripsAsync = ref.watch(tripHistoryProvider);
+    final filter = ref.watch(tripFilterControllerProvider);
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Trip History'),
         actions: [
-          // Optional: Add filter button
           IconButton(
-            icon: const Icon(Icons.filter_list),
-            onPressed: () {
-              // TODO: Implement filter dialog
-            },
+            icon: Badge(
+              // The badge is the only thing telling a filtered empty list from
+              // an app with no trips in it.
+              isLabelVisible: filter.isActive,
+              label: Text('${filter.activeCriteriaCount}'),
+              child: Icon(
+                filter.isActive ? Icons.filter_list_alt : Icons.filter_list,
+              ),
+            ),
+            tooltip: 'Filter trips',
+            onPressed: () => _openFilterDialog(context, ref, filter),
           ),
         ],
       ),
@@ -39,6 +49,22 @@ class TripHistoryScreen extends ConsumerWidget {
         data: (trips) {
           // Show empty state if no trips
           if (trips.isEmpty) {
+            // A filtered list that came back empty is not the same story as an
+            // app that has never recorded anything, and the way out differs
+            // too: one offers a reset, the other an explanation.
+            if (filter.isActive) {
+              return EmptyState(
+                icon: Icons.filter_list_off,
+                title: 'No Matching Trips',
+                subtitle: 'No recorded trip matches the current filter. Try widening it.',
+                action: FilledButton.tonal(
+                  onPressed: () =>
+                      ref.read(tripFilterControllerProvider.notifier).clear(),
+                  child: const Text('Clear filters'),
+                ),
+              );
+            }
+
             return const EmptyState(
               icon: Icons.directions_bike,
               title: 'No Trips Yet',
@@ -122,6 +148,21 @@ class TripHistoryScreen extends ConsumerWidget {
         ),
       ),
     );
+  }
+
+  /// Open the filter dialog and apply whatever it returns.
+  ///
+  /// A dismissed dialog returns null and must leave the current filter as it
+  /// was — only an explicit Apply or Clear changes it.
+  Future<void> _openFilterDialog(
+    BuildContext context,
+    WidgetRef ref,
+    TripFilter current,
+  ) async {
+    final selected = await showTripFilterDialog(context, current: current);
+    if (selected == null) return;
+
+    ref.read(tripFilterControllerProvider.notifier).apply(selected);
   }
 
   /// Helper function to generate date labels for grouping

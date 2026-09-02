@@ -1,7 +1,8 @@
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:autoride/features/trip_detection/domain/models/trip.dart';
-import 'package:autoride/features/trip_detection/domain/models/activity_confidence.dart';
 import 'package:autoride/features/trip_history/data/repositories/trip_repository.dart';
+import 'package:autoride/features/trip_history/domain/models/trip_filter.dart';
+import 'package:autoride/features/trip_history/presentation/providers/trip_filter_provider.dart';
 
 part 'trip_history_provider.g.dart';
 
@@ -11,43 +12,35 @@ part 'trip_history_provider.g.dart';
 class TripHistory extends _$TripHistory {
   @override
   Future<List<Trip>> build() async {
-    return _loadTrips();
+    // Watched, not read: changing the filter is what reloads the list.
+    return _loadTrips(ref.watch(tripFilterControllerProvider));
   }
 
-  /// Load all trips from repository
-  Future<List<Trip>> _loadTrips({
-    ActivityType? filterActivity,
-    bool? confirmedOnly,
-  }) async {
+  /// Load the trips matching [filter], most recent first.
+  ///
+  /// The date window is pushed down to SQL — it is the criterion that can
+  /// discard most of the table — and the remaining criteria are applied in
+  /// memory, because they compose and the repository's single-criterion
+  /// queries do not.
+  Future<List<Trip>> _loadTrips(TripFilter filter) async {
     final repository = await ref.read(tripRepositoryProvider.future);
 
-    if (confirmedOnly == true) {
-      return repository.getConfirmedTrips();
-    }
+    final now = DateTime.now();
+    final from = filter.startBoundary(now);
 
-    if (filterActivity != null) {
-      return repository.getTripsByActivity(filterActivity);
-    }
+    final trips = from == null
+        ? await repository.getAllTrips(orderBy: 'start_time DESC')
+        : await repository.getTripsByDateRange(startDate: from, endDate: now);
 
-    return repository.getAllTrips(orderBy: 'start_time DESC');
+    return trips.where(filter.matches).toList();
   }
 
   /// Refresh trip list
   Future<void> refresh() async {
     state = const AsyncValue.loading();
-    state = await AsyncValue.guard(() => _loadTrips());
-  }
-
-  /// Filter trips by activity type
-  Future<void> filterByActivity(ActivityType? activity) async {
-    state = const AsyncValue.loading();
-    state = await AsyncValue.guard(() => _loadTrips(filterActivity: activity));
-  }
-
-  /// Show only confirmed trips
-  Future<void> showConfirmedOnly() async {
-    state = const AsyncValue.loading();
-    state = await AsyncValue.guard(() => _loadTrips(confirmedOnly: true));
+    state = await AsyncValue.guard(
+      () => _loadTrips(ref.read(tripFilterControllerProvider)),
+    );
   }
 
   /// Delete a trip and refresh the list
