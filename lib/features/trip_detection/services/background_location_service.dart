@@ -54,7 +54,22 @@ void onStart(ServiceInstance service) async {
   });
 }
 
-@riverpod
+/// `keepAlive`, and it has to be: the only consumer is
+/// `AutoDetectionController`, which reaches the notifier through
+/// `ref.read(...notifier)` and never watches or listens to it. An autoDispose
+/// element read that way has no subscriber, so Riverpod destroys it at the
+/// first async gap — the one inside `await initialize()` — and the `state =`
+/// at the end of [startTracking] then throws
+/// `Cannot use the Ref of backgroundLocationServiceProvider after it has been
+/// disposed`. The controller swallows that exception, so the foreground
+/// service simply never started (audit of 2026-09-02: not one `fgs` line in
+/// the whole iPhone log). It is a race, and Android only ever won it by a few
+/// milliseconds.
+///
+/// Being alive for the app's lifetime also means one single
+/// `FlutterBackgroundService()` instance instead of a new one — plus a new
+/// `build()` — on every `ref.read`.
+@Riverpod(keepAlive: true)
 class BackgroundLocationService extends _$BackgroundLocationService {
   final service = FlutterBackgroundService();
 
@@ -94,11 +109,15 @@ class BackgroundLocationService extends _$BackgroundLocationService {
   }
 
   /// Start the foreground service that keeps the app alive while recording.
+  ///
+  /// The `ref.mounted` guards are belt and braces on top of the `keepAlive`
+  /// above: the platform call has already gone through by then, and losing the
+  /// cached flag must never take the service down with it.
   Future<void> startTracking() async {
     final isRunning = await service.isRunning();
     if (!isRunning) {
       await service.startService();
-      state = const AsyncValue.data(true);
+      if (ref.mounted) state = const AsyncValue.data(true);
     }
   }
 
@@ -107,7 +126,7 @@ class BackgroundLocationService extends _$BackgroundLocationService {
     final isRunning = await service.isRunning();
     if (isRunning) {
       service.invoke('stopService');
-      state = const AsyncValue.data(false);
+      if (ref.mounted) state = const AsyncValue.data(false);
     }
   }
 

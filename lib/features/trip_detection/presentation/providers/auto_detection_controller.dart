@@ -6,6 +6,8 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 import '../../../../core/audit/audit_event.dart';
 import '../../../../core/audit/audit_log.dart';
 import '../../../../core/constants/app_constants.dart';
+import '../../../../core/permissions/models/background_location_state.dart';
+import '../../../../core/permissions/providers/background_location_status.dart';
 import '../../../../core/utils/logger.dart';
 import '../../../onboarding/data/services/onboarding_service.dart';
 import '../../../settings/data/services/settings_service.dart';
@@ -48,12 +50,25 @@ class AutoDetectionController extends _$AutoDetectionController {
   /// Open only while a trip is recording; feeds the foreground notification.
   void Function()? _closeMetricsSubscription;
 
+  /// Container-owned, opened once: journals what the OS really grants for
+  /// background location, in both directions.
+  void Function()? _closeBackgroundStatusSubscription;
+
   /// Last value applied to the coordinator by the *automatic* path. The manual
   /// start path deliberately does not touch it, so turning the setting on later
   /// still starts detection.
   bool _appliedShouldListen = false;
 
   bool _permissionRechecked = false;
+
+  /// Last value the `perm` line reported, so a rebuild that changes nothing
+  /// stays silent. Held here rather than compared against `state`: reading
+  /// `state` during the *first* `build()` throws "Tried to read the state of an
+  /// uninitialized provider", which took the whole controller down as soon as
+  /// the audit log was already installed — i.e. exactly on the cold starts the
+  /// log exists to explain, and why neither 2026-09-02 iPhone session has a
+  /// `perm` line.
+  AutoDetectionState? _lastAuditedState;
 
   /// Mirrors the state machine: true exactly while a trip is being recorded.
   bool _recording = false;
@@ -72,11 +87,24 @@ class AutoDetectionController extends _$AutoDetectionController {
       _closeTripStateSubscription = null;
       _closeMetricsSubscription?.call();
       _closeMetricsSubscription = null;
+      _closeBackgroundStatusSubscription?.call();
+      _closeBackgroundStatusSubscription = null;
     });
 
     // Opened once, not per rebuild.
     _closeTripStateSubscription ??= ref.container
         .listen(tripStateMachineProvider, _onTripStateChanged)
+        .close;
+
+    // The app root refreshes this on every resume, precisely because the user
+    // can flip "Always" back to "While Using" in system settings behind the
+    // app's back. Listening rather than reading once is what puts both
+    // directions in the log.
+    _closeBackgroundStatusSubscription ??= ref.container
+        .listen(
+          backgroundLocationStatusProvider,
+          (previous, next) => _emitBackgroundPermission(next.value, 'change'),
+        )
         .close;
 
     final settings = ref.watch(settingsServiceProvider);
@@ -91,7 +119,8 @@ class AutoDetectionController extends _$AutoDetectionController {
       onboardingComplete: onboarding.value == false,
     );
 
-    if (AuditLog.enabled && next != state) {
+    if (AuditLog.enabled && next != _lastAuditedState) {
+      _lastAuditedState = next;
       // Which of the three inputs is false is exactly what explains "detection
       // never started" on a device, and none of it is visible after the fact.
       AuditLog.emit(
@@ -137,6 +166,36 @@ class AutoDetectionController extends _$AutoDetectionController {
   // Detection lifecycle
   // ---------------------------------------------------------------------------
 
+  /// Journal what the OS actually grants for background location.
+  ///
+  /// The existing `perm` line with `k` = autoDetection cannot answer this: its
+  /// `loc` comes from [LocationPermissionStatus], which folds iOS "While
+  /// Using" into `granted` — and "While Using" is exactly the setting under
+  /// which iOS terminates the process minutes after the app is backgrounded.
+  /// The 2026-09-02 iPhone audit ends in a 40-minute hole with no way to tell
+  /// that case from a CoreLocation misconfiguration, because neither log line
+  /// carried the answer.
+  ///
+  /// [why] separates the line emitted on each session start from the ones a
+  /// change of authorisation produces, so a reader can tell a downgrade
+  /// mid-session from the state detection started in.
+  void _emitBackgroundPermission(BackgroundLocationState? status, String why) {
+    if (status == null) return;
+    if (!AuditLog.enabled) return;
+
+    AuditLog.emit(
+      AuditEvent.permission,
+      () => <String, Object?>{
+        'k': 'background',
+        'why': why,
+        'alw': status.permission.isGranted,
+        'acc': status.accuracy.name,
+        'issue': status.issue?.name,
+      },
+      critical: true,
+    );
+  }
+
   void _applyAutomatic(bool shouldListen) {
     if (!ref.mounted) return;
     if (shouldListen == _appliedShouldListen) return;
@@ -145,6 +204,14 @@ class AutoDetectionController extends _$AutoDetectionController {
     final coordinator = ref.read(tripDetectionCoordinatorProvider.notifier);
     if (shouldListen) {
       _logger.info('Automatic detection enabled - starting coordinator');
+      // Unconditionally, ahead of the coordinator's `sess start`: the
+      // change-driven line below may well have been emitted before the log was
+      // even switched on, which is how both 2026-09-02 iPhone sessions ended
+      // up without one.
+      _emitBackgroundPermission(
+        ref.read(backgroundLocationStatusProvider).value,
+        'session',
+      );
       unawaited(coordinator.startListening());
     } else {
       // A trip in progress is not interrupted: the coordinator defers the
@@ -281,6 +348,21 @@ class AutoDetectionController extends _$AutoDetectionController {
         );
   }
 
+  /// Which OS the `fgs` lines describe.
+  ///
+  /// The foreground service is an Android concept. On iOS `startService()` only
+  /// spins up a second FlutterEngine and holds no notification, so an `fgs
+  /// start` there says nothing about whether the process survives being
+  /// backgrounded — that rests on `UIBackgroundModes: location` plus an
+  /// "Always" authorisation, which the `perm` line with `k` = background
+  /// reports. Without this field a reader compares the two devices' logs and
+  /// concludes the wrong thing.
+  String get _platformTag => switch (defaultTargetPlatform) {
+    TargetPlatform.android => 'android',
+    TargetPlatform.iOS => 'ios',
+    final other => other.name,
+  };
+
   Future<void> _startForegroundService() async {
     try {
       final service = ref.read(backgroundLocationServiceProvider.notifier);
@@ -292,13 +374,26 @@ class AutoDetectionController extends _$AutoDetectionController {
       // `sensors_plus` delivers nothing.
       AuditLog.emit(
         AuditEvent.foregroundService,
-        () => <String, Object?>{'a': 'start'},
+        () => <String, Object?>{'a': 'start', 'plat': _platformTag},
         critical: true,
       );
     } catch (e, stackTrace) {
       // Detection and recording continue without it (the app is then only
       // reliable while the screen is on), so this must not take them down.
+      //
+      // Journalled as well as logged: a swallowed failure used to leave no
+      // `fgs` line at all, which reads exactly like "never called" — the 2026-
+      // 09-02 iPhone audit cost an investigation to that ambiguity.
       _logger.error('Failed to start the foreground service', e, stackTrace);
+      AuditLog.emit(
+        AuditEvent.foregroundService,
+        () => <String, Object?>{
+          'a': 'fail',
+          'plat': _platformTag,
+          'ex': e.toString(),
+        },
+        critical: true,
+      );
     }
   }
 
@@ -307,11 +402,20 @@ class AutoDetectionController extends _$AutoDetectionController {
       await ref.read(backgroundLocationServiceProvider.notifier).stopTracking();
       AuditLog.emit(
         AuditEvent.foregroundService,
-        () => <String, Object?>{'a': 'stop'},
+        () => <String, Object?>{'a': 'stop', 'plat': _platformTag},
         critical: true,
       );
     } catch (e, stackTrace) {
       _logger.error('Failed to stop the foreground service', e, stackTrace);
+      AuditLog.emit(
+        AuditEvent.foregroundService,
+        () => <String, Object?>{
+          'a': 'fail',
+          'plat': _platformTag,
+          'ex': e.toString(),
+        },
+        critical: true,
+      );
     }
   }
 

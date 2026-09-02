@@ -17,9 +17,17 @@ abstract final class AuditEvent {
   /// App lifecycle change. `st` = resumed|inactive|paused|hidden|detached.
   static const String lifecycle = 'app';
 
-  /// Whether the pipeline is allowed to run. `k` names the gate
-  /// (`autoDetection`), `en` the user's setting, `loc` the location
+  /// Whether the pipeline is allowed to run. `k` names the gate.
+  ///
+  /// `k` = autoDetection: `en` the user's setting, `loc` the location
   /// permission, `onb` onboarding completion, `go` the resulting verdict.
+  ///
+  /// `k` = background: what the OS actually grants for background location —
+  /// `alw` "Always" / "Allow all the time", `acc` = precise|reduced, `issue`
+  /// the blocking one of the two (null when all is well). `loc` alone cannot
+  /// answer this: it folds iOS "While Using" into "granted", and "While Using"
+  /// is exactly the setting under which iOS kills the process a few minutes
+  /// after the app is backgrounded.
   static const String permission = 'perm';
 
   /// A user setting changed. `k`, `o` (old), `n` (new).
@@ -112,7 +120,11 @@ abstract final class AuditEvent {
   /// Battery level sample, on the existing 5-minute tick.
   static const String battery = 'bat';
 
-  /// Foreground service. `a` = start|stop.
+  /// Foreground service. `a` = start|stop|fail, `plat` = android|ios, `ex` on
+  /// a fail. `plat` matters: the foreground service is an Android concept, and
+  /// an `fgs start` on iOS carries no promise that the process survives
+  /// backgrounding — there, only `UIBackgroundModes: location` plus an
+  /// "Always" authorisation does (see the `perm` line with `k` = background).
   static const String foregroundService = 'fgs';
 
   /// Notification activity. `a` = show|cancel|action, `k` = fg|start|stop for

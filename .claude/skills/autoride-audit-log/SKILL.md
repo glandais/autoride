@@ -47,7 +47,7 @@ short; the table below is the whole vocabulary.
 |---|---|---|
 | `hdr` | Header — file or launch, see above | `sv` `lvl` `k` (+ the columns above) |
 | `app` | Lifecycle | `st` = resumed/inactive/paused/hidden/detached |
-| `perm` | Permission / auto-detection inputs | `k` = autoDetection, `en` `loc` `onb` `go` |
+| `perm` | Permission / auto-detection inputs | `k` = autoDetection: `en` `loc` `onb` `go`. `k` = background (L-078): `why` = session/change, `alw` (OS granted "Always" / "Allow all the time"), `acc` = precise/reduced, `issue` = alwaysMissing/preciseMissing (absent when all is well) |
 | `set` | A setting changed | `k` = automaticDetection/batteryMode/backgroundLocation/auditLog/auditLogLevel, `o` (old) `n` (new) |
 | `clk` | Wall/monotonic pair, re-emitted when they drift > 2 s apart | `wall` ms, `mono` ms since launch, `drift` ms |
 | `aud` | The log about itself | `a` = overflow (the only one), `n` lines dropped |
@@ -72,7 +72,7 @@ short; the table below is the whole vocabulary.
 | `flush` | Database write | `a` = points, `n` `ms` `ok` |
 | `pwr` | Power mode | `m` `b` % `hz` `df` `ui` `la` |
 | `bat` | Battery sample (5 min, and on every OS battery-state change) | `b` % `ch` |
-| `fgs` | Foreground service | `a` = start/stop |
+| `fgs` | Foreground service | `a` = start/stop/fail, `plat` = android/ios (L-078), `ex` on a fail |
 | `noti` | Notification | `a` = show/cancel/action; `k` = fg/start/stop on a show or cancel, the action id (pause/resume/stop) on an action. Never the text. `show k:"fg"` is **verbose** |
 | `log` | Bridged from `Logger` | `lv` = d/i/w/e, `tag` `m` |
 | `err` | Error | `tag` `m` `ex` `st` (top 3 frames) |
@@ -98,6 +98,15 @@ gzcat log.ndjson.gz | jq -r 'select(.e=="bat")|[.t,.b]|@tsv'
 # separates a real stationary timeout from a session teardown, which is not the
 # rider standing still.
 gzcat log.ndjson.gz | jq -r 'select(.e=="gate")|[.t,.a,.why]|@tsv'
+
+# Session health, first thing on any "it did not work" report: what the OS
+# granted, whether the foreground service started, and every error.
+gzcat log.ndjson.gz | jq -c 'select(.e|IN("sess","perm","fgs","err"))'
+
+# Where a heartbeat series stops, and what came back. A large dt on the line
+# AFTER a gap means a suspension; a gap with no hb after it at all means the
+# process was killed — look for the next launch `hdr` to confirm.
+gzcat log.ndjson.gz | jq -r 'select(.e|IN("hb","hdr","app"))|[.t,.e,.n,.dt,.st]|@tsv'
 
 # Everything around one instant.
 gzcat log.ndjson.gz | jq -c --argjson a 1756800000000 --argjson b 1756800120000 \
@@ -155,6 +164,38 @@ number.
 continuous `hb` series with `mn > 0` and **no** `app {st:"resumed"}`, then
 `start`, `st idle→detecting`, `trip {a:"start"}`. Conclusive because of `hb`.
 
+**The two platforms fail this item for different reasons, and the log says
+which.** Check the prerequisites *before* reading the heartbeats:
+
+- `fgs` must show `{a:"start"}` and never `{a:"fail"}`. A `fail` carries the
+  exception in `ex`; before L-078 the failure was swallowed and left **no `fgs`
+  line at all**, so an old log with no `fgs` is a failed start, not an absent
+  call.
+- **`plat` decides what an `fgs start` is worth.** The foreground service is
+  Android's mechanism. On iOS `flutter_background_service` starts a second
+  FlutterEngine and holds no notification, so `fgs {a:"start",plat:"ios"}`
+  promises nothing about the process surviving. Do not read one platform's
+  evidence into the other.
+- On **iOS**, the line that matters is `perm {k:"background"}`: `alw` false
+  means "While Using" was granted, under which iOS terminates the process a few
+  minutes after `app paused` no matter what else is configured. That is the
+  verdict, and no amount of heartbeat reading substitutes for it.
+
+**Then separate a suspension from a termination — they are different verdicts
+and look identical if you only read the gap.** After the `hb` series stops:
+
+| What comes back | Reading |
+|---|---|
+| An `hb` with a large `dt` (and `n` far below `dt/1000`) | The OS **suspended** the process and let it resume. The 1 Hz timer was frozen; the process is the same one. |
+| Nothing, then a fresh **launch `hdr`** and a `sess {a:"start"}` | The OS **terminated** the process. The next lines are a cold start, not a resume. |
+| `hb` intact (`n` ≈ 30) with `mn == 0` | The process ran and `sensors_plus` delivered nothing — a different failure again, and the one item 3 is about. |
+
+Worked example (2026-09-02, iPhone 14,3, build 1.0.0+8): seven clean heartbeats
+after `app paused` (`n` 31, `mn` ~3084, `fn` 0), then silence for 40 min 17 s,
+then a launch header — a **termination**, and the signature of "While Using".
+The `fn` 0 on every one of those is not itself a fault: the gate was open but
+the rider was stationary, so with a 15 m distance filter no fix was due.
+
 **Item 9 — auto-pause/stop with the phone carried.** Needs `lvl: "verbose"`
 (`win` is verbose-only).
 - Red light: watch `win.sta` flip and `stop.cs` climb to `k.nSta`.
@@ -188,3 +229,21 @@ cross-reference is worth the most.
 - A `sess {a:"stop"}` is not followed by a `suspend` for the same stop: one stop
   is one `sess` line, and only a session that actually started produces one.
 - Timestamps are UTC ms; apply `hdr.tz` before quoting a time to the user.
+- **Never re-`echo` a line through the shell.** A loop like
+  `… | while read -r l; do echo "$l" | jq …; done` makes `echo` expand the `\n`
+  inside an `err`'s `ex` into a real newline, and jq then reports *"Invalid
+  string: control characters from U+0000 through U+001F must be escaped"* on a
+  line that is perfectly valid. The log is not corrupt; the pipeline is. Feed
+  the stream straight to jq, or use `printf '%s'` if a loop is unavoidable.
+- A `select()` filter written with `test()` on `.e` matches substrings: a
+  `test("hb|acc")` exclusion also swallows unrelated types. Use
+  `IN("hb","acc")` (or `==`) whenever the point is the event type.
+- **No `fgs` line at all is not "the service was never asked for".** Before
+  L-078 a failed start threw inside a swallowed catch and produced nothing;
+  since L-078 it produces `fgs {a:"fail"}`. Which build wrote the log decides
+  how to read the silence — the header's `app` says.
+- **No `perm {k:"background"}` in a pre-L-078 log is not evidence either**, and
+  neither is a missing `perm {k:"autoDetection"}`: the latter was emitted only
+  on a *change*, and its comparison against an uninitialised provider state
+  threw on the first build of a cold start — precisely the launches worth
+  explaining.

@@ -2,6 +2,16 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<!-- flutter_background_service_ios registers this identifier from
+		     didFinishLaunchingWithOptions on every launch and submits a
+		     BGAppRefreshTaskRequest for it when the app is backgrounded.
+		     Without the identifier declared here the submit throws (the plugin
+		     catches it and prints "Could not schedule app refresh"), so the
+		     whole BGAppRefresh path was dead. Nothing crashes either way. -->
+		<string>dev.flutter.background.refresh</string>
+	</array>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>

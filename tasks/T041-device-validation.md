@@ -55,7 +55,7 @@ carries the event schema, the jq recipes and a per-item verdict procedure.
 |---|---|---|
 | 1 — GPS stops when stationary | normal | `gate sched` → 30 s with no `fix` → `gate close`, then **no** `fix` |
 | 4 — battery drain | **normal, never verbose** | `bat` every 5 min, `pwr`, and the summed `gate open`→`close` time |
-| 8 — detection with the screen off | normal | `app paused`, then `hb` with `mn > 0` and no `app resumed`, then `trip start` |
+| 8 — detection with the screen off | normal | `perm k:background` (`alw` must be true), `fgs a:start` with its `plat` — never `a:fail` —, then `app paused`, `hb` with `mn > 0` and no `app resumed`, then `trip start` |
 | 9 — auto-pause/stop, phone carried | **verbose** | `win` (`sd`/`gy`/`sta`/`src`/`spk`), `stop`, `res`, `st` |
 | 10 — trip ends on GPS loss | normal | `gpsw arm` → `gpsw fire` → `log` warning → `trip stop` |
 | 11 — trip starts where riding started | verbose | `bdate` plus the `fix` lines preceding it |
@@ -143,6 +143,42 @@ screen **off**, phone in a pocket; ride off. A trip must auto-start (and be visi
 History afterwards) without ever waking the screen. Repeat on Android with battery
 optimization enabled for the app. Then re-measure item 4's drain — the detection phase
 now holds a foreground service continuously, which is the main risk this change adds.
+
+**The foreground service is Android-only.** On iOS `flutter_background_service` merely
+spins up a second FlutterEngine and holds no notification, so an `fgs start` there says
+nothing about the process surviving. What keeps an iOS process alive in the background is
+`UIBackgroundModes: location` (present) **plus** an "Always" authorisation — the two OSes
+therefore fail this item for different reasons and must be judged on different evidence.
+`BGTaskSchedulerPermittedIdentifiers` is now declared (2026-09-02) so the plugin's BGAppRefresh
+submit no longer throws, but that path is *not* how this item passes: a 15-minute app-refresh
+window cannot catch the start of a ride, and `onIosBackground` is still a stub.
+
+**2026-09-02, iPhone 14,3 / iOS 26.6.1 and Pixel 6a (release, 1.0.0+8) — iOS FAILED,
+Android unrun.**
+
+- iPhone: not one `fgs` line in the whole log. Both session starts (14:26:37, 15:09:59)
+  end in `err AutoDetectionController "Failed to start the foreground service"` with
+  `Cannot use the Ref of backgroundLocationServiceProvider after it has been disposed`.
+  Root cause: the provider was autoDispose and only ever reached through a bare
+  `ref.read(...notifier)`, so it was destroyed inside `await initialize()` and the
+  `state =` at the end of `startTracking` threw — swallowed by the controller's catch.
+  Fixed by making it `keepAlive`; the failure is now journalled as `fgs a:fail`. It is a
+  race, so Android was one scheduler tick from the same outcome.
+- iPhone, and this is the item-8 verdict proper: the process ran fine backgrounded
+  (`app paused` 14:27:20) for 2 min 20 with seven clean heartbeats (`n` 31, `mn` ~3084 —
+  sensors at ~100 Hz), then stopped dead at 14:29:42. The next line is 40 min 17 s later
+  and is a **cold start**, not a resume: no `hb` came back carrying a large `dt`, so iOS
+  *terminated* the process rather than suspending it. That is the signature of "While
+  Using" rather than "Always" — and nothing in the log said which was granted. `fn` is 0
+  on every one of those heartbeats: the GPS gate was nominally open but stationary, so no
+  fix flowed.
+- Pixel 6a: `fgs {"a":"start"}` 23 ms after its `sess start`, 31 heartbeats — the service
+  path works. But no ride was taken screen-off in that log, so item 8 itself is **still
+  unrun on Android**.
+- Instrumentation added for the next run: a `perm` line with `k` = background reporting
+  `alw` (Always granted), `acc` (precise/reduced) and `issue`, emitted on every session
+  start and on every change, plus `plat` on every `fgs` line. Reading it settles the
+  question above in one grep instead of a second field session.
 
 ## 9. Auto-pause / auto-stop with the phone carried (L-070, added 2026-09-01)
 The stationary verdict is now computed over a 1.5 s sliding window (accelerometer

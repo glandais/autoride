@@ -50,6 +50,8 @@ Executed the same day as the audit, one commit per step, each by an Opus subagen
 
 | 17 — the app can say what it did | (this change) | **L-077** (new) | An opt-in **audit log** (T043). `lib/core/audit/` holds the port — a static `AuditLog` with a lazy-closure API — and `lib/features/diagnostics/` the SQLite adapter, the gzip-streaming export and the settings section. Instrumented: the coordinator (session, state transitions, GPS gate, fixes, detector evaluations, watchdog, detection timeout, cooldown, heartbeat), the recorder (trip lifecycle, back-dating, route points kept/dropped, flushes), the stop detector's stationary window, the battery optimiser, the location stream's resubscription, the auto-detection controller, settings changes, app lifecycle, and `Logger` itself. `debugLoggingEnabled` — dead since it was added — is replaced by `auditLogEnabled` + `auditLogLevel`. Tests 472 → 547. |
 
+| 18 — the foreground service starts, and the log says which OS it means | (this change) | **L-078** (new) | `ios/Runner/Info.plist` declares `BGTaskSchedulerPermittedIdentifiers` = `dev.flutter.background.refresh`, without which the plugin's BGAppRefresh submit silently threw. `backgroundLocationServiceProvider` is `@Riverpod(keepAlive: true)`: autoDispose plus a bare `ref.read(...notifier)` destroyed it inside `await initialize()`, so the `state =` ending `startTracking` threw `UnmountedRefException` and `AutoDetectionController`'s catch swallowed it — the foreground service never started on the 2026-09-02 iPhone and Android was one scheduler tick away. `startTracking`/`stopTracking` guard their state writes with `ref.mounted`. The failure is now journalled (`fgs a:fail` with `ex`), every `fgs` line carries `plat`, and a new `perm` line with `k` = background reports the real OS grant (`alw`, `acc`, `issue`) on each session start and each change. Fixed on the way: `AutoDetectionController.build()` compared its new state against `state`, which throws "Tried to read the state of an uninitialized provider" on a first build — i.e. whenever the audit log was already installed, which is every cold start it exists to explain, and why neither iPhone session has a `perm` line at all; the previous value is held in a field instead. Tests 630 → 636. |
+
 **Decision (2026-09-02) — L-077: the journal is a separate database, a static port, and it declares its own gaps.**
 
 Six choices, and the reasons that are not obvious:
@@ -646,3 +648,53 @@ sets off, is detected, and stops after 25 more seconds keeps a 65 s trip instead
 65 s ride deleted as a 25 s false start. In the other direction nothing gets easier to keep by
 accident: a false start has no fixes above 8 km/h to prefix, so it still measures the few seconds
 it really lasted and is still deleted. The cooldown armed on a discarded trip (L-075) is unaffected.
+
+**Decision (2026-09-02) — L-078: the foreground-service provider is `keepAlive`, and the log distinguishes the two platforms.**
+
+Two audit logs exported the same day from a Pixel 6a and an iPhone 14,3 on build 1.0.0+8 said the
+iPhone had never started its foreground service — the same error at both session starts, and not one
+`fgs` line in 26 000 events.
+
+1. **`keepAlive`, not a `ref.keepAlive()` inside the notifier.** The provider's only consumer reaches
+   it through `ref.read(...notifier)` and never watches or listens to it, which is legitimate — a
+   foreground service is not a value anyone renders. But an autoDispose element read that way has no
+   subscriber, so Riverpod destroys it at the first async gap; `initialize()` awaits
+   `notificationServiceProvider.future` (L-072), which guarantees one. Making the *element* live for
+   the app's lifetime is the honest statement: there is exactly one OS-level service, and one
+   `FlutterBackgroundService()` should mirror it rather than being rebuilt on every read.
+   `ref.mounted` guards on the two state writes are belt and braces, in the shape the repository
+   already uses in `LocationPermissionService`.
+2. **A swallowed exception must still leave a line.** The catch is correct — detection and recording
+   go on without the service — but silence made "failed" and "never called" the same observation.
+   `fgs a:fail` with the exception text costs one line per session and is what turns a field report
+   into a diagnosis.
+3. **`plat` on every `fgs` line, because the two platforms are not doing the same thing.** The
+   foreground service is Android's mechanism. On iOS `flutter_background_service` starts a second
+   FlutterEngine and holds no notification; nothing there keeps the process alive. A reader comparing
+   the two logs without that field concludes the iPhone is missing a service it was never going to
+   have.
+4. **What actually killed the iPhone process is a different question, and the log could not answer
+   it.** The heartbeats show the process running normally backgrounded for 2 min 20 (`n` 31, `mn`
+   ~3084) and then stopping dead, with the next line a cold start 40 min later — a *termination*, not
+   a suspension, since no `hb` ever came back with a large `dt`. On iOS that is the signature of
+   "While Using" rather than "Always". The existing `perm` line could not tell them apart: its `loc`
+   comes from `LocationPermissionStatus`, which folds both into `granted`. The new `perm k:background`
+   reports `backgroundLocationStatusProvider` — already `keepAlive`, already refreshed on resume, and
+   already the source of the settings banner — so no new permission code exists; only the journalling
+   of a value the app had all along. Emitted unconditionally at each session start as well as on
+   change, because a change-only line is written before the user turns the log on.
+
+5. **`BGTaskSchedulerPermittedIdentifiers` declared, while we are in the plist.**
+   `flutter_background_service_ios` registers `dev.flutter.background.refresh` from
+   `didFinishLaunchingWithOptions` on every launch and submits a `BGAppRefreshTaskRequest` for it when
+   the app is backgrounded; with the identifier undeclared the submit throws and the plugin swallows
+   it ("Could not schedule app refresh"), so the whole BGAppRefresh path was inert. Nothing crashed
+   either way, and this buys **nothing today** — `onIosBackground` is a stub that returns `true` — but
+   a declared-and-inert path is honest where an undeclared one is a trap for the next reader. It is
+   unrelated to item 8: a 15-minute app-refresh window cannot catch the start of a ride, which is why
+   it was never the mechanism being counted on.
+
+Deliberately not done here: the iOS background strategy itself. If the next log says `alw` is true and
+the heartbeats still stop, the cause is in CoreLocation configuration (a gate that closes the only
+subscription holding the process, `showBackgroundLocationIndicator`) and is a change of behaviour, not
+of instrumentation.

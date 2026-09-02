@@ -1,9 +1,18 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:geolocator/geolocator.dart' show LocationAccuracyStatus;
 // `Override` is not re-exported by flutter_riverpod.
 import 'package:riverpod_annotation/riverpod_annotation.dart' show Override;
 
+import 'package:autoride/core/audit/audit_log.dart';
+import 'package:autoride/core/audit/audit_sink.dart';
 import 'package:autoride/core/constants/app_constants.dart';
+import 'package:autoride/core/permissions/exceptions/permission_exceptions.dart';
+import 'package:autoride/core/permissions/models/background_location_state.dart';
+import 'package:autoride/core/permissions/models/permission_status.dart';
+import 'package:autoride/core/permissions/providers/background_location_status.dart';
 import 'package:autoride/features/onboarding/data/services/onboarding_service.dart';
 import 'package:autoride/features/settings/data/services/settings_service.dart';
 import 'package:autoride/features/settings/domain/models/detection_settings.dart';
@@ -219,6 +228,42 @@ class _FakeBackgroundLocationService extends BackgroundLocationService {
   }
 }
 
+/// Fails the way the real service failed on iOS: after an `await`, so the
+/// controller has already committed to the start.
+class _ThrowingBackgroundLocationService extends BackgroundLocationService {
+  @override
+  Future<bool> build() async => false;
+
+  @override
+  Future<void> initialize() async {}
+
+  @override
+  Future<void> startTracking() async {
+    await Future<void>.delayed(Duration.zero);
+    throw StateError('Cannot use the Ref of backgroundLocationServiceProvider');
+  }
+}
+
+class _FakeBackgroundLocationStatus extends BackgroundLocationStatus {
+  _FakeBackgroundLocationStatus({required this.always, required this.accuracy});
+
+  final bool always;
+  final LocationAccuracyStatus accuracy;
+
+  @override
+  Future<BackgroundLocationState> build() async => BackgroundLocationState(
+    permission: AppPermissionStatus(
+      permission: AppPermission.locationAlways,
+      isGranted: always,
+      isDenied: !always,
+      isPermanentlyDenied: !always,
+      isRestricted: false,
+      isLimited: false,
+    ),
+    accuracy: accuracy,
+  );
+}
+
 /// Controller whose notification throttle is effectively off.
 class _FastNotificationController extends AutoDetectionController {
   @override
@@ -238,6 +283,8 @@ void main() {
     _PermissionLog? permissionLog,
     bool isFirstLaunch = false,
     _FakeSettingsService? settings,
+    Override? backgroundServiceOverride,
+    Override? backgroundStatusOverride,
   }) => [
     settingsServiceProvider.overrideWith(
       () => settings ?? _FakeSettingsService(enabled: enabled),
@@ -255,9 +302,11 @@ void main() {
     tripRecorderServiceProvider.overrideWith(
       () => _SpyTripRecorderService(recorder),
     ),
-    backgroundLocationServiceProvider.overrideWith(
-      () => _FakeBackgroundLocationService(backgroundService),
-    ),
+    backgroundServiceOverride ??
+        backgroundLocationServiceProvider.overrideWith(
+          () => _FakeBackgroundLocationService(backgroundService),
+        ),
+    ?backgroundStatusOverride,
   ];
 
   /// Builds the controller and lets the async settings/permission/onboarding
@@ -583,4 +632,118 @@ void main() {
       );
     });
   });
+
+  // What the 2026-09-02 iPhone audit could not answer. The foreground service
+  // failed to start and nothing said so in the log; and nothing said whether
+  // the OS had granted "Always", which on iOS is the difference between the
+  // process surviving in the background and being killed minutes after
+  // `app paused`.
+  group('AutoDetectionController - what the audit log has to say', () {
+    late _RecordingAuditSink sink;
+
+    setUp(() {
+      sink = _RecordingAuditSink();
+      AuditLog.install(sink, verbose: false);
+    });
+
+    tearDown(AuditLog.uninstall);
+
+    test('journals a failed foreground service instead of swallowing it', () {
+      // Deliberately not `startController`: the failure is asynchronous and
+      // must not take detection down with it.
+      return startController(
+        overridesFor(
+          backgroundServiceOverride: backgroundLocationServiceProvider
+              .overrideWith(_ThrowingBackgroundLocationService.new),
+        ),
+      ).then((_) async {
+        await pumpEventQueue();
+
+        final fgs = sink.fieldsOf('fgs').toList();
+        expect(fgs, hasLength(1));
+        expect(fgs.single['a'], 'fail');
+        expect(fgs.single['plat'], isNotNull);
+        expect(fgs.single['ex'], contains('Cannot use the Ref'));
+
+        // Detection keeps running without the service.
+        expect(coordinator.startCalls, 1);
+        expect(
+          container.read(autoDetectionControllerProvider).shouldListen,
+          isTrue,
+        );
+      });
+    });
+
+    test('journals the platform on a successful start', () async {
+      await startController(overridesFor());
+
+      final fgs = sink.fieldsOf('fgs').toList();
+      expect(fgs.single['a'], 'start');
+      expect(fgs.single['plat'], isNotNull);
+    });
+
+    test('journals "Always" and precise accuracy on session start', () async {
+      await startController(
+        overridesFor(
+          backgroundStatusOverride: backgroundLocationStatusProvider
+              .overrideWith(
+                () => _FakeBackgroundLocationStatus(
+                  always: true,
+                  accuracy: LocationAccuracyStatus.precise,
+                ),
+              ),
+        ),
+      );
+
+      final perms = sink
+          .fieldsOf('perm')
+          .where((f) => f['k'] == 'background')
+          .toList();
+      expect(perms, isNotEmpty);
+      final session = perms.firstWhere((f) => f['why'] == 'session');
+      expect(session['alw'], isTrue);
+      expect(session['acc'], 'precise');
+      expect(session['issue'], isNull);
+    });
+
+    test('journals a "While Using" downgrade as the blocking issue', () async {
+      await startController(
+        overridesFor(
+          backgroundStatusOverride: backgroundLocationStatusProvider
+              .overrideWith(
+                () => _FakeBackgroundLocationStatus(
+                  always: false,
+                  accuracy: LocationAccuracyStatus.precise,
+                ),
+              ),
+        ),
+      );
+
+      final session = sink
+          .fieldsOf('perm')
+          .firstWhere((f) => f['k'] == 'background' && f['why'] == 'session');
+      expect(session['alw'], isFalse);
+      expect(session['issue'], 'alwaysMissing');
+    });
+  });
+}
+
+class _RecordingAuditSink implements AuditSink {
+  final List<String> lines = <String>[];
+
+  @override
+  void write(
+    String line, {
+    required int t,
+    required String type,
+    required int lvl,
+    required bool critical,
+  }) => lines.add(line);
+
+  @override
+  Future<void> flush() async {}
+
+  Iterable<Map<String, dynamic>> fieldsOf(String type) => lines
+      .map((l) => jsonDecode(l) as Map<String, dynamic>)
+      .where((m) => m['e'] == type);
 }
