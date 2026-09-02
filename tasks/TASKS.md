@@ -397,10 +397,10 @@
     - `Logger` now mirrors into the log, which captures the two lines T041 cites literally, in release builds.
     - A heartbeat (`hb`, 30 s: ticks, motion samples, fixes, real elapsed) — without it a gap in the timeline cannot distinguish an OS suspension from a lost buffer, which are opposite verdicts for items 3 and 8.
   - *Privacy*: the file holds unrounded coordinates (the cross-reference against a Strava FIT needs them). A blocking dialog states that before the share sheet, and that dialog is the condition under which `store-metadata/data-safety.md` §3.3 can keep answering "nothing shared". Policy §2.5/§3.1/§3.2/§3.3/§6/§7.1 updated, and T042's export — missing from the policy until now — covered in the same pass.
-  - *Tests*: 75 (472 → 547), including a group that pins the emitted event sequence in the coordinator: the real risk here is not a subtle bug but three missing `emit` calls, which would make the journal look like evidence while being silent about the transition under investigation.
+  - *Tests*: 114 (472 → 586 after the review), including a group that pins the emitted event sequence in the coordinator: the real risk here is not a subtle bug but three missing `emit` calls, which would make the journal look like evidence while being silent about the transition under investigation.
   - *Replaces*: the dead `debugLoggingEnabled` setting, which nothing ever read.
   - *Not validated*: the share sheet itself, a 200 000-row log on a device, and exporting while Doze-suspended.
-  - *Review (2026-09-02)*: `tasks/T043-review.md` — 24 findings, two blocking (R-01: any settings change closes the shared sink and the log silently stops; R-02: pragma order leaves `auto_vacuum` off, so every purge past 20 MB empties the journal). Not merge-ready until R-01/R-02 are fixed.
+  - *Review (2026-09-02)*: `tasks/T043-review.md` — 24 findings, two blocking (R-01: any settings change closed the shared sink and the log silently stopped; R-02: pragma order left `auto_vacuum` off, so every purge past 20 MB emptied the journal). All 24 fixed the same day in `31d8940` / `47d110c` / `e67077c`; 586 tests.
 
 ---
 
