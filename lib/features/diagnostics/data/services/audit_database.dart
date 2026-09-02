@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 
@@ -40,6 +41,15 @@ const String _createAuditTimeIndex =
 /// on the first event, so a user who never turns the log on never pays for a
 /// database file at all.
 class AuditDatabase {
+  /// [directory] exists only so a test can put the file somewhere it owns:
+  /// the byte bound and `auto_vacuum` are properties of a *file* database, and
+  /// the in-memory seam cannot see either (WAL and auto_vacuum are both inert
+  /// on `:memory:`). Production always uses `getDatabasesPath()`.
+  AuditDatabase({@visibleForTesting String? directory})
+    : _directoryOverride = directory;
+
+  final String? _directoryOverride;
+
   Database? _database;
 
   /// Whether the database is currently open.
@@ -51,8 +61,11 @@ class AuditDatabase {
   }
 
   /// Path of the audit database file.
-  static Future<String> path() async {
-    return join(await getDatabasesPath(), AppConstants.auditDatabaseName);
+  Future<String> path() async {
+    return join(
+      _directoryOverride ?? await getDatabasesPath(),
+      AppConstants.auditDatabaseName,
+    );
   }
 
   /// Open the database with the production schema and pragmas.
@@ -70,10 +83,11 @@ class AuditDatabase {
   ///
   /// Public so tests drive the *production* configuration (L-014).
   ///
-  /// Three deliberate choices. `journal_mode` goes through [Database.rawQuery]
-  /// rather than `execute` because the pragma returns a row, and `execute` on a
-  /// result-producing pragma fails on some platforms. `auto_vacuum` has to be
-  /// set before the first table exists or it is inert for the life of the file.
+  /// Three deliberate choices. `auto_vacuum` is issued **first**, before
+  /// anything writes a page — setting it after `journal_mode = WAL` leaves it
+  /// at 0 permanently (see the inline comment). `journal_mode` goes through
+  /// [Database.rawQuery] rather than `execute` because the pragma returns a
+  /// row, and `execute` on a result-producing pragma fails on some platforms.
   /// And `synchronous = NORMAL` is what keeps the log from charging an fsync to
   /// every batch — see the note on [AppConstants.auditDatabaseName].
   ///
@@ -81,9 +95,14 @@ class AuditDatabase {
   /// line is intentionally unconstrained. A journal has to outlive the trip it
   /// describes.
   Future<void> onConfigure(Database db) async {
+    // Order matters: `auto_vacuum` has to be set before the database gets its
+    // first page, and enabling WAL writes one. WAL first leaves `auto_vacuum`
+    // at 0 for the life of the file, which makes
+    // `PRAGMA incremental_vacuum` a no-op and the sink's byte bound
+    // unsatisfiable — it would delete rows forever without the file shrinking.
+    await db.execute('PRAGMA auto_vacuum = INCREMENTAL');
     await db.rawQuery('PRAGMA journal_mode = WAL');
     await db.execute('PRAGMA synchronous = NORMAL');
-    await db.execute('PRAGMA auto_vacuum = INCREMENTAL');
   }
 
   /// Create the schema. Public so tests run the production DDL (L-014).

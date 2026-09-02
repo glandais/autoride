@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/widgets.dart';
+// For `ProviderListenableSelect` — `riverpod_annotation` does not re-export it.
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:sqflite/sqflite.dart';
 
@@ -29,21 +31,37 @@ part 'audit_log_controller.g.dart';
 @Riverpod(keepAlive: true)
 class AuditLogController extends _$AuditLogController {
   SqliteAuditSink? _sink;
+
+  /// The level the sink was last *installed* at, so the session header can be
+  /// emitted on an off→on transition only. `state` cannot serve: it is
+  /// reassigned by every rebuild, including the ones that change nothing.
+  AuditLogLevel _installedLevel = AuditLogLevel.off;
+
   Stopwatch? _uptime;
   int _clockReferenceWall = 0;
   int _clockReferenceMono = 0;
 
   @override
   AuditLogLevel build() {
-    final settings = ref.watch(currentSettingsProvider);
-    final level = settings.auditLogEnabled
-        ? settings.auditLogLevel
-        : AuditLogLevel.off;
+    // Selected rather than watched whole: the two audit fields are the only
+    // ones this controller reacts to, and rebuilding on a theme or unit change
+    // used to tear the log down mid-ride.
+    final (enabled, storedLevel) = ref.watch(
+      currentSettingsProvider.select(
+        (settings) => (settings.auditLogEnabled, settings.auditLogLevel),
+      ),
+    );
+    final level = enabled ? storedLevel : AuditLogLevel.off;
 
+    // Runs on every *rebuild*, not only on a real disposal — so it must be
+    // survivable. It deliberately does not close the sink: the sink is a
+    // `keepAlive` provider shared with the exporter, closing it sets
+    // `_closed` and every later write is silently dropped while the settings
+    // screen still shows the log as on. Its own `onDispose` closes it when the
+    // container really goes away.
     ref.onDispose(() {
       AuditLog.uninstall();
-      unawaited(_sink?.close());
-      _sink = null;
+      unawaited(_sink?.flush());
     });
 
     _apply(level);
@@ -53,6 +71,7 @@ class AuditLogController extends _$AuditLogController {
   void _apply(AuditLogLevel level) {
     if (!level.isOn) {
       AuditLog.uninstall();
+      _installedLevel = AuditLogLevel.off;
       // The sink is kept, not closed: turning the log off must not erase what
       // is already recorded — the user may well be turning it off precisely
       // because the interesting ride is over and they are about to export it.
@@ -64,10 +83,18 @@ class AuditLogController extends _$AuditLogController {
     // database file at all.
     final sink = _sink ?? (_sink = ref.read(auditSinkProvider))!;
     AuditLog.install(sink, verbose: level.includesVerbose);
-    _emitSessionHeader(level);
+
+    // Only on off→on. The header carries the thresholds a reader must judge
+    // the file against, and the analysis skill counts `hdr` rows to bound
+    // process launches — emitting one per settings change would make a single
+    // launch read as several and invert the verdict on process-death items.
+    final wasOff = !_installedLevel.isOn;
+    _installedLevel = level;
+    if (wasOff) _emitSessionHeader(level);
   }
 
-  /// A header per process launch, so a file spanning two builds carries both.
+  /// A header per off→on transition, so a file spanning two builds carries
+  /// both.
   ///
   /// The export rebuilds a full header of its own; this one exists because a
   /// log that covers an app update would otherwise be read entirely against

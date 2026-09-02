@@ -31,9 +31,13 @@ Future<Database> createTestDatabase() async {
 /// Same reasoning as [createTestDatabase]: the DDL and pragmas come from
 /// [AuditDatabase] itself, never re-declared here (L-014).
 ///
-/// One caveat worth knowing when reading these tests: WAL does not apply to an
-/// in-memory database, so `onConfigure` running successfully is what can be
-/// asserted, not the resulting journal mode.
+/// One caveat worth knowing when reading these tests: WAL and `auto_vacuum`
+/// are both inert on an in-memory database, so `onConfigure` running
+/// successfully is what can be asserted here, not the resulting journal mode
+/// or the byte bound. Those need a real file — see the `pragmas on a real
+/// file` group in `audit_database_test.dart` and the byte-bound test in
+/// `sqlite_audit_sink_test.dart`, which is how the pragma-order defect (R-02)
+/// went unnoticed.
 Future<Database> createTestAuditDatabase() async {
   final auditDatabase = AuditDatabase();
 

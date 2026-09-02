@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
@@ -30,9 +29,15 @@ SqliteAuditSink auditSink(Ref ref) {
 
 /// One buffered event, kept as the already-serialized line plus the columns
 /// retention and export need.
+///
+/// [seq] is a per-sink monotonic id. It is what lets a finished flush remove
+/// exactly the records it committed: removing "the first N" instead would
+/// discard newer, never-committed lines whenever the overflow backstop trimmed
+/// the buffer while the batch was in flight.
 class _Record {
-  const _Record(this.t, this.type, this.lvl, this.line);
+  const _Record(this.seq, this.t, this.type, this.lvl, this.line);
 
+  final int seq;
   final int t;
   final String type;
   final int lvl;
@@ -51,8 +56,16 @@ class SqliteAuditSink implements AuditSink {
     @visibleForTesting DateTime Function()? now,
     @visibleForTesting
     Timer Function(Duration, void Function())? startPeriodicTimer,
+    @visibleForTesting int? maxBytes,
+    @visibleForTesting int? maxEvents,
+    @visibleForTesting Duration? retention,
+    @visibleForTesting int? purgeChunkSize,
   }) : _database = database ?? AuditDatabase(),
        _now = now ?? DateTime.now,
+       _maxBytes = maxBytes ?? AppConstants.auditMaxBytes,
+       _maxEvents = maxEvents ?? AppConstants.auditMaxEvents,
+       _retention = retention ?? AppConstants.auditRetention,
+       _purgeChunkSize = purgeChunkSize ?? AppConstants.auditPurgeChunkSize,
        _startPeriodicTimer =
            startPeriodicTimer ??
            ((duration, onTick) => Timer.periodic(duration, (_) => onTick()));
@@ -60,6 +73,14 @@ class SqliteAuditSink implements AuditSink {
   final AuditDatabase _database;
   final DateTime Function() _now;
   final Timer Function(Duration, void Function()) _startPeriodicTimer;
+
+  /// The three retention bounds. Injectable only so a test can reach the byte
+  /// bound without writing 20 MB; production always gets the [AppConstants]
+  /// values.
+  final int _maxBytes;
+  final int _maxEvents;
+  final Duration _retention;
+  final int _purgeChunkSize;
 
   final List<_Record> _buffer = <_Record>[];
 
@@ -73,6 +94,12 @@ class SqliteAuditSink implements AuditSink {
   bool _closed = false;
   int _writtenSincePurge = 0;
   int _droppedSinceReport = 0;
+  int _nextSeq = 0;
+
+  /// Bumped by [clear]. A flush that started before the erase must not put the
+  /// erased batch back into the fresh database, so it compares this against the
+  /// value it captured, both after the database resolves and after the commit.
+  int _generation = 0;
 
   /// Events waiting to be written. Exposed for tests and for the settings
   /// screen's counter, which would otherwise under-report by up to a batch.
@@ -89,7 +116,10 @@ class SqliteAuditSink implements AuditSink {
   }) {
     if (_closed) return;
 
-    _buffer.add(_Record(t, type, lvl, line));
+    _buffer.add(_Record(_nextSeq++, t, type, lvl, line));
+    // Recreated lazily: the timer is cancelled whenever the buffer drains, so
+    // a log that has been turned off does not keep a 5 s wakeup alive for the
+    // rest of the process in the app whose whole thesis is battery.
     _flushTimer ??= _startPeriodicTimer(
       AppConstants.auditFlushInterval,
       _requestFlush,
@@ -104,7 +134,13 @@ class SqliteAuditSink implements AuditSink {
       _droppedSinceReport += excess;
     }
 
-    if (critical || _buffer.length >= AppConstants.auditFlushBatchSize) {
+    if (critical) {
+      // Unconditionally chained, not `_requestFlush()`: a critical event that
+      // arrives while a batch is committing is not in that batch's `pending`
+      // copy, so skipping here would leave it waiting on the 5 s timer — the
+      // exact window `critical` exists to close.
+      unawaited(flush());
+    } else if (_buffer.length >= AppConstants.auditFlushBatchSize) {
       _requestFlush();
     }
   }
@@ -131,7 +167,12 @@ class SqliteAuditSink implements AuditSink {
   }
 
   Future<void> _flush() async {
-    if (_buffer.isEmpty) return;
+    if (_buffer.isEmpty) {
+      _stopTimerIfIdle();
+      return;
+    }
+
+    final generation = _generation;
 
     // Report a gap before copying, so the marker is committed with the batch
     // it precedes. Emitted here rather than at the moment of the drop: the
@@ -141,6 +182,7 @@ class SqliteAuditSink implements AuditSink {
       final at = _now().millisecondsSinceEpoch;
       _buffer.add(
         _Record(
+          _nextSeq++,
           at,
           AuditEvent.audit,
           0,
@@ -161,6 +203,10 @@ class SqliteAuditSink implements AuditSink {
 
     try {
       final db = await _database.database;
+      // `clear()` ran while the file was being opened: the batch belongs to a
+      // journal the user just erased.
+      if (generation != _generation) return;
+
       final batch = db.batch();
       for (final record in pending) {
         batch.insert('audit_events', <String, Object?>{
@@ -174,10 +220,20 @@ class SqliteAuditSink implements AuditSink {
       // allocates one result map per row.
       await batch.commit(noResult: true);
 
-      // Committed, so they can go. `min` guards the one case where the
-      // overflow backstop trimmed the buffer while this batch was in flight —
-      // a situation that is already reported as a declared gap.
-      _buffer.removeRange(0, math.min(pending.length, _buffer.length));
+      // Erased mid-commit: the buffer is already empty and the rows went with
+      // the file, so there is nothing to remove and nothing to count.
+      if (generation != _generation) return;
+
+      // Committed, so they can go — by sequence, not by count. Anything the
+      // overflow backstop trimmed while the batch was in flight is already
+      // gone from the buffer and already counted into `_droppedSinceReport`;
+      // removing "the first `pending.length`" would additionally throw away
+      // newer lines that were never written.
+      final lastSeq = pending.last.seq;
+      final firstKept = _buffer.indexWhere((record) => record.seq > lastSeq);
+      _buffer.removeRange(0, firstKept < 0 ? _buffer.length : firstKept);
+
+      _stopTimerIfIdle();
 
       _writtenSincePurge += pending.length;
       if (_writtenSincePurge >= AppConstants.auditPurgeWriteInterval) {
@@ -192,14 +248,23 @@ class SqliteAuditSink implements AuditSink {
     }
   }
 
+  /// Drop the periodic flush timer once there is nothing left to flush.
+  ///
+  /// [write] recreates it on the next line, so this costs one `Timer.periodic`
+  /// per idle→busy transition and saves a wakeup every 5 s for the whole time
+  /// the log is off.
+  void _stopTimerIfIdle() {
+    if (_buffer.isNotEmpty) return;
+    _flushTimer?.cancel();
+    _flushTimer = null;
+  }
+
   /// Apply the three retention bounds, whichever bites first.
   ///
   /// Public so the controller can force one after a level change, and so the
   /// tests can drive it without writing 20 000 rows.
   Future<void> purge(Database db) async {
-    final cutoff = _now()
-        .subtract(AppConstants.auditRetention)
-        .millisecondsSinceEpoch;
+    final cutoff = _now().subtract(_retention).millisecondsSinceEpoch;
     await db.delete(
       'audit_events',
       where: 't < ?',
@@ -212,17 +277,17 @@ class SqliteAuditSink implements AuditSink {
     await db.rawDelete(
       'DELETE FROM audit_events WHERE id <= '
       '(SELECT MAX(id) FROM audit_events) - ?',
-      <Object?>[AppConstants.auditMaxEvents],
+      <Object?>[_maxEvents],
     );
 
     // The byte bound is not implied by the row bound: ~130 bytes a line makes
     // 200 000 rows ~26 MB, past the 20 MB the log may occupy.
     var guard = 0;
-    while (await _sizeBytes(db) > AppConstants.auditMaxBytes) {
+    while (await _sizeBytes(db) > _maxBytes) {
       final deleted = await db.rawDelete(
         'DELETE FROM audit_events WHERE id <= '
         '(SELECT MIN(id) FROM audit_events) + ?',
-        <Object?>[AppConstants.auditPurgeChunkSize],
+        <Object?>[_purgeChunkSize],
       );
       if (deleted == 0 || ++guard > 100) break;
       // Incremental rather than a full VACUUM: a full one blocks and
@@ -281,10 +346,19 @@ class SqliteAuditSink implements AuditSink {
   Future<Database> databaseForExport() => _database.database;
 
   /// Erase everything, by dropping the database file.
+  ///
+  /// The generation bump comes first and is what makes this safe against a
+  /// flush already in flight: that flush will find the counter changed and
+  /// return without committing into — or removing from — a journal the user
+  /// asked to be gone. Without it, a "Clear log" during a commit reopened a
+  /// fresh database and re-inserted the batch it had just erased.
   Future<void> clear() async {
+    _generation++;
     _buffer.clear();
     _droppedSinceReport = 0;
     _writtenSincePurge = 0;
+    _flushTimer?.cancel();
+    _flushTimer = null;
     await _database.deleteAuditDatabase();
   }
 

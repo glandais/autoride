@@ -1,5 +1,9 @@
 import 'dart:async';
 
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:autoride/core/audit/audit_event.dart';
 import 'package:autoride/core/audit/audit_level.dart';
 import 'package:autoride/core/constants/app_constants.dart';
 import 'package:autoride/features/diagnostics/data/services/audit_database.dart';
@@ -19,16 +23,22 @@ void main() {
   late _FakeAuditDatabase database;
   late _ManualTimer timer;
   late DateTime clock;
+  late int timersCreated;
 
-  SqliteAuditSink buildSink() {
+  Timer installTimer(Duration duration, void Function() onTick) {
+    timersCreated++;
+    timer
+      ..duration = duration
+      ..onTick = onTick
+      ..cancelled = false;
+    return timer;
+  }
+
+  SqliteAuditSink buildSink({AuditDatabase? on}) {
     final sink = SqliteAuditSink(
-      database: database,
+      database: on ?? database,
       now: () => clock,
-      startPeriodicTimer: (duration, onTick) {
-        timer.duration = duration;
-        timer.onTick = onTick;
-        return timer;
-      },
+      startPeriodicTimer: installTimer,
     );
     addTearDown(sink.close);
     return sink;
@@ -37,12 +47,21 @@ void main() {
   setUp(() {
     database = _FakeAuditDatabase();
     timer = _ManualTimer();
+    timersCreated = 0;
     clock = DateTime(2026, 9, 2, 10);
   });
 
   Future<List<Map<String, Object?>>> rows() async {
     final db = await database.database;
     return db.query('audit_events', orderBy: 'id');
+  }
+
+  /// The stored lines, decoded — the sink's contract is the *content* of the
+  /// NDJSON, not just the row count.
+  Future<List<Map<String, Object?>>> decodedLines() async {
+    return (await rows())
+        .map((row) => jsonDecode(row['line']! as String) as Map<String, Object?>)
+        .toList();
   }
 
   void writeLines(SqliteAuditSink sink, int count, {bool critical = false}) {
@@ -168,7 +187,7 @@ void main() {
       final sink = SqliteAuditSink(
         database: _StalledAuditDatabase(),
         now: () => clock,
-        startPeriodicTimer: (duration, onTick) => timer,
+        startPeriodicTimer: installTimer,
       );
 
       // A stalled database means nothing ever commits; the buffer must stay
@@ -184,15 +203,80 @@ void main() {
         sink.bufferedCount,
         lessThanOrEqualTo(AppConstants.auditMaxBufferedEvents + 1),
       );
-
-      // And once a working database is available, the gap is reported rather
-      // than left silent.
-      final recovering = buildSink();
-      writeLines(recovering, 1);
-      await recovering.flush();
-      await pumpEventQueue();
-      expect(await rows(), isNotEmpty);
     });
+
+    test('writes an aud overflow marker naming how many lines went', () async {
+      final gate = _GatedAuditDatabase(database);
+      final sink = buildSink(on: gate);
+
+      // Block the first flush so the buffer really overruns, then let it
+      // through: the marker is written by the *next* flush, with the count.
+      gate.block();
+      writeLines(sink, AppConstants.auditMaxBufferedEvents + 50);
+      await pumpEventQueue();
+      gate.release();
+      await sink.flush();
+      await sink.flush();
+
+      final markers = (await decodedLines())
+          .where((line) => line['e'] == AuditEvent.audit)
+          .toList();
+
+      expect(markers, hasLength(1));
+      expect(markers.single['a'], 'overflow');
+      // Not just "some number": an under-reported gap reads as a shorter
+      // suspension than actually happened.
+      expect(markers.single['n'], greaterThanOrEqualTo(50));
+    });
+
+    test(
+      'a trim during an in-flight flush never discards uncommitted lines',
+      () async {
+        final gate = _GatedAuditDatabase(database);
+        final sink = buildSink(on: gate);
+
+        // 100 lines, committed by the critical one — but the commit is held
+        // open, so `pending` is those 100 and the buffer keeps growing.
+        gate.block();
+        writeLines(sink, 99);
+        sink.write(
+          '{"t":99,"e":"fix","n":99}',
+          t: 99,
+          type: 'fix',
+          lvl: 0,
+          critical: true,
+        );
+        await pumpEventQueue();
+
+        // Overrun the bound by 10 while that flush is stuck. The backstop
+        // trims 10 lines off the front — all of them inside `pending`.
+        for (var i = 100; i < AppConstants.auditMaxBufferedEvents + 10; i++) {
+          sink.write(
+            '{"t":$i,"e":"fix","n":$i}',
+            t: i,
+            type: 'fix',
+            lvl: 0,
+            critical: false,
+          );
+        }
+        expect(sink.bufferedCount, AppConstants.auditMaxBufferedEvents);
+
+        gate.release();
+        await sink.flush();
+        await sink.flush();
+
+        // Removing "the first `pending.length`" would have thrown away lines
+        // 100–109, which were never committed and are not in the declared gap.
+        final written = (await decodedLines())
+            .where((line) => line['e'] == 'fix')
+            .map((line) => line['n'] as int)
+            .toSet();
+        expect(written, hasLength(AppConstants.auditMaxBufferedEvents + 10));
+        for (var i = 0; i < AppConstants.auditMaxBufferedEvents + 10; i++) {
+          expect(written, contains(i), reason: 'line $i was lost');
+        }
+      },
+    );
   });
 
   group('retention', () {
@@ -282,6 +366,224 @@ void main() {
       },
     );
   });
+
+  group('flush chaining', () {
+    test(
+      'a critical line arriving mid-commit is flushed, not left for the timer',
+      () async {
+        final gate = _GatedAuditDatabase(database);
+        final sink = buildSink(on: gate);
+
+        // A batch is in flight and stuck on the database.
+        gate.block();
+        writeLines(sink, AppConstants.auditFlushBatchSize);
+        await pumpEventQueue();
+
+        // The critical line is *not* in that batch's `pending` copy, so
+        // skipping the flush because one is in flight would leave it in memory
+        // until the 5 s timer — the window a kill takes it in.
+        sink.write(
+          '{"t":9,"e":"trip"}',
+          t: 9,
+          type: 'trip',
+          lvl: 0,
+          critical: true,
+        );
+        gate.release();
+        // Generously pumped rather than `await sink.flush()`: an explicit
+        // flush here would commit the line even with the defect, and prove
+        // nothing. The timer is never fired.
+        await pumpEventQueue(times: 500);
+
+        expect(
+          (await rows()).map((row) => row['type']),
+          contains('trip'),
+          reason: 'the timer was never fired; only a chained flush can do this',
+        );
+      },
+    );
+
+    test('a flush during a flush keeps write order and loses nothing', () async {
+      final gate = _GatedAuditDatabase(database);
+      final sink = buildSink(on: gate);
+
+      gate.block();
+      writeLines(sink, AppConstants.auditFlushBatchSize);
+      await pumpEventQueue();
+      for (var i = 0; i < 20; i++) {
+        sink.write(
+          '{"t":${1000 + i},"e":"fix","n":${1000 + i}}',
+          t: 1000 + i,
+          type: 'fix',
+          lvl: 0,
+          critical: true,
+        );
+      }
+      gate.release();
+      await sink.flush();
+      await pumpEventQueue();
+
+      final written = (await decodedLines())
+          .map((line) => line['n'] as int)
+          .toList();
+      expect(written, hasLength(AppConstants.auditFlushBatchSize + 20));
+      expect(written, orderedEquals(<int>[
+        for (var i = 0; i < AppConstants.auditFlushBatchSize; i++) i,
+        for (var i = 0; i < 20; i++) 1000 + i,
+      ]));
+      expect(sink.bufferedCount, 0);
+    });
+
+    test('a failed batch is retried from the buffer, not lost', () async {
+      final flaky = _FlakyAuditDatabase(database);
+      final sink = buildSink(on: flaky);
+
+      writeLines(sink, 3);
+      sink.write(
+        '{"t":9,"e":"trip"}',
+        t: 9,
+        type: 'trip',
+        lvl: 0,
+        critical: true,
+      );
+      await pumpEventQueue();
+
+      // The commit failed, so nothing was written and nothing was dropped.
+      expect(await rows(), isEmpty);
+      expect(sink.bufferedCount, 4);
+
+      timer.fire();
+      await pumpEventQueue();
+
+      expect(await rows(), hasLength(4));
+      expect(sink.bufferedCount, 0);
+      expect(flaky.failures, 0);
+    });
+  });
+
+  group('clear', () {
+    test('a flush spanning a clear does not resurrect the erased lines', () async {
+      final gate = _GatedAuditDatabase(database);
+      final sink = buildSink(on: gate);
+
+      gate.block();
+      writeLines(sink, AppConstants.auditFlushBatchSize);
+      await pumpEventQueue();
+
+      // "Clear log" while the batch is committing. Without a generation check
+      // the flush would reopen the database and insert the batch it just
+      // erased, so the user's delete would silently not happen.
+      await sink.clear();
+      gate.release();
+      await pumpEventQueue();
+
+      expect(await rows(), isEmpty);
+      expect(sink.bufferedCount, 0);
+    });
+
+    test('lines written after a clear still land', () async {
+      final sink = buildSink();
+
+      writeLines(sink, 3);
+      await sink.clear();
+      sink.write(
+        '{"t":9,"e":"trip"}',
+        t: 9,
+        type: 'trip',
+        lvl: 0,
+        critical: true,
+      );
+      await pumpEventQueue();
+
+      expect(await rows(), hasLength(1));
+    });
+  });
+
+  group('the periodic timer', () {
+    test('is cancelled once the buffer drains, and recreated lazily', () async {
+      final sink = buildSink();
+
+      writeLines(sink, 5);
+      expect(timersCreated, 1);
+      expect(timer.cancelled, isFalse);
+
+      await sink.flush();
+
+      // A log that has been turned off keeps its sink (so the recording is
+      // still exportable); it must not also keep a 5 s wakeup for the rest of
+      // the process in the app whose whole thesis is battery.
+      expect(sink.bufferedCount, 0);
+      expect(timer.cancelled, isTrue);
+
+      writeLines(sink, 1);
+      expect(timersCreated, 2);
+      expect(timer.cancelled, isFalse);
+    });
+  });
+
+  group('retention bounds', () {
+    // File-backed: `page_count` on `:memory:` does not respond to
+    // `incremental_vacuum`, which is precisely why the byte bound could be
+    // broken for a whole branch without a test noticing.
+    late Directory directory;
+    late AuditDatabase auditDatabase;
+
+    setUp(() async {
+      directory = await Directory.systemTemp.createTemp('autoride_audit_sink');
+      auditDatabase = AuditDatabase(directory: directory.path);
+    });
+
+    tearDown(() async {
+      await auditDatabase.close();
+      if (directory.existsSync()) await directory.delete(recursive: true);
+    });
+
+    test('the byte bound shrinks the file without emptying the table', () async {
+      // Bounds injected so the test needs kilobytes rather than 20 MB; the
+      // production defaults are untouched.
+      final sink = SqliteAuditSink(
+        database: auditDatabase,
+        now: () => clock,
+        startPeriodicTimer: installTimer,
+        maxBytes: 256 * 1024,
+        purgeChunkSize: 200,
+      );
+      addTearDown(sink.close);
+
+      final db = await auditDatabase.database;
+      final padding = 'x' * 400;
+      final batch = db.batch();
+      for (var i = 0; i < 3000; i++) {
+        batch.insert('audit_events', <String, Object?>{
+          't': clock.millisecondsSinceEpoch - i,
+          'type': 'fix',
+          'lvl': 0,
+          'line': '{"t":$i,"e":"fix","p":"$padding"}',
+        });
+      }
+      await batch.commit(noResult: true);
+
+      Future<int> sizeBytes() async {
+        final pages = await db.rawQuery('PRAGMA page_count');
+        final size = await db.rawQuery('PRAGMA page_size');
+        return (pages.first.values.first! as int) *
+            (size.first.values.first! as int);
+      }
+
+      expect(await sizeBytes(), greaterThan(256 * 1024));
+
+      await sink.purge(db);
+
+      // The whole point: the file really got smaller, and the journal is still
+      // a journal. With `auto_vacuum` inert the loop deletes chunk after chunk
+      // against a size that never moves and ends with an empty table.
+      expect(await sizeBytes(), lessThanOrEqualTo(256 * 1024));
+      final remaining = await db.query('audit_events');
+      expect(remaining, isNotEmpty);
+      expect(remaining.length, lessThan(3000));
+    });
+  });
+
 }
 
 /// [AuditDatabase] backed by an in-memory database built from the production
@@ -349,4 +651,63 @@ class _ManualTimer implements Timer {
 
   @override
   int get tick => 0;
+}
+
+/// Wraps another [AuditDatabase] and holds `database` open on demand, so a
+/// test can put a flush mid-commit and then act while it is stuck there.
+class _GatedAuditDatabase extends AuditDatabase {
+  _GatedAuditDatabase(this._delegate);
+
+  final AuditDatabase _delegate;
+  Completer<void>? _gate;
+
+  void block() => _gate = Completer<void>();
+
+  void release() {
+    final gate = _gate;
+    _gate = null;
+    if (gate != null && !gate.isCompleted) gate.complete();
+  }
+
+  @override
+  bool get isOpen => _delegate.isOpen;
+
+  @override
+  Future<Database> get database async {
+    final gate = _gate;
+    if (gate != null) await gate.future;
+    return _delegate.database;
+  }
+
+  @override
+  Future<void> close() => _delegate.close();
+
+  @override
+  Future<void> deleteAuditDatabase() => _delegate.deleteAuditDatabase();
+}
+
+/// Fails the first commit — a momentarily locked database — then works.
+class _FlakyAuditDatabase extends AuditDatabase {
+  _FlakyAuditDatabase(this._delegate);
+
+  final AuditDatabase _delegate;
+  int failures = 1;
+
+  @override
+  bool get isOpen => _delegate.isOpen;
+
+  @override
+  Future<Database> get database async {
+    if (failures > 0) {
+      failures--;
+      throw StateError('database is locked');
+    }
+    return _delegate.database;
+  }
+
+  @override
+  Future<void> close() => _delegate.close();
+
+  @override
+  Future<void> deleteAuditDatabase() => _delegate.deleteAuditDatabase();
 }
