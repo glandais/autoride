@@ -47,7 +47,8 @@ Full analysis: ledger §6 (L-079…L-086); follow-up tasks T044–T047 in `TASKS
   were saved with zero route points, ended only by the L-074 watchdog after 600 s and by
   `maxPause` (L-081). Resume fired on 5 samples (L-082); the gate stayed open 56 min for
   4 fixes while walking (L-083). The verbose log purged its own first hour, so this session's
-  `fgs`/`perm` lines are gone (L-085).
+  `fgs`/`perm` lines are gone (L-085) — fixed since, in T047: the three per-sample emits that
+  made up 90 % of that file are throttled, and a purge now says so.
 - iPhone: `alw:true`, `fgs start plat:ios` — and still nothing, this time a **suspension**,
   not a termination: heartbeats at 16:21, 16:36 and 19:07 with `dt` up to 2 h 31 and no launch
   header. The gate closed at 16:04:51 and the process was gone 40 s later; iOS keeps a
@@ -78,7 +79,7 @@ carries the event schema, the jq recipes and a per-item verdict procedure.
 | 1 — GPS stops when stationary | normal | `gate sched` → 30 s with no `fix` → `gate close`, then **no** `fix` |
 | 4 — battery drain | **normal, never verbose** | `bat` every 5 min, `pwr`, and the summed `gate open`→`close` time |
 | 8 — detection with the screen off | normal | `perm k:background` (`alw` must be true), `fgs a:start` with its `plat` — never `a:fail` —, then `app paused`, `hb` with `mn > 0` and no `app resumed`, then `trip start` |
-| 9 — auto-pause/stop, phone carried | **verbose** | `win` (`sd`/`gy`/`sta`/`src`/`spk`), `stop`, `res`, `st` |
+| 9 — auto-pause/stop, phone carried | **verbose** | `win` (`sd`/`gy`/`sta`/`src`/`spk`), `stop`, `res`, `st` — all throttled to 1 Hz since T047, so read the *transitions* |
 | 10 — trip ends on GPS loss | normal | `gpsw arm` → `gpsw fire` → `log` warning → `trip stop` |
 | 11 — trip starts where riding started | verbose | `bdate` plus the `fix` lines preceding it |
 
@@ -86,6 +87,9 @@ Two things to keep in mind when reading a log:
 
 - **The log is not a free observer.** It writes to its own database, so item 4 must be measured at
   *normal* level, and a control run with the log off is worth doing before quoting a drain figure.
+  Since T047 a verbose hour is ~2 MB rather than ~6, and a retention deletion leaves an
+  `aud {a:"purge"}` line — a file that starts mid-session with no such line was cut by the
+  export's `since` filter, not by retention.
 - **Read the header first.** Its `k` block holds the thresholds of the build that produced the
   file. Interpreting an old log against today's `AppConstants` is how you reach the opposite
   conclusion.

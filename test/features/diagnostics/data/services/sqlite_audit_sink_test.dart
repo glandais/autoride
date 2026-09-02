@@ -307,7 +307,10 @@ void main() {
 
       await sink.purge(db);
 
-      final remaining = await rows();
+      // Plus the `aud a:purge` marker the deletion leaves behind (L-085).
+      final remaining = (await rows())
+          .where((row) => row['type'] != AuditEvent.audit)
+          .toList();
       expect(remaining, hasLength(1));
       expect(remaining.single['t'], recent);
     });
@@ -329,6 +332,48 @@ void main() {
       await sink.purge(db);
 
       expect(await rows(), hasLength(1));
+    });
+
+    test('a purge that deletes something says so', () async {
+      final sink = buildSink();
+      final db = await database.database;
+
+      final old = clock
+          .subtract(const Duration(days: 9))
+          .millisecondsSinceEpoch;
+      await db.insert('audit_events', {
+        't': old,
+        'type': 'fix',
+        'lvl': 0,
+        'line': '{}',
+      });
+
+      await sink.purge(db);
+
+      // No flush in between: the marker has to be as durable as the deletion
+      // it describes, because the byte bound bites when the log is largest —
+      // under exactly the memory pressure that kills the process. The
+      // 2026-09-02 Pixel file lost its own header, `sess start` and `perm`
+      // lines to that bound with nothing to say so, and read as a session that
+      // had never started (L-085).
+      final purges = (await rows())
+          .where((row) => row['type'] == AuditEvent.audit)
+          .map((row) => jsonDecode(row['line']! as String))
+          .cast<Map<String, dynamic>>()
+          .where((line) => line['a'] == 'purge')
+          .toList();
+      expect(purges, hasLength(1));
+      expect(purges.single['n'], 1);
+      expect(purges.single['why'], 'age');
+    });
+
+    test('a purge that deletes nothing stays quiet', () async {
+      final sink = buildSink();
+      final db = await database.database;
+
+      await sink.purge(db);
+
+      expect(await rows(), isEmpty);
     });
   });
 

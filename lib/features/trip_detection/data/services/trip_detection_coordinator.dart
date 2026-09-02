@@ -12,6 +12,7 @@ import '../../domain/models/motion_data.dart';
 import '../../domain/models/trip.dart';
 import '../../domain/models/trip_state.dart';
 import '../../domain/models/trip_stop_state.dart';
+import 'battery_optimizer.dart';
 import 'motion_state_window.dart';
 import 'pre_trip_location_buffer.dart';
 import 'sensor_service.dart';
@@ -122,6 +123,15 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
   /// Throttle state for the `start` audit event — see [_emitStartEval].
   DateTime? _lastStartEvalEmit;
   int? _lastStartEvalStreak;
+
+  /// Throttle state for the `stop` audit event — see [_emitStopEval].
+  DateTime? _lastStopEvalEmit;
+  int? _lastStopEvalStationary;
+  int? _lastStopEvalMovement;
+
+  /// Throttle state for the `res` audit event — see [_emitResumeEval].
+  DateTime? _lastResumeEvalEmit;
+  DateTime? _lastResumeEvalMovingSince;
 
   /// Set when [stopListening] is called while a trip is being recorded. The
   /// session is kept running so auto-pause/auto-stop still work, and the actual
@@ -267,6 +277,13 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
         'mn': motion,
         'fn': fixes,
         'dt': elapsed.inMilliseconds,
+        // The rate the power mode in force asks for, next to the samples
+        // actually received: `mn / (dt / 1000)` against `hz` is the whole
+        // comparison, and it is the only honest way to read a sampling period
+        // the OS treats as a hint (L-086). Reading it out of the header's `k`
+        // instead would need the reader to first work out which mode was in
+        // force at this instant.
+        'hz': ref.read(currentPowerModeProvider).sensorSamplingRate,
       },
     );
   }
@@ -878,19 +895,7 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
         .read(tripStopDetectorProvider.notifier)
         .analyzeForTripStop(motion, _lastLocation);
 
-    if (AuditLog.enabled) {
-      final stopState = ref.read(tripStopDetectorProvider);
-      AuditLog.emit(
-        AuditEvent.stopEval,
-        () => <String, Object?>{
-          'd': decision.name,
-          'sta': stopState.isStationary,
-          'cs': stopState.consecutiveStationaryDetections,
-          'cm': stopState.consecutiveMovementDetections,
-          'pd': stopState.pauseDuration.inSeconds,
-        },
-      );
-    }
+    _emitStopEval(decision);
 
     if (decision == StopDecision.pauseTrip) {
       // Pause trip
@@ -912,17 +917,7 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
         .read(tripStopDetectorProvider.notifier)
         .shouldResumeTrip(motion, _lastLocation);
 
-    if (AuditLog.enabled) {
-      final stopState = ref.read(tripStopDetectorProvider);
-      AuditLog.emit(
-        AuditEvent.resumeEval,
-        () => <String, Object?>{
-          'go': shouldResume,
-          'cm': stopState.consecutiveMovementDetections,
-          'pd': stopState.pauseDuration.inSeconds,
-        },
-      );
-    }
+    _emitResumeEval(shouldResume: shouldResume);
 
     if (shouldResume) {
       // Resume trip
@@ -944,11 +939,116 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
           .read(tripStopDetectorProvider.notifier)
           .analyzeForTripStop(motion, _lastLocation, tripIsPaused: true);
 
+      // Only the decision, never the `continue` that this branch produces once
+      // a second for the whole pause: `res` already reports the paused state,
+      // and a second 1 Hz line beside it would say the same thing twice. The
+      // decision itself must be here, though — a trip ended by `maxPause` (the
+      // way trip 6 of the 2026-09-02 run ended, L-081) used to leave no `stop`
+      // line at all, so the log showed the end of a ride with nothing deciding
+      // it.
+      if (decision != StopDecision.continueTrip) _emitStopEval(decision);
+
       if (decision == StopDecision.stopTrip) {
         // Stop trip after extended pause
         await _finalizeAndStopTrip();
       }
     }
+  }
+
+  /// One `stop` audit event per evaluation interval, plus every event that
+  /// carries a decision or a counter change.
+  ///
+  /// Unthrottled, this fired once per motion sample: the 2026-09-02 Pixel log
+  /// held 33 036 `stop` lines with inter-event gaps of 1–12 ms, and together
+  /// with `win` and `res` they were 90 % of the file — enough for a verbose
+  /// session to purge its own header, `sess start` and `perm` lines through the
+  /// 20 MB retention bound inside two hours (L-085). Same throttle as
+  /// [_emitStartEval], and the same two exceptions: a decision other than
+  /// `continue` is what the reader is looking for, and a change in `cs`/`cm` is
+  /// the transition that explains how the detector got there. Both counters
+  /// only advance once per [AppConstants.detectionEvaluationInterval] anyway,
+  /// so nothing observable is lost between two lines.
+  void _emitStopEval(StopDecision decision) {
+    if (!AuditLog.enabled) return;
+
+    final stopState = ref.read(tripStopDetectorProvider);
+    final stationary = stopState.consecutiveStationaryDetections;
+    final movement = stopState.consecutiveMovementDetections;
+
+    final at = now();
+    final last = _lastStopEvalEmit;
+    final throttled =
+        last != null &&
+        at.difference(last) < AppConstants.detectionEvaluationInterval;
+    if (throttled &&
+        decision == StopDecision.continueTrip &&
+        stationary == _lastStopEvalStationary &&
+        movement == _lastStopEvalMovement) {
+      return;
+    }
+
+    _lastStopEvalEmit = at;
+    _lastStopEvalStationary = stationary;
+    _lastStopEvalMovement = movement;
+
+    AuditLog.emit(
+      AuditEvent.stopEval,
+      () => <String, Object?>{
+        'd': decision.name,
+        'sta': stopState.isStationary,
+        'cs': stationary,
+        'cm': movement,
+        // Seconds since the *stationary onset*, which is not the recorded
+        // pause: the state machine only pauses `minPause` later, so the
+        // trip's own `pau` reads ~`minPause` less. See [AuditEvent.stopEval].
+        'so': stopState.pauseDuration.inSeconds,
+      },
+    );
+  }
+
+  /// One `res` audit event per evaluation interval, plus every resume decision
+  /// and every restart of the sustained-movement timer. Same rationale as
+  /// [_emitStopEval] — 23 535 lines on the same run, all of them while a
+  /// single trip was paused.
+  ///
+  /// The timer, not `cm`, is what the throttle keys on: `shouldResumeTrip`
+  /// decides on `movementStartTime` — set on the first moving sample, cleared
+  /// by any stationary one — and never touches the consecutive-movement
+  /// counter. Keying on `cm` would show a flat `res {go:false}` once a second
+  /// while the timer started and restarted invisibly underneath, which is
+  /// precisely what L-082 has to be diagnosed from. `mv` carries it in
+  /// milliseconds because the defect there is 100 ms wide.
+  void _emitResumeEval({required bool shouldResume}) {
+    if (!AuditLog.enabled) return;
+
+    final stopState = ref.read(tripStopDetectorProvider);
+    final movingSince = stopState.movementStartTime;
+
+    final at = now();
+    final last = _lastResumeEvalEmit;
+    final throttled =
+        last != null &&
+        at.difference(last) < AppConstants.detectionEvaluationInterval;
+    if (throttled &&
+        !shouldResume &&
+        movingSince == _lastResumeEvalMovingSince) {
+      return;
+    }
+
+    _lastResumeEvalEmit = at;
+    _lastResumeEvalMovingSince = movingSince;
+
+    AuditLog.emit(
+      AuditEvent.resumeEval,
+      () => <String, Object?>{
+        'go': shouldResume,
+        'cm': stopState.consecutiveMovementDetections,
+        'mv': movingSince == null
+            ? 0
+            : at.difference(movingSince).inMilliseconds,
+        'so': stopState.pauseDuration.inSeconds,
+      },
+    );
   }
 
   /// Finalize trip data and stop trip

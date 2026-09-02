@@ -34,6 +34,11 @@ class TripStopDetector extends _$TripStopDetector {
   /// must not enter the window twice.
   MotionData? _lastWindowedMotion;
 
+  /// Throttle state for the verbose `win` event — see [_emitWindowVerdict].
+  DateTime? _lastWindowEmit;
+  bool? _lastWindowVerdict;
+  String? _lastWindowSource;
+
   /// Analyze motion and GPS data to determine trip stop decision
   ///
   /// Returns [StopDecision] indicating whether to continue, pause, or stop trip.
@@ -156,6 +161,9 @@ class TripStopDetector extends _$TripStopDetector {
     state = TripStopState.initial();
     _window.clear();
     _lastWindowedMotion = null;
+    _lastWindowEmit = null;
+    _lastWindowVerdict = null;
+    _lastWindowSource = null;
   }
 
   /// Check if motion and GPS indicate a stationary rider.
@@ -182,41 +190,72 @@ class TripStopDetector extends _$TripStopDetector {
     final speedKmh = _freshSpeedKmh(location, now);
     final verdict = _stationaryVerdict(speedKmh);
 
-    if (AuditLog.verbose) {
-      // Emitted from the detector rather than from `StationaryWindow`: the
-      // window is mutable scratch state with no vocabulary of its own, and the
-      // interesting part is which of the three arms decided.
-      //
-      // This is the event item 9 of the device checklist turns on. The
-      // "basket case" reads as src:gps with a high speed and sta:false; and a
-      // false pause on a slow climb shows up as src:sensors with a speed
-      // sitting in the dead band between stationarySpeedMaxKmh and
-      // movingSpeedMinKmh, where neither GPS arm applies and the sensors decide
-      // alone.
-      AuditLog.emitVerbose(
-        AuditEvent.window,
-        () => <String, Object?>{
-          'n': _window.length,
-          'sd': _window.accelerationStdDev,
-          'gy': _window.averageRotation,
-          'sta': verdict,
-          // Three arms, three sources: GPS alone decides "moving"; below the
-          // stationary threshold GPS only *admits* a stop and the vibration
-          // check has the last word (`gps+vib`); in the dead band between the
-          // two the sensors decide alone.
-          'src': speedKmh == null
-              ? 'sensors'
-              : speedKmh >= AppConstants.movingSpeedMinKmh
-              ? 'gps'
-              : speedKmh < AppConstants.stationarySpeedMaxKmh
-              ? 'gps+vib'
-              : 'sensors',
-          'spk': speedKmh,
-        },
-      );
-    }
+    _emitWindowVerdict(now, verdict, speedKmh);
 
     return verdict;
+  }
+
+  /// One verbose `win` line per [AppConstants.auditWindowVerdictInterval],
+  /// plus every change of verdict or of deciding arm.
+  ///
+  /// Emitted from the detector rather than from `StationaryWindow`: the window
+  /// is mutable scratch state with no vocabulary of its own, and the
+  /// interesting part is which of the three arms decided.
+  ///
+  /// This is the event item 9 of the device checklist turns on. The "basket
+  /// case" reads as src:gps with a high speed and sta:false; and a false pause
+  /// on a slow climb shows up as src:sensors with a speed sitting in the dead
+  /// band between stationarySpeedMaxKmh and movingSpeedMinKmh, where neither
+  /// GPS arm applies and the sensors decide alone.
+  ///
+  /// Throttled for the reason `sens` next door always was: this runs on every
+  /// motion sample, and unthrottled it produced 80 103 lines — over half the
+  /// 2026-09-02 Pixel file — for 26 minutes of recording, which is what pushed
+  /// that file's own header out through the 20 MB retention bound (L-085). The
+  /// verdict itself is a windowed average over
+  /// [AppConstants.stationaryWindowDuration], so consecutive samples say the
+  /// same thing; only its *transitions* carry information, and those are never
+  /// dropped.
+  void _emitWindowVerdict(DateTime now, bool verdict, double? speedKmh) {
+    if (!AuditLog.verbose) return;
+
+    // Three arms, three sources: GPS alone decides "moving"; below the
+    // stationary threshold GPS only *admits* a stop and the vibration check has
+    // the last word (`gps+vib`); in the dead band between the two the sensors
+    // decide alone.
+    final source = speedKmh == null
+        ? 'sensors'
+        : speedKmh >= AppConstants.movingSpeedMinKmh
+        ? 'gps'
+        : speedKmh < AppConstants.stationarySpeedMaxKmh
+        ? 'gps+vib'
+        : 'sensors';
+
+    final last = _lastWindowEmit;
+    final throttled =
+        last != null &&
+        now.difference(last) < AppConstants.auditWindowVerdictInterval;
+    if (throttled &&
+        verdict == _lastWindowVerdict &&
+        source == _lastWindowSource) {
+      return;
+    }
+
+    _lastWindowEmit = now;
+    _lastWindowVerdict = verdict;
+    _lastWindowSource = source;
+
+    AuditLog.emitVerbose(
+      AuditEvent.window,
+      () => <String, Object?>{
+        'n': _window.length,
+        'sd': _window.accelerationStdDev,
+        'gy': _window.averageRotation,
+        'sta': verdict,
+        'src': source,
+        'spk': speedKmh,
+      },
+    );
   }
 
   /// The stationary verdict itself, kept separate so it can be reported

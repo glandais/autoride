@@ -973,6 +973,91 @@ void main() {
         expect(sink.fieldsOf('win').last['src'], 'sensors');
       });
     });
+
+    // -----------------------------------------------------------------
+    // Volume. `win` is evaluated per motion sample, and unthrottled it was
+    // 80 103 lines of one 2026-09-02 log — over half the file — which is what
+    // pushed that file's own header out through the retention bound (L-085).
+    // -----------------------------------------------------------------
+    group('the window verdict is throttled', () {
+      late _RecordingAuditSink sink;
+
+      setUp(() {
+        sink = _RecordingAuditSink();
+        AuditLog.install(sink, verbose: true);
+        addTearDown(AuditLog.uninstall);
+      });
+
+      test(
+        'repeated samples inside one interval collapse to one line',
+        () async {
+          final container = createContainer();
+          addTearDown(container.dispose);
+          final detector = container.read(tripStopDetectorProvider.notifier);
+          final start = DateTime(2026, 1, 1);
+
+          for (var i = 0; i < 50; i++) {
+            final now = start.add(Duration(milliseconds: i * 10));
+            await detector.analyzeForTripStop(
+              noisyMotion(i, accelStdDev: 0.1, gyro: 0.1),
+              locationAt(now, 0.0),
+              now: now,
+            );
+          }
+
+          // Half a second of samples at 100 Hz, all saying the same thing.
+          expect(sink.fieldsOf('win'), hasLength(1));
+        },
+      );
+
+      test('a change of verdict is never dropped', () async {
+        final container = createContainer();
+        addTearDown(container.dispose);
+        final detector = container.read(tripStopDetectorProvider.notifier);
+        final start = DateTime(2026, 1, 1);
+
+        await detector.analyzeForTripStop(
+          noisyMotion(0, accelStdDev: 0.1, gyro: 0.1),
+          locationAt(start, 0.0),
+          now: start,
+        );
+        expect(sink.fieldsOf('win').single['sta'], isTrue);
+
+        // 10 ms later — deep inside the throttling interval — the rider is
+        // moving. A transition is the only thing `win` is read for.
+        final moving = start.add(const Duration(milliseconds: 10));
+        await detector.analyzeForTripStop(
+          noisyMotion(1, accelStdDev: 0.1, gyro: 0.1),
+          locationAt(moving, AppConstants.movingSpeedMinKmh + 5),
+          now: moving,
+        );
+
+        expect(sink.fieldsOf('win'), hasLength(2));
+        expect(sink.fieldsOf('win').last['sta'], isFalse);
+      });
+
+      test('the interval elapsing lets the next line through', () async {
+        final container = createContainer();
+        addTearDown(container.dispose);
+        final detector = container.read(tripStopDetectorProvider.notifier);
+        final start = DateTime(2026, 1, 1);
+
+        await detector.analyzeForTripStop(
+          noisyMotion(0, accelStdDev: 0.1, gyro: 0.1),
+          locationAt(start, 0.0),
+          now: start,
+        );
+
+        final later = start.add(AppConstants.auditWindowVerdictInterval);
+        await detector.analyzeForTripStop(
+          noisyMotion(1, accelStdDev: 0.1, gyro: 0.1),
+          locationAt(later, 0.0),
+          now: later,
+        );
+
+        expect(sink.fieldsOf('win'), hasLength(2));
+      });
+    });
   });
 }
 

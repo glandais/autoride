@@ -88,7 +88,7 @@ void main() {
 
     final header = jsonDecode(lines.first) as Map<String, dynamic>;
     expect(header['e'], 'hdr');
-    expect(header['sv'], 1);
+    expect(header['sv'], 2);
     // The reading procedure branches on the level, and a `since`-filtered
     // slice can exclude the per-launch header that also carries it.
     expect(header['lvl'], 'verbose');

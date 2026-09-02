@@ -50,19 +50,19 @@ short; the table below is the whole vocabulary.
 | `perm` | Permission / auto-detection inputs | `k` = autoDetection: `en` `loc` `onb` `go`. `k` = background (L-078): `why` = session/change, `alw` (OS granted "Always" / "Allow all the time"), `acc` = precise/reduced, `issue` = alwaysMissing/preciseMissing (absent when all is well) |
 | `set` | A setting changed | `k` = automaticDetection/batteryMode/backgroundLocation/auditLog/auditLogLevel, `o` (old) `n` (new) |
 | `clk` | Wall/monotonic pair, re-emitted when they drift > 2 s apart | `wall` ms, `mono` ms since launch, `drift` ms |
-| `aud` | The log about itself | `a` = overflow (the only one), `n` lines dropped |
+| `aud` | The log about itself | `a` = overflow (`n` lines dropped by the buffer backstop) / purge (`n` rows deleted by retention, `why` = age/rows/bytes — L-085) |
 | `sess` | Coordinator session | `a` = start/stop/suspend; `trip` (active trip) on a start, `why` = deferredUntilTripEnds on a deferred stop |
 | `st` | Trip state transition | `f` (from) `to` |
 | `gate` | Motion-gated GPS | `a` = open/sched/close; `why` = trip/motion (open), stationary (sched), inactivityTimeout/stop/session/dispose (close); `in` (s) on a sched |
 | `fix` | GPS fix | `lat` `lon` `ac` m `sp` **m/s** `al` `hd` `gt` (provider time) |
-| `hb` | Heartbeat, every 30 s | `n` ticks, `mn` motion samples, `fn` fixes, `dt` ms |
+| `hb` | Heartbeat, every 30 s | `n` ticks, `mn` motion samples, `fn` fixes, `dt` ms, `hz` configured sampling rate (L-086) |
 | `start` | Trip-start evaluation | `c` confidence, `n` streak, `go`, `mag` `gyr` `spk` |
 | `dto` | Detection window timed out | `el` s, `n` streak at timeout |
 | `cool` | Start cooldown | `a` = arm (`d` s, `why` = falseStart) / expire (`d` s) |
-| `win` | Stationary window (**verbose**) | `n` `sd` m/s² `gy` rad/s `sta` `src` = gps/gps+vib/sensors `spk` km/h |
+| `win` | Stationary window (**verbose**) | `n` `sd` m/s² `gy` rad/s `sta` `src` = gps/gps+vib/sensors `spk` km/h. Throttled to 1 Hz; every change of `sta` or `src` is kept (L-085) |
 | `sens` | 1 Hz sensor aggregate (**verbose**) | `am` `gm` `ms` (MotionState) |
-| `stop` | Stop decision | `d` = continueTrip/pauseTrip/stopTrip, `sta` `cs` `cm` `pd` s |
-| `res` | Resume evaluation | `go` `cm` `pd` |
+| `stop` | Stop decision | `d` = continueTrip/pauseTrip/stopTrip, `sta` `cs` `cm` `so` s. Throttled to `k.evalMs`; every decision and counter change is kept (L-085). While the trip is *paused* only the decisions appear here — the once-a-second `continue` is `res`'s job |
+| `res` | Resume evaluation | `go` `cm` `mv` ms of continuous movement (what the decision is made on, against `k.resume`) `so`. Throttled like `stop`, keyed on `mv` restarting |
 | `trip` | Trip lifecycle | `a` = start/pause/resume/stop/discard, `id`; start: `conf` `act` `pre` (or `man` on a manual start); pause: `dist`; resume: `pau`; stop/discard: `dist` m `dur` s `pau` s `avg` `max` `pts` |
 | `bdate` | Start back-dated (L-076) | `id` `k` fixes `m` metres `ts` new start `was` old start |
 | `buf` | Pre-trip buffer (**verbose**) | `a` = add/tail/clear, `n` fixes, `sp` span ms, `kp` kept by the riding-tail cut (tail), `why` = inactivityTimeout/stop/session/dispose/gpsError/recording/tripEnd (clear) |
@@ -71,13 +71,30 @@ short; the table below is the whole vocabulary.
 | `rp` | Route point | `a` = keep (normal) / drop (**verbose**), `why` = acc/speed/dist, `d` `ac` `spk` |
 | `flush` | Database write | `a` = points, `n` `ms` `ok` |
 | `pwr` | Power mode | `m` `b` % `hz` `df` `ui` `la` |
-| `bat` | Battery sample (5 min, and on every OS battery-state change) | `b` % `ch` |
+| `bat` | Battery sample (5 min, and on every OS battery-state change) | `b` % `ch`. A reading identical to the previous one inside the same 5-minute tick is not written (L-086) |
 | `fgs` | Foreground service | `a` = start/stop/fail, `plat` = android/ios (L-078), `ex` on a fail |
 | `noti` | Notification | `a` = show/cancel/action; `k` = fg/start/stop on a show or cancel, the action id (pause/resume/stop) on an action. Never the text. `show k:"fg"` is **verbose** |
 | `log` | Bridged from `Logger` | `lv` = d/i/w/e, `tag` `m` |
 | `err` | Error | `tag` `m` `ex` `st` (top 3 frames) |
 
 Speeds: `fix.sp` is **m/s**; `win.spk`, `start.spk`, `rp.spk` are **km/h**.
+
+**Two clocks, one pause.** `stop.so` / `res.so` count from the *stationary
+onset*; `trip.pau` counts from the state machine's *pause transition*, which
+happens `k.minPause` seconds later. `so` ≈ `pau + minPause` for the same pause,
+and that is agreement, not a discrepancy (L-086). Files written by a build
+older than schema 2 (`hdr.sv`) carry the same number under `pd`.
+
+**Sampling rate.** `hb.hz` is what the power mode *asks* the OS for;
+`mn / (dt / 1000)` is what arrived. They differ — 55.6 Hz backgrounded and
+83 Hz foregrounded for a configured 50 on a Pixel 6a, 51.4 Hz on an iPhone
+(L-086) — because a sampling period is a request. Read the measured rate,
+never `k.hzN`.
+
+**Retention is no longer silent.** An `aud {a:"purge"}` line says how many rows
+a bound deleted and which bound bit. A file whose first lines are mid-session
+*and* carries no `purge` line was truncated by the export's `since` filter, not
+by retention.
 
 ## 3. Recipes
 
@@ -90,6 +107,9 @@ gzcat log.ndjson.gz | jq -c 'select(.e|IN("sess","st","trip","gate","gpsw","app"
 # but sensors_plus delivered nothing.
 gzcat log.ndjson.gz | jq -r 'select(.e=="hb")|[.t,.n,.mn,.fn,.dt]|@tsv' \
   | awk '$2<25 || $5>35000'
+
+# The rate the pipeline really ran at, against the one the power mode asked for.
+gzcat log.ndjson.gz | jq -r 'select(.e=="hb")|[.t,(.mn/(.dt/1000)),.hz]|@tsv'
 
 # Battery profile → %/hour.
 gzcat log.ndjson.gz | jq -r 'select(.e=="bat")|[.t,.b]|@tsv'
@@ -198,7 +218,8 @@ the rider was stationary, so with a 15 m distance filter no fix was due.
 
 **Item 9 — auto-pause/stop with the phone carried.** Needs `lvl: "verbose"`
 (`win` is verbose-only).
-- Red light: watch `win.sta` flip and `stop.cs` climb to `k.nSta`.
+- Red light: watch `win.sta` flip and `stop.cs` climb to `k.nSta`. Both are
+  throttled to one line a second, so count the *transitions*, not the lines.
 - Basket case: `win {src:"gps",spk:22,sta:false}` — GPS speed beat calm sensors.
 - False pause on a slow climb: `win {src:"sensors",spk:4.2,sta:true}` — the
   speed sits in the dead band between `k.staKmh` (3) and `k.movKmh` (6), where

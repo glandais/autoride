@@ -70,6 +70,10 @@ class AutoDetectionController extends _$AutoDetectionController {
   /// `perm` line.
   AutoDetectionState? _lastAuditedState;
 
+  /// Same, for the `k:background` line: what the OS last reported. See
+  /// [_emitBackgroundPermission].
+  BackgroundLocationState? _lastAuditedBackgroundStatus;
+
   /// Mirrors the state machine: true exactly while a trip is being recorded.
   bool _recording = false;
 
@@ -100,12 +104,18 @@ class AutoDetectionController extends _$AutoDetectionController {
     // can flip "Always" back to "While Using" in system settings behind the
     // app's back. Listening rather than reading once is what puts both
     // directions in the log.
-    _closeBackgroundStatusSubscription ??= ref.container
-        .listen(
-          backgroundLocationStatusProvider,
-          (previous, next) => _emitBackgroundPermission(next.value, 'change'),
-        )
-        .close;
+    _closeBackgroundStatusSubscription ??= ref.container.listen(
+      backgroundLocationStatusProvider,
+      (previous, next) {
+        // Only the settled value. `refresh()` invalidates the provider, so
+        // every app resume produced an `AsyncLoading` carrying the previous
+        // value and then an `AsyncData` — two identical `perm k:background`
+        // lines a millisecond apart, which read as a permission that had
+        // changed twice (L-086).
+        if (next.isLoading || next.hasError) return;
+        _emitBackgroundPermission(next.value, 'change');
+      },
+    ).close;
 
     final settings = ref.watch(settingsServiceProvider);
     final permission = ref.watch(locationPermissionServiceProvider);
@@ -182,6 +192,12 @@ class AutoDetectionController extends _$AutoDetectionController {
   void _emitBackgroundPermission(BackgroundLocationState? status, String why) {
     if (status == null) return;
     if (!AuditLog.enabled) return;
+
+    // A re-read that returns what the OS already reported is not an event.
+    // The `session` line is always emitted: it says which state detection
+    // started in, which is the question it exists to answer.
+    if (why != 'session' && status == _lastAuditedBackgroundStatus) return;
+    _lastAuditedBackgroundStatus = status;
 
     AuditLog.emit(
       AuditEvent.permission,

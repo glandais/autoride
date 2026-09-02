@@ -396,6 +396,13 @@ class AppConstants {
   // 50 Hz and is never recorded.
   static const Duration auditSensorSampleInterval = Duration(seconds: 1);
 
+  // Same treatment for the stationary window verdict (`win`), which is also
+  // evaluated per motion sample: a change of verdict or of deciding arm is
+  // always recorded, and the repeats in between are collapsed to this rate.
+  // Unthrottled it was 80 103 lines of one 2026-09-02 log — over half the file
+  // — for 26 minutes of recording (L-085).
+  static const Duration auditWindowVerdictInterval = Duration(seconds: 1);
+
   // Rows read per page when exporting. Keyset pagination, never OFFSET.
   static const int auditExportPageSize = 5000;
 

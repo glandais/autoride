@@ -33,7 +33,13 @@ abstract final class AuditEvent {
   /// A user setting changed. `k`, `o` (old), `n` (new).
   static const String setting = 'set';
 
-  /// The log talking about itself. `a` = overflow, with `n` lines dropped.
+  /// The log talking about itself.
+  ///
+  /// `a` = overflow, with `n` lines dropped by the buffer backstop; or
+  /// `a` = purge, with `n` rows the retention bounds deleted and `why` =
+  /// age|rows|bytes naming the bound that bit. A purge used to be silent by
+  /// the L-077 design, which is how the 2026-09-02 Pixel file lost its own
+  /// header, `sess start` and `perm` lines with nothing to say so (L-085).
   static const String audit = 'aud';
 
   /// Wall-clock vs monotonic clock pair, re-emitted when they drift apart.
@@ -56,11 +62,16 @@ abstract final class AuditEvent {
   /// — the provider's own timestamp, which is what a Strava FIT aligns to.
   static const String fix = 'fix';
 
-  /// Liveness proof. `n` ticks, `mn` motion samples, `fn` fixes, `dt` ms.
+  /// Liveness proof. `n` ticks, `mn` motion samples, `fn` fixes, `dt` ms, and
+  /// `hz` — the sampling rate the power mode in force asks for.
   ///
   /// Without it a gap in the timeline is ambiguous: the OS suspended the
   /// process, or the log lost its buffer to a kill. Those are opposite
   /// conclusions, and items 3 and 8 of the T041 checklist turn on which.
+  ///
+  /// `hz` sits next to `mn` because the sampling period is a request the OS
+  /// rounds to a rate of its own: `mn / (dt / 1000)` is what the pipeline
+  /// really ran at, and only the pair says whether that matches (L-086).
   static const String heartbeat = 'hb';
 
   // --- Detectors ---------------------------------------------------------
@@ -79,11 +90,20 @@ abstract final class AuditEvent {
   /// 1 Hz sensor aggregate (verbose). Never raw 50 Hz samples.
   static const String sensors = 'sens';
 
-  /// Trip-stop decision. `d` = continue|pause|stop, `cs`, `cm`, `pd`.
+  /// Trip-stop decision. `d` = continue|pause|stop, `cs`, `cm`, `so`.
+  ///
+  /// `so` is the detector's clock: seconds since the **stationary onset**. It
+  /// is deliberately not the same number as the trip's `pau`, which the
+  /// recorder counts from the state machine's *pause transition* — and that
+  /// only happens `minPause` seconds after the onset. A ride reporting `so`
+  /// 299 and `pau` 269 is one pause seen by two clocks, not a discrepancy
+  /// (L-086); the key was renamed from `pd` at schema 2 to say so.
   static const String stopEval = 'stop';
 
   /// Resume evaluation while paused. `go`, `cm` (consecutive movement
-  /// detections), `pd` (accumulated pause, seconds).
+  /// detections), `mv` (ms of *continuous* movement so far — the quantity the
+  /// resume decision is actually made on, against `k.resume`), `so` (seconds
+  /// since the stationary onset — see [stopEval]).
   static const String resumeEval = 'res';
 
   // --- Trip lifecycle ----------------------------------------------------

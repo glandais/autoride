@@ -16,7 +16,15 @@ enum AuditLogLevel {
 
   /// Everything in [normal] plus 1 Hz sensor aggregates (accelerometer
   /// std-dev, mean gyroscope), the stationary window verdicts and the route
-  /// points that were *rejected*. Roughly 3.7 MB per hour of riding.
+  /// points that were *rejected*. Roughly 2 MB per hour of riding — a
+  /// projection from the throttles below, not a device measurement.
+  ///
+  /// That figure is post-T047. The same instrumentation measured ~6 MB/h on a
+  /// device (12 MB for two hours on a Pixel 6a, 2026-09-02) while the window
+  /// verdict and the stop/resume evaluations were still emitted per 50 Hz
+  /// motion sample: 90 % of the file, and enough to purge the session's own
+  /// header through the retention bound (L-085). They are throttled to 1 Hz
+  /// now, with every decision and every change of verdict kept.
   ///
   /// Raw 50 Hz sensor samples are never recorded at any level: they would be
   /// ~50 MB/h and would cost more battery than the pipeline being observed.

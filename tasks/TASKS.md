@@ -398,14 +398,16 @@ acceptance test. **Diagnosis only at this stage — no solution has been chosen 
   - *Cross-refs*: L-067, L-078, T041 item 8, `platform-config` skill
   - *Estimate*: decision first, then 1 session + iPhone runs
 
-- ☐ **T047**: Audit Log Cost and Honesty — a verbose level that does not purge its own session
+- ✅ **T047**: Audit Log Cost and Honesty — a verbose level that does not purge its own session
+  - *Completed*: 2026-09-02 — ledger remediation row 19 (L-085 and L-086 both closed). `win`, `stop` and `res` carry the throttle `07fabee` gave `start` (one line per evaluation interval; every decision, counter change and change of verdict or deciding arm kept), so the three emits that were 90 % of the 2026-09-02 Pixel file no longer purge the session's own header; a retention purge leaves an `aud {a:"purge", n, why}` line instead of deleting in silence. Duplicate `perm k:background` and `bat` lines de-duplicated, the detector's pause clock renamed `pd` → `so` with schema `sv` 2, and `hb` gains `hz` so the real sampling rate (55.6/83 Hz against a configured 50) is readable rather than asserted. Tests 636 → 654. **Not device-validated**: the next verbose run is what confirms the file survives its own session.
+  - *Deliberately not done*: holding the motion stream to the configured sampling rate. It is a detection-and-battery change, not an instrumentation one — T045 owns it.
   - *Detail*: ledger L-085, L-086
   - *Scope*: `win`/`stop`/`res` emitted per motion sample (90 % of a verbose file, self-purge in ~2 h, L-085) — the same class as the `start` emit `07fabee` throttled — plus the duplicate `perm`/`bat` lines, the `pau` vs `pd` disagreement and the 55/83 Hz sample rate that contradicts the "configured rate exactly" claim (L-086). Without it every verbose run of T044–T046 loses its own header, session start, `fgs` and `perm` lines.
   - *Dependencies*: T043
   - *Cross-refs*: L-077 (silent retention purge, by design), T041 §0 table
   - *Estimate*: half a session
 
-- *Recommended order*: T047 → T044 (L-080 half) → T045 → T046 (decision first). Ledger §6 says why.
+- *Recommended order*: T047 (done) → T044 (L-080 half) → T045 → T046 (decision first). Ledger §6 says why.
 
 ---
 
@@ -445,14 +447,14 @@ acceptance test. **Diagnosis only at this stage — no solution has been chosen 
 ## Progress Summary
 
 **Total Tasks**: 47
-**Completed**: 25
+**Completed**: 26
 **In Progress**: 9 (T006, T013, T030, T037, T038, T039, T041, T042, T043)
-**Pending**: 13
+**Pending**: 12
 **Blocked**: 0
 
 **Current Phase**: Phase 10 - Release Preparation, alongside the Phase 11 audit backlog and the Phase 12 export work
-**Last Completed**: T029/T033 - test-suite recut and code quality (2026-09-01)
-**Current Task**: T044–T047 (Phase 11.2) — the 2026-09-02 control run without a ride produced four 0 m trips on the Pixel and an invisible outing on the iPhone; ledger §6 holds the diagnoses. Then T039/T041 — iOS release is 2 blockers from submittable (build attach + screenshots); T041 device validation under way (first iPhone run done: prompts OK, one crash found and fixed — see `tasks/T041-device-validation.md`). T038 open on manual Play Console setup; T037 open (§5.6/§5.7).
+**Last Completed**: T047 - audit log cost and honesty (2026-09-02)
+**Current Task**: T044–T046 (Phase 11.2) — the 2026-09-02 control run without a ride produced four 0 m trips on the Pixel and an invisible outing on the iPhone; ledger §6 holds the diagnoses. T047 is done, so the next verbose run keeps its own header. Then T039/T041 — iOS release is 2 blockers from submittable (build attach + screenshots); T041 device validation under way (first iPhone run done: prompts OK, one crash found and fixed — see `tasks/T041-device-validation.md`). T038 open on manual Play Console setup; T037 open (§5.6/§5.7).
 **Next Task**: T039 - iOS Release Configuration (T038 now owns the version scheme and `publish_beta.sh`, so T039 can extend both)
 **Audit backlog**: `tasks/AUDIT-FINDINGS.md` (2026-06-17) and `tasks/LEDGER.md` (2026-08-31) record open defects that are not otherwise tracked here; the blocked core-pipeline cluster is T041.
 

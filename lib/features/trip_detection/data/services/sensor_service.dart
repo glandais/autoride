@@ -15,6 +15,14 @@ part 'sensor_service.g.dart';
 /// watch the power mode, so dropping to a lower mode rebuilds them with a
 /// slower period; consumers subscribe through the providers and keep receiving
 /// samples across that rebuild.
+///
+/// The period is a **request, not a contract**: Android rounds it to a rate the
+/// sensor actually supports and speeds the stream up while the app is
+/// foregrounded, and iOS has its own floor. A 2026-09-02 log measured 55.6 Hz
+/// backgrounded and 83 Hz foregrounded on a Pixel 6a for a configured 50, and
+/// 51.4 Hz on an iPhone (L-086). What the app receives is therefore always to
+/// be read from the `hb` event — `mn` samples over `dt` ms, against the `hz`
+/// the same line carries — and never assumed from this number.
 Duration _samplingPeriodFor(Ref ref) {
   final rate = ref.watch(currentPowerModeProvider).sensorSamplingRate;
   return Duration(microseconds: (1000000 / rate).round());
@@ -57,6 +65,15 @@ Stream<GyroscopeData> gyroscopeStream(Ref ref) async* {
 /// `normal` mode, where `PowerModeConfig.sensorSamplingRate` asks for 50. The
 /// gyroscope is sampled-and-held rather than dropped: it is an input to the
 /// verdict, not a trigger for one.
+///
+/// This halves the merged rate; it does not *set* it. The result is one
+/// `MotionData` per accelerometer sample, and the accelerometer runs at
+/// whatever rate the OS grants for the requested period — 55.6 Hz
+/// backgrounded and 83 Hz foregrounded on the Pixel 6a of the following run,
+/// against a configured 50 (L-086, correcting `07fabee`'s "the configured rate
+/// exactly"). Whether to hold the pipeline to the configured rate by dropping
+/// the surplus is a detection-and-battery decision, and belongs to T045 with
+/// the rest of the motion arithmetic.
 @riverpod
 Stream<MotionData> motionDataStream(Ref ref) {
   final controller = StreamController<MotionData>();

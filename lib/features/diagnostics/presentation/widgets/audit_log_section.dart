@@ -95,7 +95,7 @@ class _AuditLogSectionState extends ConsumerState<AuditLogSection> {
                 label: 'Verbose',
                 description:
                     'Adds sensor summaries and rejected points, which is what '
-                    'explains an unexpected pause. ~4 MB per hour.',
+                    'explains an unexpected pause. ~2 MB per hour.',
               ),
             ],
             onChanged: (value) {

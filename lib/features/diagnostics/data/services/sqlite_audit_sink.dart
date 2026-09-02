@@ -263,26 +263,37 @@ class SqliteAuditSink implements AuditSink {
   ///
   /// Public so the controller can force one after a level change, and so the
   /// tests can drive it without writing 20 000 rows.
+  ///
+  /// Every bound that actually deletes something leaves an `aud a:purge` line
+  /// behind it. A purge used to be silent — it is retention, not an incident,
+  /// which was the L-077 reasoning — and the 2026-09-02 Pixel file is what
+  /// that costs: the byte bound erased the launch header, the `sess start`,
+  /// the `fgs` and the `perm` lines, and nothing in the file said so, leaving
+  /// a reader to conclude the session had never started (L-085). The marker is
+  /// written *after* the deletion, so it survives its own purge.
   Future<void> purge(Database db) async {
     final cutoff = _now().subtract(_retention).millisecondsSinceEpoch;
-    await db.delete(
+    final byAge = await db.delete(
       'audit_events',
       where: 't < ?',
       whereArgs: <Object?>[cutoff],
     );
+    await _reportPurge(db, byAge, 'age');
 
     // `id <= MAX(id) - N` is a primary-key range scan. The obvious
     // `NOT IN (SELECT ... ORDER BY t DESC LIMIT N)` would sort the whole table
     // on every purge.
-    await db.rawDelete(
+    final byRows = await db.rawDelete(
       'DELETE FROM audit_events WHERE id <= '
       '(SELECT MAX(id) FROM audit_events) - ?',
       <Object?>[_maxEvents],
     );
+    await _reportPurge(db, byRows, 'rows');
 
     // The byte bound is not implied by the row bound: ~130 bytes a line makes
     // 200 000 rows ~26 MB, past the 20 MB the log may occupy.
     var guard = 0;
+    var byBytes = 0;
     while (await _sizeBytes(db) > _maxBytes) {
       final deleted = await db.rawDelete(
         'DELETE FROM audit_events WHERE id <= '
@@ -290,10 +301,42 @@ class SqliteAuditSink implements AuditSink {
         <Object?>[_purgeChunkSize],
       );
       if (deleted == 0 || ++guard > 100) break;
+      byBytes += deleted;
       // Incremental rather than a full VACUUM: a full one blocks and
       // temporarily doubles the file. "Clear log" deletes the file outright,
       // which makes the question moot in the case that actually matters.
       await db.rawQuery('PRAGMA incremental_vacuum(256)');
+    }
+    await _reportPurge(db, byBytes, 'bytes');
+  }
+
+  /// Declare a retention deletion, written straight to the database rather
+  /// than through [write].
+  ///
+  /// Buffering it would put the marker at the mercy of the next flush, and the
+  /// byte bound bites when the log is at its largest — under exactly the memory
+  /// pressure that gets an Android process killed. A kill in that window would
+  /// leave the file truncated and unmarked all over again, which is the whole
+  /// defect (L-085). Inserting here makes the marker as durable as the deletion
+  /// it describes, and it also survives the final purge of [close], whose
+  /// buffer is never flushed again.
+  Future<void> _reportPurge(Database db, int rows, String why) async {
+    if (rows <= 0) return;
+    final at = _now().millisecondsSinceEpoch;
+    try {
+      await db.insert('audit_events', <String, Object?>{
+        't': at,
+        'type': AuditEvent.audit,
+        'lvl': 0,
+        'line': AuditEvent.encode(at, AuditEvent.audit, <String, Object?>{
+          'a': 'purge',
+          'n': rows,
+          'why': why,
+        }),
+      });
+    } catch (_) {
+      // The marker is worth less than the purge that produced it: a failed
+      // insert must not propagate out of a flush.
     }
   }
 

@@ -725,6 +725,34 @@ void main() {
       expect(session['alw'], isFalse);
       expect(session['issue'], 'alwaysMissing');
     });
+
+    test('a re-read that changes nothing is not journalled twice', () async {
+      await startController(
+        overridesFor(
+          backgroundStatusOverride: backgroundLocationStatusProvider
+              .overrideWith(
+                () => _FakeBackgroundLocationStatus(
+                  always: true,
+                  accuracy: LocationAccuracyStatus.precise,
+                ),
+              ),
+        ),
+      );
+
+      Iterable<Map<String, dynamic>> background() =>
+          sink.fieldsOf('perm').where((f) => f['k'] == 'background');
+      final before = background().length;
+
+      // What the app root does on every resume. It invalidates the provider,
+      // so the listener used to see an `AsyncLoading` carrying the previous
+      // value and then an identical `AsyncData` — two identical `perm` lines a
+      // millisecond apart, reading as a permission that had changed twice
+      // (L-086).
+      container.read(backgroundLocationStatusProvider.notifier).refresh();
+      await pumpEventQueue();
+
+      expect(background(), hasLength(before));
+    });
   });
 }
 

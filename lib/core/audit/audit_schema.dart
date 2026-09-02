@@ -13,7 +13,11 @@ abstract final class AuditSchema {
   /// Adding a new event type or a new field does **not** need a bump: the
   /// analysis side ignores what it does not know, and the stored line is opaque
   /// text, so old and new lines coexist in one file.
-  static const int version = 1;
+  ///
+  /// * 2 — the stop/resume detector clock is `so` (seconds since the
+  ///   stationary onset), where it used to be `pd` and read like the trip's
+  ///   own `pau` (L-086).
+  static const int version = 2;
 
   /// The detection thresholds this build is running with, under short keys.
   ///

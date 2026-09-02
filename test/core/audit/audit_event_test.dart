@@ -171,7 +171,7 @@ void main() {
 
       final decoded = jsonDecode(line) as Map<String, dynamic>;
       final k = decoded['k'] as Map<String, dynamic>;
-      expect(decoded['sv'], 1);
+      expect(decoded['sv'], 2);
       expect(k['cycMin'], 8);
       expect(k['gpsLoss'], 600);
       expect(k['conf'], 0.7);

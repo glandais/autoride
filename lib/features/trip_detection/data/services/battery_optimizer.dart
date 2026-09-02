@@ -178,15 +178,30 @@ class BatteryOptimizer extends _$BatteryOptimizer {
   /// A battery reading, on the existing 5-minute tick and on every OS-reported
   /// battery-state change. Two of these bracket a ride and give the %/hour
   /// figure item 4 asks for, without a profiler attached.
+  ///
+  /// A reading identical to the last one and taken within the same 5-minute
+  /// tick is dropped — see [BatteryAuditThrottle].
   void _auditBatteryLevel(BatteryState batteryState) {
+    // Before the throttle, not after: a reading taken while the log is off is
+    // not a line, and letting it advance the throttle would suppress the first
+    // real `bat` line for up to a tick — the one that opens the %/hour figure
+    // of `tasks/T041-device-validation.md` item 4.
+    if (!AuditLog.enabled) return;
+
+    final charging =
+        batteryState == BatteryState.charging ||
+        batteryState == BatteryState.full;
+    if (!batteryAuditThrottle.accept(
+      level: _currentBatteryLevel,
+      charging: charging,
+      at: DateTime.now(),
+    )) {
+      return;
+    }
+
     AuditLog.emit(
       AuditEvent.battery,
-      () => <String, Object?>{
-        'b': _currentBatteryLevel,
-        'ch':
-            batteryState == BatteryState.charging ||
-            batteryState == BatteryState.full,
-      },
+      () => <String, Object?>{'b': _currentBatteryLevel, 'ch': charging},
     );
   }
 
@@ -267,3 +282,48 @@ class CurrentPowerMode extends _$CurrentPowerMode {
     );
   }
 }
+
+/// Which `bat` readings are worth a line.
+///
+/// `onBatteryStateChanged` replays the current state to every fresh
+/// subscriber, and [BatteryOptimizer] is rebuilt whenever a detection session
+/// restarts, so a restart wrote two `bat` lines in the same second carrying the
+/// same level and the same charging flag — which reads as a battery that moved
+/// and came back (L-086). A repeat says nothing: the %/hour figure the log
+/// exists to support (`tasks/T041-device-validation.md` item 4) is computed
+/// from the changes.
+///
+/// Not suppressed forever, though: after [AppConstants.batteryCheckIntervalMinutes]
+/// an unchanged level is written again, so a flat battery still leaves proof
+/// that it was being read at all.
+///
+/// Owned as a single [batteryAuditThrottle] rather than a field of the
+/// notifier, because it has to outlive the notifier being disposed and rebuilt.
+class BatteryAuditThrottle {
+  int? _level;
+  bool? _charging;
+  DateTime? _at;
+
+  /// Whether this reading should be journalled, recording it if so.
+  bool accept({
+    required int level,
+    required bool charging,
+    required DateTime at,
+  }) {
+    final since = _at;
+    if (level == _level &&
+        charging == _charging &&
+        since != null &&
+        at.difference(since) <
+            const Duration(minutes: AppConstants.batteryCheckIntervalMinutes)) {
+      return false;
+    }
+    _level = level;
+    _charging = charging;
+    _at = at;
+    return true;
+  }
+}
+
+/// The process-wide battery-audit throttle. See [BatteryAuditThrottle].
+final BatteryAuditThrottle batteryAuditThrottle = BatteryAuditThrottle();

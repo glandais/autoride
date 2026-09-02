@@ -1864,7 +1864,9 @@ void main() {
       final decision = sink.fieldsOf('stop').last;
       expect(decision['d'], 'pauseTrip');
       expect(decision.containsKey('cs'), isTrue);
-      expect(decision.containsKey('pd'), isTrue);
+      // `so`, not `pd`: seconds since the stationary onset, which is not the
+      // trip's own `pau` (L-086, schema 2).
+      expect(decision.containsKey('so'), isTrue);
     });
 
     test(
@@ -1904,6 +1906,11 @@ void main() {
         expect(heartbeat.last['n'], 30);
         expect(heartbeat.last['mn'], greaterThan(0));
         expect(heartbeat.last['dt'], 30000);
+        // `hz` is what `mn / (dt / 1000)` has to be read against: the sampling
+        // period is a request the OS rounds to a rate of its own — 55.6 Hz
+        // backgrounded and 83 Hz foregrounded for a configured 50 on the
+        // 2026-09-02 Pixel (L-086).
+        expect(heartbeat.last['hz'], PowerModeConfig.normal.sensorSamplingRate);
       },
     );
 
@@ -2026,6 +2033,125 @@ void main() {
 
           final go = sink.fieldsOf('start').where((f) => f['go'] == true);
           expect(go, hasLength(1));
+        });
+      });
+
+      // Same defect class as `start`, on the two paths `07fabee` did not
+      // touch: 33 036 `stop` + 23 535 `res` lines in the 2026-09-02 Pixel log,
+      // with inter-event gaps of 1–12 ms (L-085).
+      group('the stop and resume evaluations are throttled', () {
+        Future<void> startTrip() async {
+          startDetector.verdict = true;
+          await begin();
+          await pushMotion(0);
+          startDetector.verdict = false;
+          expect(
+            _stateName(container.read(tripStateMachineProvider)),
+            'active',
+          );
+        }
+
+        test('samples inside one evaluation interval collapse to one '
+            '`stop` line', () async {
+          await startTrip();
+          sink.clear();
+
+          for (var i = 0; i < 50; i++) {
+            coordinator.advance(const Duration(milliseconds: 10));
+            await pushMotion(i);
+          }
+
+          expect(sink.fieldsOf('stop'), hasLength(1));
+        });
+
+        test(
+          'the interval elapsing lets the next `stop` line through',
+          () async {
+            await startTrip();
+            sink.clear();
+            await pushMotion(1);
+            expect(sink.fieldsOf('stop'), hasLength(1));
+
+            coordinator.advance(AppConstants.detectionEvaluationInterval);
+            await pushMotion(2);
+
+            expect(sink.fieldsOf('stop'), hasLength(2));
+          },
+        );
+
+        test('a pause decision is never dropped', () async {
+          await startTrip();
+          sink.clear();
+          await pushMotion(1);
+
+          // Inside the same interval as the line above, so only the decision
+          // itself can let it through.
+          stopDetector.decision = StopDecision.pauseTrip;
+          coordinator.advance(const Duration(milliseconds: 10));
+          await pushMotion(2);
+
+          final decisions = sink
+              .fieldsOf('stop')
+              .where((f) => f['d'] == 'pauseTrip');
+          expect(decisions, hasLength(1));
+        });
+
+        test('samples inside one evaluation interval collapse to one '
+            '`res` line', () async {
+          await startTrip();
+          container.read(tripStateMachineProvider.notifier).pauseTrip();
+          sink.clear();
+
+          for (var i = 0; i < 50; i++) {
+            coordinator.advance(const Duration(milliseconds: 10));
+            await pushMotion(i);
+          }
+
+          expect(sink.fieldsOf('res'), hasLength(1));
+        });
+
+        test('a trip ended by maxPause still says what decided it', () async {
+          await startTrip();
+          container.read(tripStateMachineProvider.notifier).pauseTrip();
+          sink.clear();
+
+          // The paused branch runs its own `analyzeForTripStop`, and its
+          // decision used to reach `_finalizeAndStopTrip` without a single
+          // `stop` line — the way trip 6 of the 2026-09-02 run ended (L-081).
+          stopDetector.decision = StopDecision.stopTrip;
+          await pushMotion(1);
+
+          final stops = sink
+              .fieldsOf('stop')
+              .where((f) => f['d'] == 'stopTrip');
+          expect(stops, hasLength(1));
+        });
+
+        test('a resume decision is never dropped', () async {
+          await startTrip();
+          container.read(tripStateMachineProvider.notifier).pauseTrip();
+          sink.clear();
+          await pushMotion(1);
+
+          stopDetector.resumeVerdict = true;
+          coordinator.advance(const Duration(milliseconds: 10));
+          await pushMotion(2);
+
+          final go = sink.fieldsOf('res').where((f) => f['go'] == true);
+          expect(go, hasLength(1));
+        });
+
+        test('`res` carries the movement timer the decision is made on', () async {
+          await startTrip();
+          container.read(tripStateMachineProvider.notifier).pauseTrip();
+          sink.clear();
+          await pushMotion(1);
+
+          // `cm` is not touched by the resume path: without `mv` the log shows
+          // a flat `res {go:false}` once a second while the sustained-movement
+          // timer starts and restarts underneath — the 100 ms defect L-082 is
+          // read from.
+          expect(sink.fieldsOf('res').last.containsKey('mv'), isTrue);
         });
       });
 
@@ -2221,4 +2347,8 @@ class _RecordingAuditSink implements AuditSink {
       fieldsOf(type).map((m) => m['e'] as String);
 
   Object? field(String type, String key) => fieldsOf(type).first[key];
+
+  /// Forget everything recorded so far, so a throttling assertion counts the
+  /// lines one phase produced rather than the ones that set it up.
+  void clear() => lines.clear();
 }
