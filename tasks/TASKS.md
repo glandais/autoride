@@ -400,6 +400,7 @@
   - *Tests*: 75 (472 → 547), including a group that pins the emitted event sequence in the coordinator: the real risk here is not a subtle bug but three missing `emit` calls, which would make the journal look like evidence while being silent about the transition under investigation.
   - *Replaces*: the dead `debugLoggingEnabled` setting, which nothing ever read.
   - *Not validated*: the share sheet itself, a 200 000-row log on a device, and exporting while Doze-suspended.
+  - *Review (2026-09-02)*: `tasks/T043-review.md` — 24 findings, two blocking (R-01: any settings change closes the shared sink and the log silently stops; R-02: pragma order leaves `auto_vacuum` off, so every purge past 20 MB empties the journal). Not merge-ready until R-01/R-02 are fixed.
 
 ---
 
