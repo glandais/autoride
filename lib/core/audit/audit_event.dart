@@ -1,0 +1,238 @@
+import 'dart:convert';
+
+/// The event type vocabulary (`e`) and the line encoder.
+///
+/// One event is one flat JSON object on one line. `t` and `e` come first
+/// because a `Map` literal preserves insertion order through `jsonEncode`, so
+/// `grep '"e":"trip"'` stays usable on the exported file without jq.
+///
+/// Keys are short on purpose. The full names live in
+/// `.claude/skills/autoride-audit-log/SKILL.md`, and the exported header
+/// carries the schema version so an old file stays readable.
+abstract final class AuditEvent {
+  // --- Application-level -----------------------------------------------
+  /// File/session header: build, device, timezone, active thresholds.
+  static const String header = 'hdr';
+
+  /// App lifecycle change. `st` = resumed|inactive|paused|hidden|detached.
+  static const String lifecycle = 'app';
+
+  /// Permission state. `k` = loc|locBg|notif|motion, `st`, `pre` (precise).
+  static const String permission = 'perm';
+
+  /// A user setting changed. `k`, `o` (old), `n` (new).
+  static const String setting = 'set';
+
+  /// The log talking about itself. `a` = overflow|purge|clkjump.
+  static const String audit = 'aud';
+
+  /// Wall-clock vs monotonic clock pair, re-emitted when they drift apart.
+  static const String clock = 'clk';
+
+  // --- Detection session ------------------------------------------------
+  /// Coordinator session. `a` = start|stop|suspend.
+  static const String session = 'sess';
+
+  /// Trip state machine transition. `f` (from), `to`, `why`.
+  static const String stateChange = 'st';
+
+  /// Motion-gated GPS gate. `a` = open|close|sched|cancel, `why`, `in` (s).
+  static const String gate = 'gate';
+
+  /// A location fix. `lat`, `lon`, `ac` (m), `sp` (m/s), `al`, `hd`, and `gt`
+  /// — the provider's own timestamp, which is what a Strava FIT aligns to.
+  static const String fix = 'fix';
+
+  /// Liveness proof. `n` ticks, `mn` motion samples, `fn` fixes, `dt` ms.
+  ///
+  /// Without it a gap in the timeline is ambiguous: the OS suspended the
+  /// process, or the log lost its buffer to a kill. Those are opposite
+  /// conclusions, and items 3 and 8 of the T041 checklist turn on which.
+  static const String heartbeat = 'hb';
+
+  // --- Detectors ---------------------------------------------------------
+  /// Trip-start evaluation. `c` confidence, `n` consecutive, `go`, `spk` km/h.
+  static const String startEval = 'start';
+
+  /// Detection window timed out. `el` seconds spent in `Detecting`.
+  static const String detectionTimeout = 'dto';
+
+  /// Start cooldown. `a` = arm|expire, `d` seconds.
+  static const String cooldown = 'cool';
+
+  /// Stationary window verdict (verbose). `sd`, `gy`, `sta`, `src`, `spk`.
+  static const String window = 'win';
+
+  /// 1 Hz sensor aggregate (verbose). Never raw 50 Hz samples.
+  static const String sensors = 'sens';
+
+  /// Trip-stop decision. `d` = continue|pause|stop, `cs`, `cm`, `pd`.
+  static const String stopEval = 'stop';
+
+  /// Resume evaluation while paused. `go`, `md` (movement duration).
+  static const String resumeEval = 'res';
+
+  // --- Trip lifecycle ----------------------------------------------------
+  /// `a` = start|pause|resume|stop|discard, plus the finalized metrics.
+  static const String trip = 'trip';
+
+  /// Pre-trip fixes replayed and the start back-dated (L-076).
+  static const String backdate = 'bdate';
+
+  /// Pre-trip location buffer activity (verbose). `a` = add|clear|tail.
+  static const String buffer = 'buf';
+
+  /// GPS-loss watchdog (L-074). `a` = arm|fire|disarm, `el`, `lim`, `ref`.
+  static const String gpsWatchdog = 'gpsw';
+
+  /// Location stream resubscription after an error or completion.
+  static const String gpsResubscribe = 'gps';
+
+  /// Route point kept (normal) or dropped (verbose). `why` = acc|speed|dist.
+  static const String routePoint = 'rp';
+
+  /// A database write. `a` = points|metrics, `n`, `ms`, `ok`.
+  static const String flush = 'flush';
+
+  // --- Environment -------------------------------------------------------
+  /// Power mode resolved. `m`, `b` (battery %), `ch`, `hz`, `df`, `ui`, `la`.
+  static const String powerMode = 'pwr';
+
+  /// Battery level sample, on the existing 5-minute tick.
+  static const String battery = 'bat';
+
+  /// Foreground service. `a` = start|stop.
+  static const String foregroundService = 'fgs';
+
+  /// Notification activity. `a` = show|update|cancel|action.
+  static const String notification = 'noti';
+
+  // --- Diagnostics -------------------------------------------------------
+  /// Bridged from [Logger]. `lv` = d|i|w|e, `tag`, `m`.
+  static const String log = 'log';
+
+  /// An error with its exception and the first stack frames.
+  static const String error = 'err';
+
+  /// Every type above, for the schema test that pins their uniqueness.
+  static const List<String> all = <String>[
+    header,
+    lifecycle,
+    permission,
+    setting,
+    audit,
+    clock,
+    session,
+    stateChange,
+    gate,
+    fix,
+    heartbeat,
+    startEval,
+    detectionTimeout,
+    cooldown,
+    window,
+    sensors,
+    stopEval,
+    resumeEval,
+    trip,
+    backdate,
+    buffer,
+    gpsWatchdog,
+    gpsResubscribe,
+    routePoint,
+    flush,
+    powerMode,
+    battery,
+    foregroundService,
+    notification,
+    log,
+    error,
+  ];
+
+  /// Longest string value kept in a field, in characters.
+  ///
+  /// A stack trace or a plugin error message can run to kilobytes, and one
+  /// pathological line must not eat the retention budget of a whole ride.
+  static const int maxStringLength = 300;
+
+  /// Decimal places kept for latitude and longitude — ~1 cm.
+  ///
+  /// Not rounded further: cross-referencing a ride against a FIT recorded on a
+  /// second device relies on a geometric alignment, and that is what pays for
+  /// the precision.
+  static const int coordinatePrecision = 7;
+
+  /// Decimal places kept for every other double. Millimetre / mm·s⁻¹ scale,
+  /// which is far below any sensor's real resolution and saves ~13 bytes per
+  /// value against Dart's default `toString`.
+  static const int defaultPrecision = 3;
+
+  static const Set<String> _coordinateKeys = <String>{'lat', 'lon'};
+
+  /// Encode one event as a single NDJSON line (no trailing newline).
+  ///
+  /// Never throws: a value the encoder does not understand degrades to its
+  /// `toString`, and a field that cannot be encoded at all is dropped rather
+  /// than losing the whole line.
+  static String encode(int t, String type, Map<String, Object?> fields) {
+    final map = <String, Object?>{'t': t, 'e': type};
+
+    for (final entry in fields.entries) {
+      if (entry.value == null) continue; // absent means absent — no `"x":null`
+      final value = _sanitize(entry.key, entry.value);
+      if (value != null) map[entry.key] = value;
+    }
+
+    try {
+      return jsonEncode(map);
+    } catch (_) {
+      // Should be unreachable after _sanitize, but the log must degrade rather
+      // than throw inside a stream callback.
+      return jsonEncode(<String, Object?>{'t': t, 'e': type, 'enc': 'failed'});
+    }
+  }
+
+  static Object? _sanitize(String key, Object? value) {
+    return switch (value) {
+      final int v => v,
+      final double v => _round(key, v),
+      final bool v => v,
+      final String v => _truncate(v),
+      final DateTime v => v.millisecondsSinceEpoch,
+      final Duration v => v.inMilliseconds,
+      final Enum v => v.name,
+      final Iterable<Object?> v =>
+        v.map((e) => _sanitize(key, e)).toList(growable: false),
+      final Map<Object?, Object?> v => <String, Object?>{
+        for (final e in v.entries)
+          e.key.toString(): _sanitize(e.key.toString(), e.value),
+      },
+      null => null,
+      _ => _truncate(value.toString()),
+    };
+  }
+
+  /// Round a double, and drop a non-finite one entirely.
+  ///
+  /// `double.nan` and the infinities are not representable in JSON — encoding
+  /// one throws and would cost the whole line. A sensor or a speed field can
+  /// legitimately be NaN when a provider has no value.
+  static Object? _round(String key, double value) {
+    if (!value.isFinite) return null;
+    final places = _coordinateKeys.contains(key)
+        ? coordinatePrecision
+        : defaultPrecision;
+    final rounded = double.parse(value.toStringAsFixed(places));
+    // Emit whole values as ints: "sp":3 instead of "sp":3.0, which also keeps
+    // counters that happen to be doubles readable.
+    if (rounded == rounded.roundToDouble() && rounded.abs() < 1e15) {
+      return rounded.toInt();
+    }
+    return rounded;
+  }
+
+  static String _truncate(String value) {
+    if (value.length <= maxStringLength) return value;
+    return '${value.substring(0, maxStringLength)}…';
+  }
+}
