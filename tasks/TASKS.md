@@ -383,7 +383,8 @@ acceptance test. **Diagnosis only at this stage — no solution has been chosen 
   - *Scope*: the three defects between "the detector says go" and "a ride is in History". Walking scores as cycling when no GPS speed is there to correct it (L-079); one departure starts two trips because nothing is re-entrant between the go and the state transition, leaving an orphan `active` row (L-080); a trip with no route point is saved, and only ever ends through the watchdog or `maxPause` (L-081). One task because the three share the same evidence and the same acceptance test: repeat the shopping run and expect zero trips in History and zero `active` rows in the database.
   - *Dependencies*: T041 (the pipeline), T043 (the log that decides it)
   - *Cross-refs*: L-011 (dead three-layer detector), L-022 (streak fixed, confidence not), L-068 (sub-60 s rule), L-074, L-075
-  - *Estimate*: multi-session — the L-080 half is done, the L-079 half is the detection problem itself
+  - *Partly done*: 2026-09-02 — **L-081 half closed** by ledger remediation row 21. A recording with fewer than `AppConstants.minTripRoutePoints` (2) route points is deleted instead of saved, on the live stop path as it already was on the recovery path — the two 0 m entries of the control run (627 s on one rejected fix, 134 s on none) no longer reach History. `Trip.isValidTrip` becomes `isRideWorthKeeping(routePointCount)`; a cumulative counter replaces the buffer length, which empties on every flush; the `trip` line gains `n` and the header's `k` gains `minTripPts`. On the way: a long ride discarded for want of GPS no longer arms the false-start cooldown, and a manual stop that gets discarded says so instead of returning to an unchanged history. Tests 664 → 674. **The safety-net half of L-081 stays open** — both trips ended through the L-074 watchdog or `maxPause` rather than a stop decision, which is the detection problem, and this change makes it visible only in the log (`trip discard` with `n: 0`).
+  - *Estimate*: multi-session — the L-080 and L-081 halves are done, the L-079 half is the detection problem itself
 
 - ☐ **T045**: Carried-Phone Motion Semantics — counters in seconds, a gate that closes on a walker
   - *Detail*: ledger L-082, L-083
@@ -408,7 +409,7 @@ acceptance test. **Diagnosis only at this stage — no solution has been chosen 
   - *Cross-refs*: L-077 (silent retention purge, by design), T041 §0 table
   - *Estimate*: half a session
 
-- *Recommended order*: T047 (done) → T044 (L-080 half, done) → T045 → T044 (L-081) → T046 (decision first). Ledger §6 says why.
+- *Recommended order*: T047 (done) → T044 (L-080 half, done) → T044 (L-081 half, done) → T045 → T046 (decision first). What is left of T044 is L-079 plus the safety-net half of L-081, and both are the detection problem. Ledger §6 says why.
 
 ---
 
@@ -454,8 +455,8 @@ acceptance test. **Diagnosis only at this stage — no solution has been chosen 
 **Blocked**: 0
 
 **Current Phase**: Phase 10 - Release Preparation, alongside the Phase 11 audit backlog and the Phase 12 export work
-**Last Completed**: T047 - audit log cost and honesty (2026-09-02); T044's L-080 half (one departure, one trip) the same day
-**Current Task**: T044–T046 (Phase 11.2) — the 2026-09-02 control run without a ride produced four 0 m trips on the Pixel and an invisible outing on the iPhone; ledger §6 holds the diagnoses. T047 is done, so the next verbose run keeps its own header, and T044's L-080 half is closed (one departure can no longer become two trips); L-079, L-081, T045 and T046 remain. Then T039/T041 — iOS release is 2 blockers from submittable (build attach + screenshots); T041 device validation under way (first iPhone run done: prompts OK, one crash found and fixed — see `tasks/T041-device-validation.md`). T038 open on manual Play Console setup; T037 open (§5.6/§5.7).
+**Last Completed**: T047 - audit log cost and honesty (2026-09-02); T044's L-080 and L-081 halves the same day
+**Current Task**: T044–T046 (Phase 11.2) — the 2026-09-02 control run without a ride produced four 0 m trips on the Pixel and an invisible outing on the iPhone; ledger §6 holds the diagnoses. T047 is done, so the next verbose run keeps its own header; T044's L-080 half is closed (one departure can no longer become two trips) and its L-081 half too (a recording with no route points is deleted, not saved). L-079, the safety-net half of L-081, T045 and T046 remain — all of them the detection problem. Then T039/T041 — iOS release is 2 blockers from submittable (build attach + screenshots); T041 device validation under way (first iPhone run done: prompts OK, one crash found and fixed — see `tasks/T041-device-validation.md`). T038 open on manual Play Console setup; T037 open (§5.6/§5.7).
 **Next Task**: T039 - iOS Release Configuration (T038 now owns the version scheme and `publish_beta.sh`, so T039 can extend both)
 **Audit backlog**: `tasks/AUDIT-FINDINGS.md` (2026-06-17) and `tasks/LEDGER.md` (2026-08-31) record open defects that are not otherwise tracked here; the blocked core-pipeline cluster is T041.
 

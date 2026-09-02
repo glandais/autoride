@@ -333,9 +333,19 @@ class AppConstants {
   // Minimum duration for a recording to be kept as a real trip (seconds).
   // Anything shorter is a false start (a bump, a mis-tap on the manual start
   // button) and is discarded instead of becoming a permanent history entry.
-  // Consumed by `Trip.isValidTrip`, the recorder's stop path and the startup
-  // recovery of interrupted trips.
+  // Consumed by `Trip.isRideWorthKeeping`, the recorder's stop path and the
+  // startup recovery of interrupted trips.
   static const int minTripDurationSeconds = 60;
+
+  // Minimum route points for a recording to be kept as a real trip.
+  //
+  // Two, because that is the fewest that can describe a movement at all: one
+  // point is a position, and `TripRecoveryService.rebuildFromRoutePoints` has
+  // always refused to rebuild a ride from fewer. The live stop path had no such
+  // rule, which is how the 2026-09-02 control run put two 0 m recordings in
+  // History — 627 s on a single rejected fix, and 134 s with no fix at all
+  // (L-081). Consumed by `Trip.isRideWorthKeeping`.
+  static const int minTripRoutePoints = 2;
 
   // Database
   static const String databaseName = 'autoride.db';

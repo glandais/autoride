@@ -86,7 +86,11 @@ class TripRecoveryService {
         final points = await _repository.getRoutePoints(tripId);
         final recovered = rebuildFromRoutePoints(trip, points);
 
-        if (recovered == null || !recovered.isValidTrip) {
+        // The point-count arm cannot actually decide here — `rebuild` already
+        // returned null for anything under two points — but this site applies
+        // the whole rule on purpose, so recovery and the live stop path cannot
+        // drift apart if `minTripRoutePoints` ever moves.
+        if (recovered == null || !recovered.isRideWorthKeeping(points.length)) {
           await _repository.deleteTrip(tripId);
           deleted.add(tripId);
           _logger.info(

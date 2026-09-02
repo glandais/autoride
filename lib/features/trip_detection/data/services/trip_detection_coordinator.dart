@@ -1136,7 +1136,17 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
     // whatever motion just fooled the detector into starting a trip is still
     // going on. The cooldown must follow `reset()`, which returns the detector
     // to `initial()` — the two only compose in this order.
-    if (finalTrip?.status == TripStatus.discarded) {
+    //
+    // `discarded` alone stopped being the right test when L-081 gave the
+    // recorder a second reason to throw a recording away: too few route points.
+    // A ride of eleven minutes through an urban canyon whose fixes were all
+    // rejected by the accuracy filter is discarded too, and it is not a false
+    // start — the detector was right, GPS was not there. Arming the cooldown on
+    // it would blind the detector for another 30 s just as the rider comes back
+    // into the open, and would journal a `falseStart` that never happened.
+    final tooShort =
+        (finalTrip?.duration ?? 0) < AppConstants.minTripDurationSeconds;
+    if (finalTrip?.status == TripStatus.discarded && tooShort) {
       AuditLog.emit(
         AuditEvent.cooldown,
         () => <String, Object?>{

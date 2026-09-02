@@ -133,8 +133,14 @@ class _RecorderLog {
   Completer<void>? startGate;
 
   /// Makes `stopRecording` hand back a trip flagged `discarded`, as the real
-  /// recorder does for a ride shorter than `minTripDurationSeconds` (L-068).
+  /// recorder does for a ride shorter than `minTripDurationSeconds` (L-068) or
+  /// one with too few route points to be a record of anything (L-081).
   bool discardOnStop = false;
+
+  /// Moving seconds carried by the trip `stopRecording` hands back. It is what
+  /// separates the two discard reasons at the coordinator: only the short one
+  /// is a false start.
+  int durationOnStop = 0;
 }
 
 class _SpyTripRecorderService extends TripRecorderService {
@@ -180,7 +186,7 @@ class _SpyTripRecorderService extends TripRecorderService {
       startTime: DateTime.now(),
       endTime: DateTime.now(),
       distance: 0,
-      duration: 0,
+      duration: log.durationOnStop,
       detectedActivity: ActivityType.cycling,
       confidenceScore: 0.9,
       status: log.discardOnStop ? TripStatus.discarded : TripStatus.completed,
@@ -1620,6 +1626,31 @@ void main() {
 
       expect(recorder.stopCalls, 1);
       expect(startDetector.cooldownCalls, 1);
+    });
+
+    test('a long ride discarded for want of GPS is not a false start (L-081)', () async {
+      // The other reason the recorder throws a recording away: eleven minutes
+      // of real riding through an urban canyon whose fixes were all rejected by
+      // the accuracy filter. The detector was right and GPS was not there, so
+      // backing off would blind it for another 30 s just as the rider comes
+      // back into the open — and would journal a false start that never was.
+      recorder
+        ..discardOnStop = true
+        ..durationOnStop = AppConstants.minTripDurationSeconds * 11;
+      await begin();
+
+      for (
+        var i = 1;
+        i <= AppConstants.tripStartMinConsecutiveDetections;
+        i++
+      ) {
+        await pushMotion(i);
+      }
+      stopDetector.decision = StopDecision.stopTrip;
+      await pushMotion(10);
+
+      expect(recorder.stopCalls, 1);
+      expect(startDetector.cooldownCalls, 0);
     });
 
     test('a completed trip does not arm the cooldown', () async {

@@ -74,9 +74,10 @@ class TripStateMachine extends _$TripStateMachine {
   /// the notification entirely whenever that provider happened to be
   /// loading/erroring (L-069).
   ///
-  /// [discarded] is set by the recorder when the recording was too short to be
-  /// kept (its row is deleted, not saved). Such a ride must not announce
-  /// itself with a "trip recorded" notification — but the foreground
+  /// [discarded] is set by the recorder when the recording was not a ride worth
+  /// keeping — too short (L-068), or with too few route points to say anything
+  /// happened (L-081). Its row is deleted, not saved, and such a ride must not
+  /// announce itself with a "trip recorded" notification — but the foreground
   /// notification still has to be cancelled, or a phantom "trip in progress"
   /// would outlive the trip.
   void stopTrip({bool discarded = false, Trip? finalTrip}) {

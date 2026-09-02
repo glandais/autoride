@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
+import 'package:autoride/core/constants/app_constants.dart';
 import 'package:autoride/features/trip_detection/data/services/trip_state_machine.dart';
 import 'package:autoride/features/trip_detection/data/services/trip_recorder_service.dart';
 import 'package:autoride/features/trip_detection/data/services/location_service.dart';
@@ -172,9 +173,24 @@ class _TripTrackingScreenState extends ConsumerState<TripTrackingScreen> {
 
     if (confirmed == true && mounted) {
       // Stop recording
-      await ref.read(tripRecorderServiceProvider.notifier).stopRecording();
+      final finalTrip = await ref
+          .read(tripRecorderServiceProvider.notifier)
+          .stopRecording();
 
       if (mounted) {
+        // A recording the stop path threw away is deleted outright, and the
+        // "trip recorded" notification is deliberately suppressed for it — so
+        // without this the user, who had just confirmed a dialog showing
+        // "0 m • 45:12", would land on an unchanged history with nothing to
+        // explain where their ride went. Deletion is right (a ride with no
+        // route point is no record of anything, L-081); doing it in silence
+        // after an explicit stop is not.
+        if (finalTrip?.status == TripStatus.discarded) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text(_discardReason(finalTrip!))));
+        }
+
         // Navigate back to home/history
         Navigator.of(context).pop();
 
@@ -182,6 +198,19 @@ class _TripTrackingScreenState extends ConsumerState<TripTrackingScreen> {
         // Navigator.of(context).pushNamed('/trip-detail', arguments: trip);
       }
     }
+  }
+
+  /// Why [trip] was not kept, in the user's terms.
+  ///
+  /// The two rules of `Trip.isRideWorthKeeping` fail for opposite reasons and a
+  /// single "not saved" would be useless: one is "you barely started", the
+  /// other is "we never got a position".
+  String _discardReason(Trip trip) {
+    if (trip.duration < AppConstants.minTripDurationSeconds) {
+      return 'Trip not saved: shorter than '
+          '${AppConstants.minTripDurationSeconds} seconds.';
+    }
+    return 'Trip not saved: no GPS positions were recorded.';
   }
 
   @override

@@ -482,10 +482,13 @@ void main() {
     test('stopRecording persists final trip and resets metrics', () async {
       final recorder = await readRecorder();
 
-      // Long enough to be a real ride; a 0 s recording is discarded (L-068)
-      // and covered by its own group below.
+      // Long enough to be a real ride, and with enough route points to be one:
+      // a 0 s recording is discarded (L-068) and a 0-point one is too (L-081),
+      // both covered by their own group below.
       fakeRepository.backdateStartBy = const Duration(minutes: 5);
       await startTrip(recorder, confidenceScore: 0.9);
+      await pushFix(_fix(0));
+      await pushFix(_fix(2));
 
       final finalTrip = (await recorder.stopRecording())!;
 
@@ -493,10 +496,8 @@ void main() {
       expect(fakeRepository.updatedTrips, hasLength(1));
       final updated = fakeRepository.updatedTrips.first;
       expect(updated.id, 1);
-      // No location points were injected, so distance stays zero and
-      // speed metrics remain null.
-      expect(updated.distance, 0.0);
-      expect(updated.maxSpeed, isNull);
+      expect(updated.distance, closeTo(22.3, 1.0));
+      expect(updated.maxSpeed, closeTo(18.0, 0.1));
       expect(
         updated.endTime.isAfter(updated.startTime) ||
             updated.endTime.isAtSameMomentAs(updated.startTime),
@@ -508,10 +509,13 @@ void main() {
 
       // Returned trip matches the persisted one.
       expect(finalTrip.id, updated.id);
-      expect(finalTrip.distance, 0.0);
+      expect(finalTrip.distance, closeTo(22.3, 1.0));
 
-      // No route points were ever buffered, so none were flushed.
-      expect(fakeRepository.savedRoutePointBatches, isEmpty);
+      // The two points were flushed on the way out.
+      expect(
+        fakeRepository.savedRoutePointBatches.expand((b) => b),
+        hasLength(2),
+      );
 
       // State machine back to idle and UI metrics reset.
       final tripState = container.read(tripStateMachineProvider);
@@ -631,6 +635,8 @@ void main() {
 
       fakeRepository.backdateStartBy = const Duration(minutes: 5);
       await startTrip(recorder, confidenceScore: 0.9);
+      await pushFix(_fix(0));
+      await pushFix(_fix(2));
 
       // A real pause: paused, some wall-clock time passes, resumed.
       await recorder.pauseRecording();
@@ -660,6 +666,8 @@ void main() {
 
       fakeRepository.backdateStartBy = const Duration(minutes: 5);
       await startTrip(recorder, confidenceScore: 0.9);
+      await pushFix(_fix(0));
+      await pushFix(_fix(2));
 
       final finalTrip = (await recorder.stopRecording())!;
 
@@ -672,6 +680,8 @@ void main() {
 
       fakeRepository.backdateStartBy = const Duration(minutes: 5);
       await startTrip(recorder, confidenceScore: 0.9);
+      await pushFix(_fix(0));
+      await pushFix(_fix(2));
       await recorder.pauseRecording();
       await Future<void>.delayed(const Duration(milliseconds: 1100));
 
@@ -689,6 +699,8 @@ void main() {
 
         fakeRepository.backdateStartBy = const Duration(minutes: 5);
         await startTrip(recorder, confidenceScore: 0.9);
+        await pushFix(_fix(0));
+        await pushFix(_fix(2));
 
         // Ten sub-second pauses. The old `+= pauseDuration.inSeconds` counted
         // every one of them as 0 s, so ~2 s of stopping vanished into the
@@ -714,6 +726,8 @@ void main() {
 
       fakeRepository.backdateStartBy = const Duration(minutes: 5);
       await startTrip(recorder, confidenceScore: 0.9);
+      await pushFix(_fix(0));
+      await pushFix(_fix(2));
       await recorder.pauseRecording();
 
       final finalTrip = (await recorder.stopRecording())!;
@@ -722,6 +736,169 @@ void main() {
       expect(finalTrip.id, 1);
       expect(container.read(tripStateMachineProvider).hasActiveTrip, isFalse);
     });
+  });
+
+  group('TripRecorderService - a ride with no record of itself (L-081)', () {
+    /// A recording long enough to pass the L-068 duration rule, so the point
+    /// count is the only thing left deciding.
+    Future<Trip> longRecording(
+      TripRecorderService recorder, {
+      List<LocationData> fixes = const [],
+    }) async {
+      fakeRepository.backdateStartBy = const Duration(minutes: 11);
+      await startTrip(recorder, confidenceScore: 0.9);
+      for (final fix in fixes) {
+        await pushFix(fix);
+      }
+      return (await recorder.stopRecording())!;
+    }
+
+    test('a long recording that never got a fix is deleted, not saved', () async {
+      final recorder = await readRecorder();
+
+      // Trip 6 of the 2026-09-02 control run: 134 s, no fix at all, 0 m, and it
+      // went into History as a ride.
+      final finalTrip = await longRecording(recorder);
+
+      expect(finalTrip.status, TripStatus.discarded);
+      expect(fakeRepository.deletedTripIds, equals([1]));
+      expect(fakeRepository.updatedTrips, isEmpty);
+    });
+
+    test('fixes the filters rejected do not count as a record of the ride', () async {
+      final recorder = await readRecorder();
+
+      // Trip 4: 627 s on one fix, and that fix read 100 m accuracy — dropped by
+      // `maxLocationAccuracyMeters`, so nothing was ever recorded. Two fixes
+      // here, only one of them usable: a counter that incremented before the
+      // filters would read 2 and keep this recording, which is exactly the
+      // mistake the count is meant to avoid.
+      final finalTrip = await longRecording(
+        recorder,
+        fixes: [_fix(0), _fix(2, accuracy: 100.0)],
+      );
+
+      expect(finalTrip.status, TripStatus.discarded);
+      expect(fakeRepository.deletedTripIds, equals([1]));
+    });
+
+    test('a single point is a position, not a ride', () async {
+      final recorder = await readRecorder();
+
+      final finalTrip = await longRecording(recorder, fixes: [_fix(0)]);
+
+      expect(
+        finalTrip.status,
+        TripStatus.discarded,
+        reason:
+            'one point yields 0 m — the same nothing, and the recovery '
+            'path has always refused to rebuild a ride from fewer than two',
+      );
+    });
+
+    test('two points are enough, however short the distance', () async {
+      final recorder = await readRecorder();
+
+      // Deliberately not a distance rule: this is 22 m, well under anything one
+      // would call a ride, and it is kept.
+      final finalTrip = await longRecording(
+        recorder,
+        fixes: [_fix(0), _fix(2)],
+      );
+
+      expect(finalTrip.status, TripStatus.completed);
+      expect(fakeRepository.deletedTripIds, isEmpty);
+      expect(fakeRepository.updatedTrips, hasLength(1));
+    });
+
+    test('fixes the distance filter dropped do not count either', () async {
+      final recorder = await readRecorder();
+
+      // `minRoutePointDistanceMeters` rejects the majority of fixes on a real
+      // ride, so it is the filter most likely to make an honest recording look
+      // like an empty one: three fixes, two of them within the filter, one
+      // point kept.
+      final finalTrip = await longRecording(
+        recorder,
+        fixes: [_fix(0), _fix(0), _fix(0)],
+      );
+
+      expect(finalTrip.status, TripStatus.discarded);
+    });
+
+    test('a ride recorded entirely from the pre-trip buffer is kept (L-076)', () async {
+      final recorder = await readRecorder();
+      fakeRepository.backdateStartBy = const Duration(minutes: 11);
+      container.read(tripStateMachineProvider.notifier).startDetecting();
+
+      // The replayed prefix goes through `_recordLocation` like a live fix, so
+      // it counts. A departure confirmed late — the whole ride already in the
+      // buffer and no live fix after it — must not be thrown away by the new
+      // rule.
+      await recorder.startRecording(
+        confidenceScore: 0.9,
+        activity: ActivityType.cycling,
+        priorLocations: [_fix(0), _fix(2), _fix(4)],
+      );
+      await pumpEventQueue();
+
+      final finalTrip = (await recorder.stopRecording())!;
+
+      expect(finalTrip.status, TripStatus.completed);
+      expect(fakeRepository.deletedTripIds, isEmpty);
+    });
+
+    test('the count does not leak from one recording to the next', () async {
+      final recorder = await readRecorder();
+
+      // Trip 1: a real ride.
+      await longRecording(recorder, fixes: [_fix(0), _fix(2)]);
+      expect(fakeRepository.deletedTripIds, isEmpty);
+
+      // Trip 2 on the same recorder, with no fix at all. It must be judged on
+      // its own points, not on the ones trip 1 collected.
+      final second = await longRecording(recorder);
+
+      expect(second.status, TripStatus.discarded);
+      expect(fakeRepository.deletedTripIds, equals([2]));
+    });
+
+    test('the count survives a flush, so a long ride is not discarded at the '
+        'end of it', () async {
+      final recorder = await readRecorder();
+      fakeRepository.backdateStartBy = const Duration(minutes: 11);
+      await startTrip(recorder, confidenceScore: 0.9);
+
+      // Enough fixes to empty the buffer at least once: the count the discard
+      // decision reads must be cumulative, not the buffer's length, which is 0
+      // for most of a real ride.
+      for (var i = 0; i <= AppConstants.routePointBufferSize * 2; i += 2) {
+        await pushFix(_fix(i));
+      }
+      expect(fakeRepository.savedRoutePointBatches, isNotEmpty);
+
+      final finalTrip = (await recorder.stopRecording())!;
+
+      expect(finalTrip.status, TripStatus.completed);
+      expect(fakeRepository.deletedTripIds, isEmpty);
+    });
+
+    test(
+      'the live metrics report the ride\'s points, not the buffer\'s',
+      () async {
+        final recorder = await readRecorder();
+        await startTrip(recorder);
+
+        for (var i = 0; i <= AppConstants.routePointBufferSize * 2; i += 2) {
+          await pushFix(_fix(i));
+        }
+
+        // Before this counter existed the UI read `_routePointBuffer.length`,
+        // which sawtooths back to zero on every flush.
+        final metrics = container.read(tripRecorderServiceProvider).value!;
+        expect(metrics.routePointCount, AppConstants.routePointBufferSize + 1);
+      },
+    );
   });
 
   group('TripRecorderService - short trips are discarded (L-068)', () {
@@ -737,7 +914,7 @@ void main() {
         expect(fakeRepository.deletedTripIds, equals([1]));
         expect(fakeRepository.updatedTrips, isEmpty);
         expect(finalTrip.status, TripStatus.discarded);
-        expect(finalTrip.isValidTrip, isFalse);
+        expect(finalTrip.isRideWorthKeeping(0), isFalse);
       },
     );
 
@@ -801,6 +978,8 @@ void main() {
 
       fakeRepository.backdateStartBy = const Duration(minutes: 5);
       await startTrip(recorder, confidenceScore: 0.9);
+      await pushFix(_fix(0));
+      await pushFix(_fix(2));
       await recorder.stopRecording();
 
       expect(fakeRepository.deletedTripIds, isEmpty);

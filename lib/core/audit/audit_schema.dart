@@ -61,6 +61,7 @@ abstract final class AuditSchema {
     'rpBuf': AppConstants.routePointBufferSize,
     'recInt': AppConstants.maxRecordingIntervalSeconds,
     'minTrip': AppConstants.minTripDurationSeconds,
+    'minTripPts': AppConstants.minTripRoutePoints,
     // Pre-trip buffer (L-076)
     'preBufS': AppConstants.preTripLocationBufferDuration.inSeconds,
     'preBufN': AppConstants.preTripLocationBufferMaxPoints,

@@ -148,13 +148,30 @@ extension TripExtensions on Trip {
   /// counters rather than the timestamps.
   Duration get totalDuration => movingDuration + pausedDuration;
 
-  /// Check if the trip is long enough to be kept.
+  /// Whether this recording is a ride worth keeping, given how many route
+  /// points it actually produced.
   ///
-  /// Applied by the recorder when a recording stops and by the startup
-  /// recovery of interrupted trips: anything shorter is a false start and is
-  /// deleted rather than persisted. There is no minimum-distance rule — a slow
-  /// or short ride is still a ride.
-  bool get isValidTrip => duration >= AppConstants.minTripDurationSeconds;
+  /// Applied by the recorder when a recording stops and by the startup recovery
+  /// of interrupted trips, so one rule answers both. Two arms, and they reject
+  /// different things:
+  ///
+  /// * shorter than [AppConstants.minTripDurationSeconds] — a false start (a
+  ///   bump, a mis-tap on the manual start button);
+  /// * fewer than [AppConstants.minTripRoutePoints] route points — a recording
+  ///   with no evidence that anything happened. The 2026-09-02 control run
+  ///   saved two of those as rides: trip 4 ran 627 s on a single fix the
+  ///   accuracy filter rejected, trip 6 ran 134 s without a fix at all, both
+  ///   0 m (L-081). Recovery already deleted such a trip after a process kill —
+  ///   `rebuildFromRoutePoints` cannot describe a ride from fewer than two
+  ///   points — so the same recording used to survive or not depending on how
+  ///   it ended.
+  ///
+  /// Still no minimum-*distance* rule: a slow or short ride is a ride, and the
+  /// question here is whether the app has any record of one, not how far it
+  /// went.
+  bool isRideWorthKeeping(int routePointCount) =>
+      duration >= AppConstants.minTripDurationSeconds &&
+      routePointCount >= AppConstants.minTripRoutePoints;
 
   /// Format duration as HH:MM:SS
   String get formattedDuration {

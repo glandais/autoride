@@ -58,12 +58,12 @@ short; the table below is the whole vocabulary.
 | `hb` | Heartbeat, every 30 s | `n` ticks, `mn` motion samples, `fn` fixes, `dt` ms, `hz` configured sampling rate (L-086) |
 | `start` | Trip-start evaluation | `c` confidence, `n` streak, `go`, `mag` `gyr` `spk` |
 | `dto` | Detection window timed out | `el` s, `n` streak at timeout |
-| `cool` | Start cooldown | `a` = arm (`d` s, `why` = falseStart) / expire (`d` s) |
+| `cool` | Start cooldown | `a` = arm (`d` s, `why` = falseStart) / expire (`d` s). Armed only by a recording discarded for being **too short** — a long one discarded for want of route points is a GPS failure, not a false start (L-081) |
 | `win` | Stationary window (**verbose**) | `n` `sd` m/s² `gy` rad/s `sta` `src` = gps/gps+vib/sensors `spk` km/h. Throttled to 1 Hz; every change of `sta` or `src` is kept (L-085) |
 | `sens` | 1 Hz sensor aggregate (**verbose**) | `am` `gm` `ms` (MotionState) |
 | `stop` | Stop decision | `d` = continueTrip/pauseTrip/stopTrip, `sta` `cs` `cm` `so` s. Throttled to `k.evalMs`; every decision and counter change is kept (L-085). While the trip is *paused* only the decisions appear here — the once-a-second `continue` is `res`'s job |
 | `res` | Resume evaluation | `go` `cm` `mv` ms of continuous movement (what the decision is made on, against `k.resume`) `so`. Throttled like `stop`, keyed on `mv` restarting |
-| `trip` | Trip lifecycle | `a` = start/pause/resume/stop/discard, `id`; start: `conf` `act` `pre` (or `man` on a manual start); pause: `dist`; resume: `pau`; stop/discard: `dist` m `dur` s `pau` s `avg` `max` `pts` |
+| `trip` | Trip lifecycle | `a` = start/pause/resume/stop/discard, `id`; start: `conf` `act` `pre` (or `man` on a manual start); pause: `dist`; resume: `pau`; stop/discard: `dist` m `dur` s `pau` s `avg` `max` `n` `pts`. `n` is every route point the ride kept, and it is what the discard decision turns on against `k.minTripPts` (L-081); `pts` is present **only** when the final flush failed, and counts the points still stuck in the buffer |
 | `bdate` | Start back-dated (L-076) | `id` `k` fixes `m` metres `ts` new start `was` old start |
 | `buf` | Pre-trip buffer (**verbose**) | `a` = add/tail/clear, `n` fixes, `sp` span ms, `kp` kept by the riding-tail cut (tail), `why` = inactivityTimeout/stop/session/dispose/gpsError/recording/tripEnd (clear) |
 | `gpsw` | GPS-loss watchdog (L-074) | `a` = arm/fire/disarm, `el` s `lim` s `ref` = lastFix/tripStart |

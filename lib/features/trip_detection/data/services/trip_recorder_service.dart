@@ -102,6 +102,16 @@ class TripRecorderService extends _$TripRecorderService {
   Trip? _activeTrip;
   final List<RoutePoint> _routePointBuffer = [];
 
+  /// Route points this recording has kept, buffered and already-flushed alike.
+  ///
+  /// `_routePointBuffer.length` cannot answer "how much of this ride was
+  /// recorded": it empties on every flush, so it reads 0 for most of a long
+  /// ride. The stop path needs the cumulative figure to tell a ride from a
+  /// recording of nothing (L-081), and the live metrics were reporting the
+  /// buffer's length as the trip's point count, which sawtoothed back to zero
+  /// every `routePointBufferSize` fixes.
+  int _routePointsRecorded = 0;
+
   /// Held as the subscription's `close` tear-off (`ProviderSubscription` is not
   /// exported by `riverpod_annotation`).
   ///
@@ -308,6 +318,7 @@ class TripRecorderService extends _$TripRecorderService {
     _totalDistanceMeters = 0.0;
     _maxSpeedKmh = 0.0;
     _totalPauseDuration = Duration.zero;
+    _routePointsRecorded = 0;
     _lastLocation = null;
 
     // Do NOT clear the buffer: it may still hold points from a previous trip
@@ -460,11 +471,12 @@ class TripRecorderService extends _$TripRecorderService {
       maxSpeed: _maxSpeedKmh > 0 ? _maxSpeedKmh : null,
     );
 
-    // A recording shorter than `minTripDurationSeconds` is a false start (a
-    // bump, a mis-tap on the manual start button). It is deleted rather than
-    // kept as a `discarded` row: `route_points` cascades on the trip's primary
-    // key, so one delete removes the whole thing and leaves no debris behind.
-    final discarded = !candidate.isValidTrip;
+    // A recording that is too short (a false start: a bump, a mis-tap on the
+    // manual start button) or that produced no usable route points (a ride the
+    // app has no record of — L-081) is deleted rather than kept as a
+    // `discarded` row: `route_points` cascades on the trip's primary key, so
+    // one delete removes the whole thing and leaves no debris behind.
+    final discarded = !candidate.isRideWorthKeeping(_routePointsRecorded);
     final finalTrip = candidate.copyWith(
       status: discarded ? TripStatus.discarded : TripStatus.completed,
     );
@@ -479,6 +491,11 @@ class TripRecorderService extends _$TripRecorderService {
         'pau': finalTrip.pauseDuration,
         'avg': finalTrip.avgSpeed,
         'max': finalTrip.maxSpeed,
+        // Total points kept by this recording. It is what the discard decision
+        // above turns on, so a `discard` line has to carry it: a 0 m trip with
+        // `n` 0 is L-081's case, one with points is a rider who really did go
+        // nowhere.
+        'n': _routePointsRecorded,
         'pts': flushed ? null : _routePointBuffer.length,
       },
       critical: true,
@@ -486,8 +503,10 @@ class TripRecorderService extends _$TripRecorderService {
 
     if (discarded) {
       _logger.info(
-        'Discarding trip ${candidate.id}: ${candidate.duration}s is below the '
-        '${AppConstants.minTripDurationSeconds}s minimum',
+        'Discarding trip ${candidate.id}: ${candidate.duration}s / '
+        '$_routePointsRecorded point(s), against a '
+        '${AppConstants.minTripDurationSeconds}s and '
+        '${AppConstants.minTripRoutePoints}-point minimum',
       );
       try {
         await _repository!.deleteTrip(candidate.id!);
@@ -517,6 +536,7 @@ class TripRecorderService extends _$TripRecorderService {
     _totalDistanceMeters = 0.0;
     _maxSpeedKmh = 0.0;
     _totalPauseDuration = Duration.zero;
+    _routePointsRecorded = 0;
 
     // Update state machine. The finalized trip is handed over explicitly: the
     // end-of-trip notification must report the numbers just written to the
@@ -718,6 +738,7 @@ class TripRecorderService extends _$TripRecorderService {
 
     // Add to buffer
     _routePointBuffer.add(routePoint);
+    _routePointsRecorded++;
     _lastLocation = location;
 
     // Update UI metrics
@@ -928,7 +949,7 @@ class TripRecorderService extends _$TripRecorderService {
         durationSeconds: activeDuration,
         avgSpeedKmh: avgSpeed,
         maxSpeedKmh: _maxSpeedKmh > 0 ? _maxSpeedKmh : null,
-        routePointCount: _routePointBuffer.length,
+        routePointCount: _routePointsRecorded,
       ),
     );
   }

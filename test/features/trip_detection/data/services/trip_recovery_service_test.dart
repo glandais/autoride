@@ -308,7 +308,7 @@ void main() {
 
       expect(rebuilt.duration, 600);
       expect(rebuilt.pauseDuration, 0);
-      expect(rebuilt.isValidTrip, isTrue);
+      expect(rebuilt.isRideWorthKeeping(2), isTrue);
     });
 
     test('subtracts the snapshotted pause total (L-073)', () {
@@ -353,7 +353,7 @@ void main() {
 
       expect(rebuilt.duration, equals(0));
       expect(rebuilt.pauseDuration, equals(20));
-      expect(rebuilt.isValidTrip, isFalse);
+      expect(rebuilt.isRideWorthKeeping(2), isFalse);
     });
 
     test('keeps the trip identity and marks it completed', () {
