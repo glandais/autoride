@@ -12,6 +12,8 @@ import 'package:share_plus/share_plus.dart';
 import 'package:sqflite/sqflite.dart';
 
 import 'package:autoride/core/audit/audit_event.dart';
+import 'package:autoride/core/audit/audit_level.dart';
+import 'package:autoride/core/audit/audit_log.dart';
 import 'package:autoride/core/audit/audit_schema.dart';
 import 'package:autoride/core/constants/app_constants.dart';
 import 'package:autoride/core/utils/logger.dart';
@@ -157,6 +159,12 @@ class AuditExportService {
 
     return AuditEvent.encode(now.millisecondsSinceEpoch, AuditEvent.header, {
       'sv': AuditSchema.version,
+      // The level in force at export time. Several verdicts in the reading
+      // procedure turn on it — a verbose-only event missing from a normal-level
+      // file means nothing, and the drain figure is only quotable from a
+      // normal-level run — and the per-launch header is not guaranteed to be
+      // inside a `since`-filtered slice.
+      'lvl': _installedLevel.label,
       'app': '${package.version}+${package.buildNumber}',
       'os': device.os,
       'dev': device.model,
@@ -171,6 +179,15 @@ class AuditExportService {
       'k': AuditSchema.thresholds(),
     });
   }
+
+  /// The level the sink is actually installed at, read from the port rather
+  /// than from the controller's `state`: `state` is protected outside the
+  /// notifier, and the port is the thing that decided which lines exist.
+  AuditLogLevel get _installedLevel => AuditLog.verbose
+      ? AuditLogLevel.verbose
+      : AuditLog.enabled
+      ? AuditLogLevel.normal
+      : AuditLogLevel.off;
 
   Future<({String os, String model})> _deviceDescription() async {
     final plugin = DeviceInfoPlugin();

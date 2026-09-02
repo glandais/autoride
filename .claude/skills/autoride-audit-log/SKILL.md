@@ -19,9 +19,23 @@ those, never today's `lib/core/constants/app_constants.dart` — explaining a
 decision an older build took with the current constants is how you conclude the
 opposite of what happened.
 
-Also in the header: `lvl` (normal or verbose — several verdicts below depend on
-which), `app`, `os`, `dev`, `tz` (offset to apply to every `t`), `n`, and
-`from`/`to`.
+Also in that first line: `lvl` (normal or verbose — several verdicts below
+depend on which), `app`, `os`, `dev`, `tz` (offset to apply to every `t`),
+`tzn`, `n`, `from`/`to` and `exp` (when the file was written).
+
+There are **two kinds of `hdr` line** and they carry different fields:
+
+| | Written by | Fields |
+|---|---|---|
+| File header | the exporter, once, always the first line | `sv` `lvl` `app` `os` `dev` `tz` `tzn` `n` `from` `to` `exp` `k` |
+| Launch header | the app, once per process, at the off→on transition and after "Clear log" | `sv` `lvl` `clk` = `{wall,mono}` `k` |
+
+Counting launch headers is how the number of process launches is bounded (item
+8 below): one per process, so a second one mid-file means either a relaunch or
+the user toggling the log off and on again. `set {k:"auditLog"}` tells the two
+apart. Early T043 builds emitted a launch header on *every* settings change, so
+if the `hdr` lines outnumber what the `app` lifecycle events can account for,
+suspect that rather than a string of process deaths.
 
 ## 2. The line format
 
@@ -31,36 +45,37 @@ short; the table below is the whole vocabulary.
 
 | `e` | Meaning | Key fields |
 |---|---|---|
-| `hdr` | Header (per file and per app launch) | `sv` `app` `os` `dev` `tz` `lvl` `k` |
+| `hdr` | Header — file or launch, see above | `sv` `lvl` `k` (+ the columns above) |
 | `app` | Lifecycle | `st` = resumed/inactive/paused/hidden/detached |
-| `perm` | Permission / auto-detection inputs | `k` `en` `loc` `onb` `go` |
-| `set` | A setting changed | `k` `o` (old) `n` (new) |
-| `sess` | Coordinator session | `a` = start/stop/suspend, `why` |
+| `perm` | Permission / auto-detection inputs | `k` = autoDetection, `en` `loc` `onb` `go` |
+| `set` | A setting changed | `k` = automaticDetection/batteryMode/backgroundLocation/auditLog/auditLogLevel, `o` (old) `n` (new) |
+| `clk` | Wall/monotonic pair, re-emitted when they drift > 2 s apart | `wall` ms, `mono` ms since launch, `drift` ms |
+| `aud` | The log about itself | `a` = overflow (the only one), `n` lines dropped |
+| `sess` | Coordinator session | `a` = start/stop/suspend; `trip` (active trip) on a start, `why` = deferredUntilTripEnds on a deferred stop |
 | `st` | Trip state transition | `f` (from) `to` |
-| `gate` | Motion-gated GPS | `a` = open/close/sched/cancel, `why`, `in` (s) |
+| `gate` | Motion-gated GPS | `a` = open/sched/close; `why` = trip/motion (open), stationary (sched), inactivityTimeout/stop/session/dispose (close); `in` (s) on a sched |
 | `fix` | GPS fix | `lat` `lon` `ac` m `sp` **m/s** `al` `hd` `gt` (provider time) |
 | `hb` | Heartbeat, every 30 s | `n` ticks, `mn` motion samples, `fn` fixes, `dt` ms |
 | `start` | Trip-start evaluation | `c` confidence, `n` streak, `go`, `mag` `gyr` `spk` |
 | `dto` | Detection window timed out | `el` s, `n` streak at timeout |
-| `cool` | Start cooldown | `a` = arm/expire, `d` s, `why` |
-| `win` | Stationary window (**verbose**) | `n` `sd` m/s² `gy` rad/s `sta` `src` = gps/sensors `spk` km/h |
+| `cool` | Start cooldown | `a` = arm (`d` s, `why` = falseStart) / expire (`d` s) |
+| `win` | Stationary window (**verbose**) | `n` `sd` m/s² `gy` rad/s `sta` `src` = gps/gps+vib/sensors `spk` km/h |
 | `sens` | 1 Hz sensor aggregate (**verbose**) | `am` `gm` `ms` (MotionState) |
 | `stop` | Stop decision | `d` = continueTrip/pauseTrip/stopTrip, `sta` `cs` `cm` `pd` s |
 | `res` | Resume evaluation | `go` `cm` `pd` |
-| `trip` | Trip lifecycle | `a` = start/pause/resume/stop/discard, `id` `dist` m `dur` s `pau` s `avg` `max` `man` `pre` |
+| `trip` | Trip lifecycle | `a` = start/pause/resume/stop/discard, `id`; start: `conf` `act` `pre` (or `man` on a manual start); pause: `dist`; resume: `pau`; stop/discard: `dist` m `dur` s `pau` s `avg` `max` `pts` |
 | `bdate` | Start back-dated (L-076) | `id` `k` fixes `m` metres `ts` new start `was` old start |
-| `buf` | Pre-trip buffer (**verbose**) | `a` `n` |
+| `buf` | Pre-trip buffer (**verbose**) | `a` = add/tail/clear, `n` fixes, `sp` span ms, `kp` kept by the riding-tail cut (tail), `why` = inactivityTimeout/stop/session/dispose/gpsError/recording/tripEnd (clear) |
 | `gpsw` | GPS-loss watchdog (L-074) | `a` = arm/fire/disarm, `el` s `lim` s `ref` = lastFix/tripStart |
-| `gps` | Location stream trouble | `a` = resub/error, `n` failures, `in` ms backoff |
+| `gps` | Location stream trouble | `a` = resub (`n` failures, `in` ms backoff) / error (`ex`) |
 | `rp` | Route point | `a` = keep (normal) / drop (**verbose**), `why` = acc/speed/dist, `d` `ac` `spk` |
-| `flush` | Database write | `a` `n` `ms` `ok` |
+| `flush` | Database write | `a` = points, `n` `ms` `ok` |
 | `pwr` | Power mode | `m` `b` % `hz` `df` `ui` `la` |
-| `bat` | Battery sample (5 min) | `b` % `ch` |
+| `bat` | Battery sample (5 min, and on every OS battery-state change) | `b` % `ch` |
 | `fgs` | Foreground service | `a` = start/stop |
-| `noti` | Notification | `a` `id` |
+| `noti` | Notification | `a` = show/cancel/action; `k` = fg/start/stop on a show or cancel, the action id (pause/resume/stop) on an action. Never the text. `show k:"fg"` is **verbose** |
 | `log` | Bridged from `Logger` | `lv` = d/i/w/e, `tag` `m` |
-| `err` | Error | `tag` `m` `ex` `st` |
-| `aud` | The log about itself | `a` = overflow/purge/clkjump, `n` |
+| `err` | Error | `tag` `m` `ex` `st` (top 3 frames) |
 
 Speeds: `fix.sp` is **m/s**; `win.spk`, `start.spk`, `rp.spk` are **km/h**.
 
@@ -79,8 +94,10 @@ gzcat log.ndjson.gz | jq -r 'select(.e=="hb")|[.t,.n,.mn,.fn,.dt]|@tsv' \
 # Battery profile → %/hour.
 gzcat log.ndjson.gz | jq -r 'select(.e=="bat")|[.t,.b]|@tsv'
 
-# Time the GPS gate spent open (the first suspect for drain).
-gzcat log.ndjson.gz | jq -r 'select(.e=="gate")|[.t,.a]|@tsv'
+# Time the GPS gate spent open (the first suspect for drain). `why` on a close
+# separates a real stationary timeout from a session teardown, which is not the
+# rider standing still.
+gzcat log.ndjson.gz | jq -r 'select(.e=="gate")|[.t,.a,.why]|@tsv'
 
 # Everything around one instant.
 gzcat log.ndjson.gz | jq -c --argjson a 1756800000000 --argjson b 1756800120000 \
@@ -119,8 +136,10 @@ of the two traces has a problem — say so instead of picking one.
 ## 5. Verdicts for `tasks/T041-device-validation.md`
 
 **Item 1 — GPS stops when stationary.** Expect `win`/`sens` stationary →
-`gate {a:"sched",in:30}` → 30 s with no `fix` → `gate {a:"close"}` → **no `fix`
-after that**. A later `fix` proves a leak.
+`gate {a:"sched",why:"stationary",in:30}` → 30 s with no `fix` →
+`gate {a:"close",why:"inactivityTimeout"}` → **no `fix` after that**. A later
+`fix` proves a leak. Any other `why` on the close (`stop`, `session`,
+`dispose`) means the session was torn down and the item was not exercised.
 *Limit*: the OS location indicator is not observable from Dart. The log proves
 the app stopped *asking*, not that the OS turned the chip off. It gives the
 exact instant the indicator should go dark, which makes the visual check
@@ -128,7 +147,7 @@ verifiable rather than approximate.
 
 **Item 4 — battery drain.** `bat` every 5 min gives %/hour; `pwr` says which
 mode was in force; the summed `gate open`→`close` time is the denominator.
-*Require `lvl: "normal"`* — the log itself consumes, and a verbose run is not a
+*Require `lvl: "normal"` in the file header* — the log itself consumes, and a verbose run is not a
 neutral observer. Ask for a control run with the log off before quoting a
 number.
 
@@ -160,8 +179,12 @@ cross-reference is worth the most.
 ## 6. Traps
 
 - `t` is emission, not occurrence.
-- `aud {a:"overflow"}` is a **declared** gap (the buffer was trimmed). Do not
-  read it as an OS suspension — that is what `hb` is for.
-- A missing verbose event may just mean the log ran at normal level. Check
-  `hdr.lvl` before concluding anything is absent.
+- `aud {a:"overflow"}` is a **declared** gap (the buffer was trimmed) and the
+  only `aud` action there is. Do not read it as an OS suspension — that is what
+  `hb` is for. A retention purge is silent, and a clock jump is a `clk`, not an
+  `aud`.
+- A missing verbose event may just mean the log ran at normal level. Check the
+  file header's `lvl` before concluding anything is absent.
+- A `sess {a:"stop"}` is not followed by a `suspend` for the same stop: one stop
+  is one `sess` line, and only a session that actually started produces one.
 - Timestamps are UTC ms; apply `hdr.tz` before quoting a time to the user.

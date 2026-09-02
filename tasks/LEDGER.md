@@ -94,8 +94,9 @@ Six choices, and the reasons that are not obvious:
 
 Corrections to the plan this change came from, found while building it: 200 000 rows is ~26 MB at
 ~130 bytes a line, above the 20 MB target, so retention needs a third bound in bytes
-(`PRAGMA page_count * page_size`, which also avoids `DiskSpace` reasoning in the iOS privacy
-manifest); and at verbose level a full journal covers about seven *hours of riding*, not seven
+(`PRAGMA page_count * page_size`, which sizes the file from inside SQLite and so needs no
+`DiskSpace` reasoning in the iOS privacy manifest — `FileTimestamp` is a separate matter and is
+already declared there, since the export stats the file it wrote); and at verbose level a full journal covers about seven *hours of riding*, not seven
 days, so the settings screen shows the span actually covered rather than repeating the promise.
 Two real defects were fixed in the sink while testing it: a failed batch used to be dropped rather
 than retried, and `flush()` returned early while another flush was in flight — which would have

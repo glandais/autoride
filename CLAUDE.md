@@ -44,6 +44,8 @@ flutter run --release            # Test on physical device (sensors/GPS)
 | **Auto-Detection Lifecycle** | `lib/features/trip_detection/presentation/providers/auto_detection_controller.dart` |
 | **Battery Optimization** | `lib/features/trip_detection/data/services/battery_optimizer.dart` |
 | **Platform Info Service** | `lib/core/platform/services/platform_info_service.dart` |
+| **Audit Log (emit API)** | `lib/core/audit/audit_log.dart` (vocabulary: `audit_event.dart`) |
+| **Reading an Audit Log** | `.claude/skills/autoride-audit-log/SKILL.md` |
 | **Android Permissions** | `android/app/src/main/AndroidManifest.xml` |
 | **iOS Permissions** | `ios/Runner/Info.plist` |
 | **iOS Privacy Manifest** | `ios/Runner/PrivacyInfo.xcprivacy` |
@@ -108,6 +110,7 @@ commit in the repository's history uses it.
 ```
 lib/
 ├── core/
+│   ├── audit/            # AuditLog port + event vocabulary + level (opt-in log)
 │   ├── constants/        # AppConstants - all thresholds
 │   ├── extensions/
 │   ├── permissions/      # Permission models, rationales, handler service, widgets
@@ -121,6 +124,7 @@ lib/
 │   │   ├── presentation/ # Providers, screens, widgets
 │   │   └── services/     # Background service
 │   ├── trip_history/     # data/repositories + presentation
+│   ├── diagnostics/      # SQLite audit sink, export, log controller + UI
 │   ├── settings/         # data/{repositories,services} + domain + presentation
 │   └── onboarding/       # data/services + domain + presentation
 ├── shared/

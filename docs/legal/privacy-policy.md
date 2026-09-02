@@ -94,10 +94,10 @@ readings, which arrive fifty times a second, are never recorded at any setting.
 diagnosed from evidence instead of guesswork. It is **off unless you turn it on**.
 
 When it is on, the log holds: trip state changes, the detector's decisions and scores, **GPS fixes
-including latitude, longitude, accuracy and speed**, battery level and power mode, permission
-status, notification activity, app foreground/background changes, and error messages. At the
-"Verbose" setting it also holds the sensor summaries described above and the GPS fixes the
-recorder rejected.
+including latitude, longitude, accuracy, speed, altitude and heading**, battery level and power
+mode, permission status, which notification was shown, cancelled or tapped (never the text it
+displayed), app foreground/background changes, and error messages. At the "Verbose" setting it
+also holds the sensor summaries described above and the GPS fixes the recorder rejected.
 
 It does not hold your name, your email address, any account, or any advertising or device
 identifier. It does hold your device model, OS version and app version.

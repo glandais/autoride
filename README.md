@@ -355,14 +355,24 @@ Be respectful, inclusive, and constructive. We're all here to build something us
 - Your preferences and settings
 
 Nothing else is stored. Accelerometer and gyroscope readings are processed in memory to recognise
-pedalling and are **never written to disk** — that is how GPS stays switched off until you
-actually start riding.
+pedalling and are **never written to the trip database** — that is how GPS stays switched off
+until you actually start riding. One caveat: the optional diagnostic log (Settings → Diagnostic
+log, **off by default**) writes one *summary* per second — an average and a variability figure —
+into its own database when set to "Verbose". The raw 50 Hz readings are never recorded at any
+setting.
 
 ### What leaves your device
 
-Exactly one thing: when you open a map, your device requests map images from the OpenStreetMap
-Foundation's tile servers, which reveals your IP address and the map area you are viewing to that
-third party. If you never open a map, the app makes **no network requests at all**.
+**Automatically, exactly one thing:** when you open a map, your device requests map images from
+the OpenStreetMap Foundation's tile servers, which reveals your IP address and the map area you
+are viewing to that third party. If you never open a map, the app makes **no network requests at
+all**.
+
+**On your explicit request:** two features write a file and hand it to your device's own share
+sheet — **Export as FIT** on a trip, and **Export log** for the diagnostic log (which contains
+your precise GPS positions, and asks you to confirm first). Nothing is sent until you pick a
+destination, and the app never learns what you picked. See
+[§3.3 of the Privacy Policy](https://glandais.github.io/autoride/legal/privacy-policy.html).
 
 There is no AutoRide account, no AutoRide server, and no analytics, crash-reporting or advertising
 SDK. Your trips are never uploaded — not to us, not to anyone.

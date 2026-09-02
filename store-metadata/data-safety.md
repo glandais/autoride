@@ -32,7 +32,7 @@ about whether you misrepresented your app.
 | Preferences (detection, battery, notifications, units, theme) | `SharedPreferences` key `user_settings` (JSON) | `settings_repository.dart:11` |
 | Theme selection | `SharedPreferences` key `theme_mode` | `theme_provider.dart:10` |
 | Onboarding completion flag | `SharedPreferences` key `onboarding_complete` | `app_constants.dart:178` |
-| **Diagnostic log (opt-in, off by default)**: trip state changes, detector decisions and scores, GPS fixes (lat/lon/accuracy/speed), battery level and power mode, permission status, notifications, app lifecycle, errors — and, at "Verbose", one-per-second sensor *summaries* and rejected fixes | SQLite `audit_events` table in a **separate** `autoride_audit.db` | `audit_database.dart`, `sqlite_audit_sink.dart` |
+| **Diagnostic log (opt-in, off by default)**: trip state changes, detector decisions and scores, GPS fixes (lat/lon/accuracy/speed/altitude/heading), battery level and power mode, permission status, which notification was shown/cancelled/tapped (never its text), app lifecycle, errors — and, at "Verbose", one-per-second sensor *summaries* and rejected fixes | SQLite `audit_events` table in a **separate** `autoride_audit.db` | `audit_database.dart`, `sqlite_audit_sink.dart` |
 
 Database names and versions: `autoride.db` v3 and `autoride_audit.db` v1
 (`app_constants.dart`, `databaseVersion` / `auditDatabaseVersion`).

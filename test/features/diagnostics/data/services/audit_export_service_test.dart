@@ -89,6 +89,9 @@ void main() {
     final header = jsonDecode(lines.first) as Map<String, dynamic>;
     expect(header['e'], 'hdr');
     expect(header['sv'], 1);
+    // The reading procedure branches on the level, and a `since`-filtered
+    // slice can exclude the per-launch header that also carries it.
+    expect(header['lvl'], 'verbose');
     expect(header['app'], '1.0.0+6');
     expect(header['tz'], matches(RegExp(r'^[+-]\d{2}:\d{2}$')));
   });
@@ -163,6 +166,12 @@ void main() {
     expect(lines, hasLength(1));
     expect((jsonDecode(lines.single) as Map<String, dynamic>)['e'], 'hdr');
     expect((jsonDecode(lines.single) as Map<String, dynamic>)['n'], 0);
+    // Still readable: the file header carries the level even when the slice
+    // contains no launch header.
+    expect(
+      (jsonDecode(lines.single) as Map<String, dynamic>)['lvl'],
+      'verbose',
+    );
   });
 
   test('the file name is stamped in local time, like the FIT export', () {

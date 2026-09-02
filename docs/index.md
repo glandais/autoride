@@ -23,10 +23,15 @@ Your trips — including the GPS route of every ride — are stored only in the 
 on your phone. There is no AutoRide account, no AutoRide server, and no analytics or advertising
 SDK in the app.
 
-The one exception: viewing a map requests map images from the OpenStreetMap Foundation's servers,
-which necessarily reveals your IP address and the area of the map you are looking at to that
-third party. If you never open a map, the app makes no network requests at all. This is explained
-in full in [§3 of the Privacy Policy](legal/privacy-policy.md).
+The one *automatic* exception: viewing a map requests map images from the OpenStreetMap
+Foundation's servers, which necessarily reveals your IP address and the area of the map you are
+looking at to that third party. If you never open a map, the app makes no network requests at
+all. This is explained in full in [§3 of the Privacy Policy](legal/privacy-policy.md).
+
+Separately, you can *choose* to export a file — a ride as a `.fit` activity, or the optional
+diagnostic log — and send it through your device's own share sheet; nothing leaves until you pick
+a destination, as described in
+[§3.3 of the Privacy Policy](legal/privacy-policy.md).
 
 Uninstalling the app deletes everything it stored.
 
