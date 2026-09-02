@@ -6,7 +6,7 @@ description: What AutoRide stores on your device, what leaves it, and how to del
 # AutoRide — Privacy Policy
 
 **Effective date:** 2026-07-25
-**Last updated:** 2026-07-25
+**Last updated:** 2026-09-02
 **Applies to:** AutoRide for iOS and Android (`io.github.glandais.autoride`)
 **Contact:** gabriel.landais@gmail.com
 
@@ -18,9 +18,14 @@ AutoRide records your bike trips on your phone. Trip data — including the GPS 
 ride — is stored only in the app's private storage on your device. There is no AutoRide account,
 no AutoRide server, and no analytics or advertising SDK in the app.
 
-One exception, and it is the only one: when you view a map, your device requests map images
-directly from the OpenStreetMap Foundation's tile servers. Those requests necessarily reveal your
-IP address and the area of the map you are looking at to that third party. Details in §3.
+One exception to that, and it is the only automatic one: when you view a map, your device requests
+map images directly from the OpenStreetMap Foundation's tile servers. Those requests necessarily
+reveal your IP address and the area of the map you are looking at to that third party. Details
+in §3.
+
+Separately, you can *choose* to export a file — a ride as a `.fit` activity, or an optional
+diagnostic log — and send it wherever you like through your device's own share sheet. Nothing
+leaves until you pick a destination. Details in §3.3.
 
 Uninstalling AutoRide deletes everything it stored.
 
@@ -78,12 +83,32 @@ AutoRide continuously reads your device's accelerometer and gyroscope to recogni
 pattern of pedalling. This is what allows the app to keep GPS switched off until you actually
 start riding, which is the app's main battery-saving mechanism.
 
-Sensor readings are processed in memory and discarded. They are not written to the database, not
-kept in a log, and not transmitted.
+Sensor readings are processed in memory and discarded. They are not written to the trip database
+and not transmitted. If you turn the diagnostic log on (§2.5) and set it to "Verbose", one
+*summary* per second — an average and a variability figure — is written to that log; the raw
+readings, which arrive fifty times a second, are never recorded at any setting.
+
+### 2.5 Diagnostic log (off by default)
+
+**Settings → Diagnostic log** records what trip detection is doing, so a problem you report can be
+diagnosed from evidence instead of guesswork. It is **off unless you turn it on**.
+
+When it is on, the log holds: trip state changes, the detector's decisions and scores, **GPS fixes
+including latitude, longitude, accuracy and speed**, battery level and power mode, permission
+status, notification activity, app foreground/background changes, and error messages. At the
+"Verbose" setting it also holds the sensor summaries described above and the GPS fixes the
+recorder rejected.
+
+It does not hold your name, your email address, any account, or any advertising or device
+identifier. It does hold your device model, OS version and app version.
+
+The log lives in its own database on your device, separate from your trips. It expires
+automatically (§6), you can erase it at any time (§7.1), and it goes nowhere unless you export and
+send it yourself (§3.3).
 
 ## 3. What leaves your device
 
-### 3.1 Map tiles (the only transmission)
+### 3.1 Map tiles (the only automatic transmission)
 
 When a screen shows a map — the tracking screen and a trip's route map — your device requests
 map images from `tile.openstreetmap.org`, operated by the OpenStreetMap Foundation (OSMF).
@@ -104,12 +129,31 @@ https://wiki.osmfoundation.org/wiki/Privacy_Policy
 
 If you never open a map view, AutoRide makes no network requests at all.
 
-### 3.2 What is *not* transmitted
+### 3.2 What is *not* transmitted automatically
 
 There is no analytics SDK, no crash-reporting SDK, no advertising SDK, and no AutoRide backend.
 The app has no login, no account, and no sync. Your trips, routes, sensor data and settings are
-not uploaded, shared, sold, or used for advertising or profiling — by anyone, including the
+never uploaded, shared, sold, or used for advertising or profiling — by anyone, including the
 developer.
+
+The one qualification is §3.3: files *you* choose to export and send. If you send the developer a
+diagnostic log, the developer does then have the data in it. It is used only to diagnose the
+problem you reported, is not kept beyond that, is not combined with anything else, and is deleted
+on request.
+
+### 3.3 Files you export yourself
+
+Two features write a file and hand it to your device's own share sheet. Nothing is sent anywhere
+until you pick a destination there, and AutoRide never learns what you picked.
+
+- **Export as FIT** (on a trip) writes that ride — its route, timings and speeds — as a standard
+  `.fit` activity file, so you can put it into Strava, Garmin Connect, Files, or anything else
+  that reads one.
+- **Export log** (Settings → Diagnostic log) writes the diagnostic log (§2.5) as a compressed
+  `.ndjson.gz` file. **It contains your precise GPS positions.** The app shows you exactly what
+  the file holds and asks you to confirm before the share sheet opens.
+
+Both are entirely your decision, one file at a time. Share them only with someone you trust.
 
 ## 4. Permissions, and why each is needed
 
@@ -136,10 +180,16 @@ For §3.1, the map tile request is necessary to display the map you chose to ope
 
 ## 6. How long data is kept
 
-Trip records and route points are kept **until you delete them**. There is no automatic
-expiry — the app assumes you want your riding history.
+Trip records and route points are kept **until you delete them**. There is no automatic expiry —
+the app assumes you want your riding history.
 
 Settings persist until you reset them or uninstall.
+
+The diagnostic log (§2.5) is the one exception, and the only data in the app that expires on its
+own: entries are removed once they are older than 7 days, and the log is capped in size (about
+20 MB) and in number of entries, whichever limit is reached first. At the "Verbose" setting the
+size limit is normally what bites, so a full log reaches back some hours of riding rather than
+seven days. The Settings screen shows the period actually covered.
 
 ## 7. Your control over your data
 
@@ -149,6 +199,10 @@ Settings persist until you reset them or uninstall.
 point from the database. This cannot be undone.
 
 **Settings → Data Management → Reset settings** restores all preferences to their defaults.
+
+**Settings → Diagnostic log → Clear log** permanently deletes every recorded diagnostic event.
+Note that turning the log *off* does not erase what it already recorded — deliberately, so you can
+stop recording and still export the ride you just did. Use "Clear log" to erase it.
 
 ### 7.2 Uninstall
 
@@ -187,10 +241,14 @@ Material changes — in particular, any change that would cause data to leave yo
 be reflected here with a new "Last updated" date before the feature ships, and the app's store
 listings and privacy declarations will be updated in the same release.
 
-Two features are planned but **not present** in the current version: opt-in contribution of
-anonymised sensor data to improve activity detection, and export of your own data to a file.
-Neither is implemented today. If either ships, this policy will be updated first, and the sensor
-contribution will be off unless you explicitly turn it on.
+**2026-09-02** — two changes, both of them things you start yourself: exporting a ride as a `.fit`
+activity file, and an optional, off-by-default diagnostic log you can export and send. §2.5 and
+§3.3 describe them, §6 covers how long the log is kept and §7.1 how to erase it. Neither sends
+anything on its own.
+
+One feature remains planned but **not present**: opt-in contribution of anonymised sensor data to
+improve activity detection. If it ships, this policy will be updated first, and it will be off
+unless you explicitly turn it on.
 
 ## 11. Contact
 

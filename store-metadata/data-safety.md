@@ -1,7 +1,7 @@
 # AutoRide — Data Collection Declarations (source of truth)
 
-**Last verified against the code:** 2026-07-25
-**Verified at commit:** `cc1c088` (branch `wip`)
+**Last verified against the code:** 2026-09-02
+**Verified at commit:** `cc1c088` (branch `wip`); §1-§3 re-verified 2026-09-02 for T042/T043
 **Play Console answers filed:** 2026-07-25 (T038) — app `io.github.glandais.autoride`, ID
 `4975962567441094743`. §5 reflects what is actually filed, including the approximate-location
 decision recorded there.
@@ -32,8 +32,15 @@ about whether you misrepresented your app.
 | Preferences (detection, battery, notifications, units, theme) | `SharedPreferences` key `user_settings` (JSON) | `settings_repository.dart:11` |
 | Theme selection | `SharedPreferences` key `theme_mode` | `theme_provider.dart:10` |
 | Onboarding completion flag | `SharedPreferences` key `onboarding_complete` | `app_constants.dart:178` |
+| **Diagnostic log (opt-in, off by default)**: trip state changes, detector decisions and scores, GPS fixes (lat/lon/accuracy/speed), battery level and power mode, permission status, notifications, app lifecycle, errors — and, at "Verbose", one-per-second sensor *summaries* and rejected fixes | SQLite `audit_events` table in a **separate** `autoride_audit.db` | `audit_database.dart`, `sqlite_audit_sink.dart` |
 
-Database name and version: `autoride.db`, v1 (`app_constants.dart:174-175`).
+Database names and versions: `autoride.db` v3 and `autoride_audit.db` v1
+(`app_constants.dart`, `databaseVersion` / `auditDatabaseVersion`).
+
+**The diagnostic log is off unless the user turns it on** (`UserSettings.auditLogEnabled`,
+default `false`); until then no audit database file is created at all. It self-expires after 7
+days / 200 000 entries / ~20 MB, whichever comes first, and Settings → Diagnostic log → Clear log
+deletes the file. It never leaves the device on its own — see §3.4.
 
 **Android backup posture:** `allowBackup="false"` and `fullBackupContent="false"`
 (`AndroidManifest.xml`, with rationale in the comment above the `<application>` tag). The route
@@ -46,7 +53,7 @@ local device backups. This is a **known inconsistency** with the Android posture
 
 | Data | Why it is not "collected" |
 |---|---|
-| Accelerometer and gyroscope readings | Read continuously for pedalling detection, processed in memory, never written to the database (there is no sensor table) or transmitted. `sensor_service.dart`, `motion_detection_service.dart`, `cycling_pattern_detector.dart` |
+| Accelerometer and gyroscope readings | Read continuously for pedalling detection, processed in memory, never written to the trip database (there is no sensor table) or transmitted. `sensor_service.dart`, `motion_detection_service.dart`, `cycling_pattern_detector.dart`. **Caveat since T043:** with the opt-in diagnostic log at "Verbose", one aggregate per second (mean, std-dev, motion state) is written to `autoride_audit.db`. The raw 50 Hz stream is never recorded at any level. |
 | OS version, API level, `isPhysicalDevice` | Read at runtime for per-version permission branching. Not persisted, not transmitted. `platform_info_service.dart:23-36` |
 
 **No device identifier is read anywhere.** `PlatformInfoService` uses `device_info_plus` for OS
@@ -79,6 +86,29 @@ If no map view is opened, the app makes **zero** network requests.
 No analytics SDK. No crash reporting. No advertising SDK. No AutoRide backend, account, login, or
 sync. Confirmed by §8's egress grep: the two tile URLs above are the only outbound endpoints in
 `lib/`.
+
+### 3.3 Files the user exports (T042, T043)
+
+Two features write a file and pass it to the OS share sheet. Neither performs a network request:
+the app hands `share_plus` a path and learns nothing about where it goes.
+
+| Feature | File | Contents | Code |
+|---|---|---|---|
+| Export as FIT | `.fit` activity | One trip: route, timings, speeds | `trip_export_service.dart` |
+| Export log | `.ndjson.gz` | The diagnostic log of §1, **including precise coordinates** | `audit_export_service.dart` |
+
+**Why this is not "sharing" under either store's definition, and the condition attached.**
+Google's and Apple's definitions both exclude a transfer the *user* initiates through system UI,
+**provided the user is informed of what is being transferred**. For the FIT file the content is
+self-evident (it is the ride the user asked to export). For the diagnostic log it is not, so the
+app shows a blocking dialog naming what the file holds — precise GPS positions, routes, departure
+points, device model, OS and app version — and what it does not (name, email, advertising ID),
+before the share sheet opens.
+
+That dialog is therefore **a condition of the declarations in §5 and §4 being accurate, not a
+nicety**. `AuditPrivacyDialog` (`audit_privacy_dialog.dart`) implements it and
+`audit_log_section_test.dart` pins that cancelling it performs no export. Removing or weakening it
+re-opens the "Data shared" answer on both stores.
 
 ## 4. iOS — `PrivacyInfo.xcprivacy` target contents
 
@@ -213,6 +243,7 @@ Adding any of these means updating all five artefacts in §0 **in the same commi
 |---|---|
 | **7.1 T034 — Data Collection Service** (contribute sensor data for ML) | This is the first feature that would transmit user data to the developer. Requires: iOS manifest addition, ASC App Privacy update, Play "Collected" + purpose "Analytics"/"App functionality", privacy policy §3 and §10 rewritten, explicit opt-in consent flow, and a data-retention statement. Treat as a major privacy change, not an increment. |
 | **7.2 T035 — Training Data Export** (CSV/JSON export) | Depends on destination. Export to a user-chosen local file is not "collection". Export that uploads anywhere is. Also touches the iOS `FileTimestamp` reasons. |
+| **7.2b T043 — Diagnostic log** (shipped 2026-09-02) | Handled without a re-declaration, on the §3.3 reasoning: opt-in, stored locally, self-expiring, and exported only by an informed user through the system share sheet. What would re-open it: uploading a log automatically, sending one anywhere without the confirmation dialog, or recording raw sensor streams. |
 | **7.3 Any analytics or crash-reporting SDK** (Firebase, Sentry, …) | Play "App info and performance → Crash logs / Diagnostics", ASC "Diagnostics", iOS manifest additions plus the SDK's own privacy manifest, and possibly `NSPrivacyTrackingDomains`. |
 | **7.4 Accounts, sync, or a backend** | Rewrites everything. The current policy's central claim ("no server") stops being true. |
 | **7.5 iOS backup exclusion** (setting `NSURLIsExcludedFromBackupKey` on `autoride.db`) | Would let the privacy policy §7.3 claim the same protection on both platforms. Currently the policy discloses the asymmetry honestly instead. Small code change, meaningful privacy improvement — worth doing, but it changes what the policy says. |
@@ -226,8 +257,17 @@ Adding any of these means updating all five artefacts in §0 **in the same commi
 grep -rn "http://\|https://\|Uri\.\|HttpClient\|Dio\|package:http" lib --include="*.dart" \
   | grep -v "\.g\.dart\|\.freezed\.dart"
 
-# 2. Persistent storage. Expect trips + route_points only; no sensor or identifier table.
+# 2. Persistent storage. Expect trips + route_points in the trip database, and
+#    audit_events (opt-in diagnostic log, §1) in its own database. No sensor or
+#    identifier table in either.
 grep -n "CREATE TABLE" lib/features/trip_detection/data/services/database_service.dart
+grep -rn "CREATE TABLE" lib/features/diagnostics/data/services/audit_database.dart
+
+# 2b. The diagnostic log must stay off by default and gated behind the warning
+#     dialog. Expect `@Default(false) bool auditLogEnabled` and a call to
+#     AuditPrivacyDialog.show before any shareLog().
+grep -n "auditLogEnabled" lib/features/settings/domain/models/user_settings.dart
+grep -n "AuditPrivacyDialog.show" -A3 lib/features/diagnostics/presentation/widgets/audit_log_section.dart
 
 # 3. Preferences keys. Expect user_settings, theme_mode, onboarding_complete.
 grep -rn "SharedPreferences\|prefs\.set" lib --include="*.dart" \
