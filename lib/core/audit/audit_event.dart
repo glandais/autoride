@@ -62,16 +62,20 @@ abstract final class AuditEvent {
   /// — the provider's own timestamp, which is what a Strava FIT aligns to.
   static const String fix = 'fix';
 
-  /// Liveness proof. `n` ticks, `mn` motion samples, `fn` fixes, `dt` ms, and
-  /// `hz` — the sampling rate the power mode in force asks for.
+  /// Liveness proof. `n` ticks, `mn` motion samples, `dr` samples dropped by
+  /// the rate hold, `fn` fixes, `dt` ms, and `hz` — the sampling rate the power
+  /// mode in force asks for.
   ///
   /// Without it a gap in the timeline is ambiguous: the OS suspended the
   /// process, or the log lost its buffer to a kill. Those are opposite
   /// conclusions, and items 3 and 8 of the T041 checklist turn on which.
   ///
   /// `hz` sits next to `mn` because the sampling period is a request the OS
-  /// rounds to a rate of its own: `mn / (dt / 1000)` is what the pipeline
-  /// really ran at, and only the pair says whether that matches (L-086).
+  /// rounds to a rate of its own. Since T045 the pipeline holds itself to `hz`
+  /// by dropping the surplus, so it takes all three: `mn / (dt / 1000)` is what
+  /// the pipeline really ran at, `(mn + dr) / (dt / 1000)` is what the OS
+  /// really delivered, and only that second figure can still be compared with
+  /// `hz` the way L-086 was found.
   static const String heartbeat = 'hb';
 
   // --- Detectors ---------------------------------------------------------

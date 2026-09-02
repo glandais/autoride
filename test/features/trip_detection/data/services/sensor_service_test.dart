@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sensors_plus/sensors_plus.dart';
+import 'package:autoride/core/constants/app_constants.dart';
 import 'package:autoride/features/trip_detection/data/services/battery_optimizer.dart';
 import 'package:autoride/features/trip_detection/data/services/sensor_service.dart';
 import 'package:autoride/features/trip_detection/domain/models/motion_data.dart';
@@ -153,7 +154,13 @@ void main() {
     late StreamController<GyroscopeData> gyroController;
     late ProviderContainer container;
 
+    /// Injected clock: the merged stream holds itself to the configured
+    /// sampling period, so a test pushing samples as fast as the event loop
+    /// allows would have them dropped as a burst. Advanced by [pushAccel].
+    late DateTime clock;
+
     setUp(() {
+      clock = DateTime(2026, 1, 1, 12);
       accelController = StreamController<AccelerometerData>.broadcast();
       gyroController = StreamController<GyroscopeData>.broadcast();
       container = ProviderContainer(
@@ -162,9 +169,21 @@ void main() {
             (ref) => accelController.stream,
           ),
           gyroscopeStreamProvider.overrideWith((ref) => gyroController.stream),
+          motionClockProvider.overrideWith(
+            (ref) =>
+                () => clock,
+          ),
         ],
       );
     });
+
+    /// Advance the clock past one sampling slot, then push an accelerometer
+    /// sample — i.e. a source running at exactly the configured rate.
+    Future<void> pushAccel(AccelerometerData accel) async {
+      clock = clock.add(const Duration(milliseconds: 21));
+      accelController.add(accel);
+      await pumpEventQueue();
+    }
 
     tearDown(() async {
       container.dispose();
@@ -241,7 +260,7 @@ void main() {
       }
       expect(emitted, hasLength(1));
 
-      accelController.add(
+      await pushAccel(
         AccelerometerData(
           x: 0.0,
           y: 0.0,
@@ -249,11 +268,284 @@ void main() {
           timestamp: DateTime(2026, 1, 1, 0, 0, 1),
         ),
       );
-      await pumpEventQueue();
 
       expect(emitted, hasLength(2));
       // ... and the pairing carries the most recent gyroscope reading.
       expect(emitted.last.gyroscope.x, 0.2);
+    });
+
+    test('holds the merged stream to the configured rate (L-086, T045)', () async {
+      final emitted = <MotionData>[];
+      container.listen(motionDataStreamProvider, (previous, next) {
+        next.whenData(emitted.add);
+      });
+      await pumpEventQueue();
+
+      gyroController.add(
+        GyroscopeData(x: 0.1, y: 0.1, z: 0.1, timestamp: DateTime(2026)),
+      );
+      await pumpEventQueue();
+
+      // A source running at 83 Hz — what a Pixel 6a delivered foregrounded for
+      // a configured 50 (L-086). Two seconds of it.
+      const sourcePeriod = Duration(milliseconds: 12);
+      final start = clock;
+      for (var i = 0; i < 167; i++) {
+        clock = clock.add(sourcePeriod);
+        accelController.add(
+          AccelerometerData(x: 0.0, y: 0.0, z: 9.8, timestamp: clock),
+        );
+        await pumpEventQueue();
+      }
+
+      final elapsed = clock.difference(start).inMilliseconds / 1000;
+      final rate = emitted.length / elapsed;
+      expect(
+        rate,
+        closeTo(AppConstants.sensorSamplingRateNormal.toDouble(), 2.0),
+        reason: 'the surplus is dropped, not passed to the coordinator',
+      );
+    });
+
+    test(
+      'a source slower than the configured rate is passed through whole',
+      () async {
+        final emitted = <MotionData>[];
+        container.listen(motionDataStreamProvider, (previous, next) {
+          next.whenData(emitted.add);
+        });
+        await pumpEventQueue();
+
+        gyroController.add(
+          GyroscopeData(x: 0.1, y: 0.1, z: 0.1, timestamp: DateTime(2026)),
+        );
+        await pumpEventQueue();
+
+        // The rate is a ceiling, never a floor: the OS's period is still a
+        // request, and nothing here may invent samples it did not deliver.
+        for (var i = 0; i < 20; i++) {
+          clock = clock.add(const Duration(milliseconds: 100));
+          accelController.add(
+            AccelerometerData(x: 0.0, y: 0.0, z: 9.8, timestamp: clock),
+          );
+          await pumpEventQueue();
+        }
+
+        expect(emitted, hasLength(20));
+      },
+    );
+
+    test('a gap in the stream does not become a catch-up burst', () async {
+      final emitted = <MotionData>[];
+      container.listen(motionDataStreamProvider, (previous, next) {
+        next.whenData(emitted.add);
+      });
+      await pumpEventQueue();
+
+      gyroController.add(
+        GyroscopeData(x: 0.1, y: 0.1, z: 0.1, timestamp: DateTime(2026)),
+      );
+      await pushAccel(
+        AccelerometerData(x: 0.0, y: 0.0, z: 9.8, timestamp: clock),
+      );
+      expect(emitted, hasLength(1));
+
+      // The process was suspended for two minutes — 6 000 slots went by. The
+      // samples that arrive next must be paced from now, not let through in a
+      // burst to make up for them.
+      clock = clock.add(const Duration(minutes: 2));
+      for (var i = 0; i < 5; i++) {
+        clock = clock.add(const Duration(milliseconds: 4));
+        accelController.add(
+          AccelerometerData(x: 0.0, y: 0.0, z: 9.8, timestamp: clock),
+        );
+        await pumpEventQueue();
+      }
+
+      expect(emitted, hasLength(2));
+    });
+
+    test('a power-mode change reaches the merged stream without breaking it', () async {
+      // The one thing `ref.read` plus a listener has to buy over `ref.watch`:
+      // the period follows the mode, and the controller — with every consumer's
+      // subscription — survives the change.
+      final mode = _MutablePowerMode();
+      final localAccel = StreamController<AccelerometerData>.broadcast();
+      final localGyro = StreamController<GyroscopeData>.broadcast();
+      var localClock = DateTime(2026, 1, 1, 12);
+      final localContainer = ProviderContainer(
+        overrides: [
+          accelerometerStreamProvider.overrideWith((ref) => localAccel.stream),
+          gyroscopeStreamProvider.overrideWith((ref) => localGyro.stream),
+          motionClockProvider.overrideWith(
+            (ref) =>
+                () => localClock,
+          ),
+          currentPowerModeProvider.overrideWith(() => mode),
+        ],
+      );
+      addTearDown(() async {
+        localContainer.dispose();
+        await localAccel.close();
+        await localGyro.close();
+      });
+
+      final out = <MotionData>[];
+      localContainer.listen(motionDataStreamProvider, (previous, next) {
+        next.whenData(out.add);
+      });
+      await pumpEventQueue();
+      localGyro.add(
+        GyroscopeData(x: 0.1, y: 0.1, z: 0.1, timestamp: DateTime(2026)),
+      );
+      await pumpEventQueue();
+
+      Future<int> pushTwoSeconds() async {
+        final before = out.length;
+        for (var i = 0; i < 167; i++) {
+          localClock = localClock.add(const Duration(milliseconds: 12));
+          localAccel.add(
+            AccelerometerData(x: 0.0, y: 0.0, z: 9.8, timestamp: localClock),
+          );
+          await pumpEventQueue();
+        }
+        return out.length - before;
+      }
+
+      final atNormal = await pushTwoSeconds();
+      mode.set(PowerModeConfig.critical);
+      await pumpEventQueue();
+      final atCritical = await pushTwoSeconds();
+
+      expect(
+        atNormal / 2.0,
+        closeTo(AppConstants.sensorSamplingRateNormal.toDouble(), 2.0),
+      );
+      expect(
+        atCritical / 2.0,
+        closeTo(AppConstants.sensorSamplingRateCritical.toDouble(), 2.0),
+        reason: 'the listener, not a rebuild, is what carries the new period',
+      );
+    });
+
+    test('a wall clock that jumps backwards does not stop the stream', () async {
+      final emitted = <MotionData>[];
+      container.listen(motionDataStreamProvider, (previous, next) {
+        next.whenData(emitted.add);
+      });
+      await pumpEventQueue();
+
+      gyroController.add(
+        GyroscopeData(x: 0.1, y: 0.1, z: 0.1, timestamp: DateTime(2026)),
+      );
+      await pushAccel(
+        AccelerometerData(x: 0.0, y: 0.0, z: 9.8, timestamp: clock),
+      );
+      expect(emitted, hasLength(1));
+
+      // An NTP correction pulls the wall clock two seconds back. Pacing from a
+      // slot that is now in the future would refuse every sample until the
+      // clock caught up: two seconds of silent detection death, with `hb.mn`
+      // reading zero and nothing in the log saying why.
+      clock = clock.subtract(const Duration(seconds: 2));
+      for (var i = 0; i < 5; i++) {
+        clock = clock.add(const Duration(milliseconds: 21));
+        accelController.add(
+          AccelerometerData(x: 0.0, y: 0.0, z: 9.8, timestamp: clock),
+        );
+        await pumpEventQueue();
+      }
+
+      expect(emitted.length, greaterThan(1));
+    });
+
+    test('the drops are counted so the OS rate stays measurable', () async {
+      motionRateHold.takeDropped();
+      addTearDown(motionRateHold.takeDropped);
+
+      container.listen(motionDataStreamProvider, (previous, next) {
+        next.whenData((_) {});
+      });
+      await pumpEventQueue();
+      gyroController.add(
+        GyroscopeData(x: 0.1, y: 0.1, z: 0.1, timestamp: DateTime(2026)),
+      );
+      await pumpEventQueue();
+
+      var emitted = 0;
+      container.listen(motionDataStreamProvider, (previous, next) {
+        next.whenData((_) => emitted++);
+      });
+      for (var i = 0; i < 167; i++) {
+        clock = clock.add(const Duration(milliseconds: 12));
+        accelController.add(
+          AccelerometerData(x: 0.0, y: 0.0, z: 9.8, timestamp: clock),
+        );
+        await pumpEventQueue();
+      }
+
+      // `hb.mn` is counted downstream of the drop, so without `dr` the log
+      // could no longer say what the OS delivered — the comparison that found
+      // L-086.
+      expect(motionRateHold.dropped + emitted, 167);
+      expect(motionRateHold.dropped, greaterThan(0));
+    });
+
+    test('a slower power mode really slows the merged stream', () async {
+      // Without the rate hold, `sensorSamplingRate` only lengthened a period
+      // the OS was free to round back down: `critical` and `normal` could
+      // deliver the same 55 Hz. Here the modes have to differ.
+      Future<int> emittedOverTwoSeconds(PowerModeConfig mode) async {
+        final localAccel = StreamController<AccelerometerData>.broadcast();
+        final localGyro = StreamController<GyroscopeData>.broadcast();
+        var localClock = DateTime(2026, 1, 1, 12);
+        final localContainer = ProviderContainer(
+          overrides: [
+            accelerometerStreamProvider.overrideWith(
+              (ref) => localAccel.stream,
+            ),
+            gyroscopeStreamProvider.overrideWith((ref) => localGyro.stream),
+            motionClockProvider.overrideWith(
+              (ref) =>
+                  () => localClock,
+            ),
+            currentPowerModeProvider.overrideWith(() => _FixedPowerMode(mode)),
+          ],
+        );
+        addTearDown(() async {
+          localContainer.dispose();
+          await localAccel.close();
+          await localGyro.close();
+        });
+
+        final out = <MotionData>[];
+        localContainer.listen(motionDataStreamProvider, (previous, next) {
+          next.whenData(out.add);
+        });
+        await pumpEventQueue();
+        localGyro.add(
+          GyroscopeData(x: 0.1, y: 0.1, z: 0.1, timestamp: DateTime(2026)),
+        );
+        await pumpEventQueue();
+
+        for (var i = 0; i < 167; i++) {
+          localClock = localClock.add(const Duration(milliseconds: 12));
+          localAccel.add(
+            AccelerometerData(x: 0.0, y: 0.0, z: 9.8, timestamp: localClock),
+          );
+          await pumpEventQueue();
+        }
+        return out.length;
+      }
+
+      final normal = await emittedOverTwoSeconds(PowerModeConfig.normal);
+      final critical = await emittedOverTwoSeconds(PowerModeConfig.critical);
+
+      expect(critical, lessThan(normal));
+      expect(
+        critical / 2.0,
+        closeTo(AppConstants.sensorSamplingRateCritical.toDouble(), 2.0),
+      );
     });
 
     test('forwards sensor errors to the merged stream', () async {
@@ -320,6 +612,14 @@ void main() {
 }
 
 /// Pins the power mode so the sampling-period conversion is deterministic.
+/// Power mode a test can change while the merged stream is running.
+class _MutablePowerMode extends CurrentPowerMode {
+  @override
+  PowerModeConfig build() => PowerModeConfig.normal;
+
+  void set(PowerModeConfig config) => state = config;
+}
+
 class _FixedPowerMode extends CurrentPowerMode {
   _FixedPowerMode(this._config);
 

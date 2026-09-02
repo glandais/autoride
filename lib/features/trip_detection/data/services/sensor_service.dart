@@ -23,10 +23,40 @@ part 'sensor_service.g.dart';
 /// 51.4 Hz on an iPhone (L-086). What the app receives is therefore always to
 /// be read from the `hb` event — `mn` samples over `dt` ms, against the `hz`
 /// the same line carries — and never assumed from this number.
-Duration _samplingPeriodFor(Ref ref) {
-  final rate = ref.watch(currentPowerModeProvider).sensorSamplingRate;
-  return Duration(microseconds: (1000000 / rate).round());
+Duration _samplingPeriodFor(Ref ref) =>
+    _periodForRate(ref.watch(currentPowerModeProvider).sensorSamplingRate);
+
+Duration _periodForRate(int rateHz) =>
+    Duration(microseconds: (1000000 / rateHz).round());
+
+/// Accelerometer samples [motionDataStream] dropped to hold the configured
+/// rate, read and reset by the coordinator's heartbeat.
+///
+/// Process-wide and outside Riverpod, like [batteryAuditThrottle]: the sensor
+/// providers rebuild on every power-mode change and the counter has to outlive
+/// that, and the reader is a different provider from the writer.
+class MotionRateHold {
+  int dropped = 0;
+
+  /// The drops since the last call, and zero the counter.
+  int takeDropped() {
+    final n = dropped;
+    dropped = 0;
+    return n;
+  }
 }
+
+/// The process-wide rate-hold counter. See [MotionRateHold].
+final MotionRateHold motionRateHold = MotionRateHold();
+
+/// The clock [motionDataStream] paces itself on.
+///
+/// A provider purely so a test can hold the pacing to an injected timeline:
+/// wall-clock milliseconds are exactly what the rate hold measures, and a test
+/// that pushed samples as fast as the event loop allows would otherwise see
+/// them dropped as a burst.
+@riverpod
+DateTime Function() motionClock(Ref ref) => DateTime.now;
 
 /// Accelerometer stream provider
 /// Streams raw accelerometer data at the current power mode's sampling rate
@@ -66,19 +96,87 @@ Stream<GyroscopeData> gyroscopeStream(Ref ref) async* {
 /// gyroscope is sampled-and-held rather than dropped: it is an input to the
 /// verdict, not a trigger for one.
 ///
-/// This halves the merged rate; it does not *set* it. The result is one
-/// `MotionData` per accelerometer sample, and the accelerometer runs at
-/// whatever rate the OS grants for the requested period — 55.6 Hz
-/// backgrounded and 83 Hz foregrounded on the Pixel 6a of the following run,
-/// against a configured 50 (L-086, correcting `07fabee`'s "the configured rate
-/// exactly"). Whether to hold the pipeline to the configured rate by dropping
-/// the surplus is a detection-and-battery decision, and belongs to T045 with
-/// the rest of the motion arithmetic.
+/// Halving the merged rate did not *set* it: the accelerometer still ran at
+/// whatever the OS granted for the requested period — 55.6 Hz backgrounded and
+/// 83 Hz foregrounded on a Pixel 6a against a configured 50, 51.4 Hz on an
+/// iPhone (L-086). So this provider now **holds the merged stream to the
+/// configured rate itself** (T045), dropping the surplus accelerometer samples.
+///
+/// Two reasons, and the second is the important one:
+///
+/// * every sample costs a full pass through the coordinator — window insert,
+///   GPS-gate evaluation, detector, audit throttling — so 83 Hz foregrounded is
+///   two thirds more of that work than the power mode asked for;
+/// * without it `PowerModeConfig.sensorSamplingRate` is decorative. Dropping
+///   from 50 Hz in `normal` to 20 Hz in `critical` only lengthens a *requested*
+///   period, and an OS that rounds it to its own supported rate can hand back
+///   55 Hz in either mode. Enforcing the rate here is what makes the whole
+///   battery-mode ladder change anything the pipeline can feel.
+///
+/// Nothing downstream counts samples: the stationary and motion windows average
+/// over `stationaryWindowDuration` and age on wall time, and the detectors count
+/// one detection per `detectionEvaluationInterval` whatever the sample rate.
+/// `stationaryWindowMaxSamples` (128) was in fact being *approached* at 83 Hz
+/// over a 1.5 s window, and is now comfortably clear.
+///
+/// What it does change, and this is the risk to carry into the next device run:
+/// in `critical` mode the configured 20 Hz becomes real for the first time, so
+/// that same window holds ~30 samples instead of ~83 and its Nyquist limit
+/// drops to 10 Hz — while `accelerationStdDev`, the quantity the stationary
+/// verdict is built on, is measuring exactly the high-frequency vibration of a
+/// rolling bike. 20 Hz has never been validated on a device. A control run in
+/// `critical` is what would close that.
+///
+/// `hb` stays the measurement of record: `mn` counts what the coordinator
+/// received, `dr` what this hold dropped, and `(mn + dr) / (dt / 1000)` is what
+/// the OS actually delivered against the `hz` that was asked for. Without `dr`
+/// this change would have blinded the very instrument that found L-086.
 @riverpod
 Stream<MotionData> motionDataStream(Ref ref) {
   final controller = StreamController<MotionData>();
 
   GyroscopeData? lastGyro;
+
+  // Read rather than watched: watching would rebuild this provider (and close
+  // the controller under its subscribers) on every power-mode change, where
+  // today only the sensor providers beneath it rebuild and the merged stream
+  // survives.
+  final clock = ref.read(motionClockProvider);
+  var period = _periodForRate(
+    ref.read(currentPowerModeProvider).sensorSamplingRate,
+  );
+  ref.listen(currentPowerModeProvider, (previous, next) {
+    period = _periodForRate(next.sensorSamplingRate);
+  });
+
+  /// Start of the next sampling slot. Scheduling from the *slot* rather than
+  /// from the sample that filled it is what makes the long-run average equal
+  /// the configured rate: from an 18 ms source against a 20 ms period, resetting
+  /// to "now" on every emit would compound the 2 ms of lateness and halve the
+  /// rate to 27 Hz.
+  DateTime? nextSlot;
+
+  bool dueAt(DateTime now) {
+    final slot = nextSlot;
+    if (slot != null && now.isBefore(slot)) {
+      // Unless the slot is further ahead than one period can explain, which
+      // only a **backwards** wall clock can produce — an NTP correction, a
+      // manual time change. Without this the pacer would refuse every sample
+      // until the clock caught up again: minutes of silent detection death,
+      // with `hb.mn` reading zero and nothing saying why. (`clk` already
+      // journals a drift of more than 2 s, so the case is not hypothetical.)
+      if (slot.difference(now) <= period) return false;
+      nextSlot = now.add(period);
+      return true;
+    }
+
+    // A slot more than one period behind means the stream stopped and started
+    // again — the process was suspended, or the sensor providers rebuilt. Catch
+    // up from `now` instead of firing a burst to make up the lost slots.
+    final base = (slot == null || now.difference(slot) > period) ? now : slot;
+    nextSlot = base.add(period);
+    return true;
+  }
 
   void emit(AccelerometerData accel) {
     final gyro = lastGyro;
@@ -86,12 +184,18 @@ Stream<MotionData> motionDataStream(Ref ref) {
     // arrive before the gyroscope has produced anything.
     if (gyro == null || controller.isClosed) return;
 
+    final now = clock();
+    if (!dueAt(now)) {
+      // Counted, because `hb.mn` is taken downstream of this drop: without it
+      // `mn / (dt / 1000)` would read `hz` for ever and the measurement that
+      // found L-086 in the first place — what the OS really delivers against
+      // what was asked — would be gone.
+      motionRateHold.dropped++;
+      return;
+    }
+
     controller.add(
-      MotionData(
-        accelerometer: accel,
-        gyroscope: gyro,
-        timestamp: DateTime.now(),
-      ),
+      MotionData(accelerometer: accel, gyroscope: gyro, timestamp: now),
     );
   }
 

@@ -388,10 +388,12 @@ acceptance test. **Diagnosis only at this stage — no solution has been chosen 
 
 - ☐ **T045**: Carried-Phone Motion Semantics — counters in seconds, a gate that closes on a walker
   - *Detail*: ledger L-082, L-083
-  - *Scope*: the per-sample residue of L-022 on the resume path (5 samples ≈ 100 ms, L-082) and the GPS gate a walker's pocket keeps open indefinitely (56 min for 4 fixes, L-083). Same root: motion arithmetic that assumes a phone on a bar mount or a table, evaluated per 50 Hz sample. Decides T041 items 1, 4 and 9 for a carried phone.
+  - *Partly done*: 2026-09-02 — ledger remediation row 22. **L-086's rate leftover is closed**: `motionDataStream` holds itself to `PowerModeConfig.sensorSamplingRate`, so the battery-mode ladder changes something the pipeline can feel for the first time (it only ever lengthened a *requested* period the OS was free to round back down). `hb` gains `dr` so the OS's real rate stays measurable across the drop. **L-082 is withdrawn — it was not a defect**: `shouldResumeTrip` already decided on 5 s of continuous movement, and the `cm:5` it was read from is a 1 Hz counter that path never touches. **L-083 stays open and is sequenced behind L-079** — see the T045 decision paragraph in ledger §6, which records the counterfactual (closing the gate would have cost zero extra departures on this run) and the reason that survives it. Tests 674 → 681.
+  - *Carry into the next device run*: `critical` mode now really delivers 20 Hz, which has never been validated — the 1.5 s window falls to ~30 samples and Nyquist to 10 Hz, against a stationary verdict built on high-frequency vibration. A control run in `critical` is what closes it.
+  - *Scope*: ~~the per-sample residue of L-022 on the resume path (5 samples ≈ 100 ms, L-082)~~ — withdrawn — and the GPS gate a walker's pocket keeps open indefinitely (38 min for 4 fixes, L-083). Decides T041 items 1, 4 and 9 for a carried phone.
   - *Dependencies*: T041; `07fabee`'s `MotionStateWindow` is the base it extends or replaces
   - *Cross-refs*: L-022, L-070, T006 (the battery target is unmeasurable while the gate stays open)
-  - *Estimate*: 1 session + device runs
+  - *Estimate*: the rate half is done; what is left is L-083, and it waits on L-079
 
 - ☐ **T046**: iOS Background Survival — the gate must not be the only thing keeping the process alive
   - *Detail*: ledger L-084; the case the L-078 decision explicitly deferred
@@ -409,7 +411,7 @@ acceptance test. **Diagnosis only at this stage — no solution has been chosen 
   - *Cross-refs*: L-077 (silent retention purge, by design), T041 §0 table
   - *Estimate*: half a session
 
-- *Recommended order*: T047 (done) → T044 (L-080 half, done) → T044 (L-081 half, done) → T045 → T046 (decision first). What is left of T044 is L-079 plus the safety-net half of L-081, and both are the detection problem. Ledger §6 says why.
+- *Recommended order* (as executed): T047 → T044 (L-080) → T044 (L-081) → T045 (rate hold) → **L-079** → L-083 and the rest, which all wait on it → T046 (decision first). Ledger §6 says why, and holds the T045 decision paragraph.
 
 ---
 
@@ -455,8 +457,8 @@ acceptance test. **Diagnosis only at this stage — no solution has been chosen 
 **Blocked**: 0
 
 **Current Phase**: Phase 10 - Release Preparation, alongside the Phase 11 audit backlog and the Phase 12 export work
-**Last Completed**: T047 - audit log cost and honesty (2026-09-02); T044's L-080 and L-081 halves the same day
-**Current Task**: T044–T046 (Phase 11.2) — the 2026-09-02 control run without a ride produced four 0 m trips on the Pixel and an invisible outing on the iPhone; ledger §6 holds the diagnoses. T047 is done, so the next verbose run keeps its own header; T044's L-080 half is closed (one departure can no longer become two trips) and its L-081 half too (a recording with no route points is deleted, not saved). L-079, the safety-net half of L-081, T045 and T046 remain — all of them the detection problem. Then T039/T041 — iOS release is 2 blockers from submittable (build attach + screenshots); T041 device validation under way (first iPhone run done: prompts OK, one crash found and fixed — see `tasks/T041-device-validation.md`). T038 open on manual Play Console setup; T037 open (§5.6/§5.7).
+**Last Completed**: T047 - audit log cost and honesty (2026-09-02); T044's L-080 and L-081 halves and T045's sampling-rate half the same day
+**Current Task**: T044–T046 (Phase 11.2) — the 2026-09-02 control run without a ride produced four 0 m trips on the Pixel and an invisible outing on the iPhone; ledger §6 holds the diagnoses. T047 is done, so the next verbose run keeps its own header; T044's L-080 half is closed (one departure can no longer become two trips) and its L-081 half too (a recording with no route points is deleted, not saved). T045's rate half is done too (and its L-082 finding withdrawn as a misdiagnosis). What remains is one cluster rather than four tasks: **L-079**, the single-sample fit, and behind it L-083, the `_lastLocation` freshness gap and the safety-net half of L-081 — all of them wait on the detector. Then T046. Then T039/T041 — iOS release is 2 blockers from submittable (build attach + screenshots); T041 device validation under way (first iPhone run done: prompts OK, one crash found and fixed — see `tasks/T041-device-validation.md`). T038 open on manual Play Console setup; T037 open (§5.6/§5.7).
 **Next Task**: T039 - iOS Release Configuration (T038 now owns the version scheme and `publish_beta.sh`, so T039 can extend both)
 **Audit backlog**: `tasks/AUDIT-FINDINGS.md` (2026-06-17) and `tasks/LEDGER.md` (2026-08-31) record open defects that are not otherwise tracked here; the blocked core-pipeline cluster is T041.
 

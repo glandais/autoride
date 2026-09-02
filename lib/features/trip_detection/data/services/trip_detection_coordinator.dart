@@ -286,6 +286,9 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
     final ticks = _heartbeatTicks;
     final motion = _heartbeatMotionSamples;
     final fixes = _heartbeatFixes;
+    // Taken (and zeroed) here rather than counted in this class: the drop
+    // happens upstream, in `motionDataStream`, and this is the only reader.
+    final dropped = motionRateHold.takeDropped();
     _resetHeartbeat();
 
     AuditLog.emit(
@@ -295,12 +298,18 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
         'mn': motion,
         'fn': fixes,
         'dt': elapsed.inMilliseconds,
+        // Samples `motionDataStream` dropped to hold the configured rate
+        // (T045). `mn` alone would now read `hz` for ever — the rate hold sits
+        // upstream of the counter — and the comparison that found L-086 would
+        // be gone: it is `(mn + dr) / (dt / 1000)` that says what the OS really
+        // delivered, and `mn / (dt / 1000)` that says what the pipeline paid
+        // for.
+        'dr': dropped,
         // The rate the power mode in force asks for, next to the samples
-        // actually received: `mn / (dt / 1000)` against `hz` is the whole
-        // comparison, and it is the only honest way to read a sampling period
-        // the OS treats as a hint (L-086). Reading it out of the header's `k`
-        // instead would need the reader to first work out which mode was in
-        // force at this instant.
+        // actually received: it is the only honest way to read a sampling
+        // period the OS treats as a hint (L-086). Reading it out of the
+        // header's `k` instead would need the reader to first work out which
+        // mode was in force at this instant.
         'hz': ref.read(currentPowerModeProvider).sensorSamplingRate,
       },
     );

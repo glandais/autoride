@@ -55,7 +55,7 @@ short; the table below is the whole vocabulary.
 | `st` | Trip state transition | `f` (from) `to` |
 | `gate` | Motion-gated GPS | `a` = open/sched/close; `why` = trip/motion (open), stationary (sched), inactivityTimeout/stop/session/dispose (close); `in` (s) on a sched |
 | `fix` | GPS fix | `lat` `lon` `ac` m `sp` **m/s** `al` `hd` `gt` (provider time) |
-| `hb` | Heartbeat, every 30 s | `n` ticks, `mn` motion samples, `fn` fixes, `dt` ms, `hz` configured sampling rate (L-086) |
+| `hb` | Heartbeat, every 30 s | `n` ticks, `mn` motion samples the pipeline processed, `dr` samples the rate hold dropped, `fn` fixes, `dt` ms, `hz` configured sampling rate. `mn / (dt / 1000)` is what the pipeline ran at; `(mn + dr) / (dt / 1000)` is what the OS delivered, and that is the figure to compare with `hz` (L-086, T045) |
 | `start` | Trip-start evaluation | `c` confidence, `n` streak, `go`, `mag` `gyr` `spk` |
 | `dto` | Detection window timed out | `el` s, `n` streak at timeout |
 | `cool` | Start cooldown | `a` = arm (`d` s, `why` = falseStart) / expire (`d` s). Armed only by a recording discarded for being **too short** — a long one discarded for want of route points is a GPS failure, not a false start (L-081) |
