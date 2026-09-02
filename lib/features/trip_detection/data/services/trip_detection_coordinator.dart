@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
+import '../../../../core/audit/audit_event.dart';
+import '../../../../core/audit/audit_log.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../domain/models/activity_confidence.dart';
 import '../../domain/models/location_data.dart';
@@ -91,6 +93,18 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
 
   bool _isAnalyzing = false;
   bool _disposed = false;
+
+  // Heartbeat counters (T043). Three integers every 30 s, and they are what
+  // makes a gap in the audit log readable at all: `n < expected` means the OS
+  // froze the 1 Hz timer (the process was suspended), while `n` intact with
+  // `mn == 0` means the process ran but `sensors_plus` delivered nothing —
+  // opposite verdicts for items 3 and 8 of the device checklist, and
+  // indistinguishable from a plain hole in the timestamps.
+  int _heartbeatTicks = 0;
+  int _heartbeatMotionSamples = 0;
+  int _heartbeatFixes = 0;
+  DateTime? _heartbeatSince;
+  DateTime? _lastSensorSampleEmit;
 
   /// Set when [stopListening] is called while a trip is being recorded. The
   /// session is kept running so auto-pause/auto-stop still work, and the actual
@@ -192,11 +206,67 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
     // Set up the periodic checks: detection timeout, and the GPS-loss watchdog
     // that ends a trip whose positions stopped arriving.
     _detectionTimer = startDetectionTimer(_onDetectionTick);
+
+    _resetHeartbeat();
+    AuditLog.emit(
+      AuditEvent.session,
+      () => <String, Object?>{
+        'a': 'start',
+        'trip': ref.read(tripStateMachineProvider).hasActiveTrip,
+      },
+      critical: true,
+    );
   }
+
+  void _resetHeartbeat() {
+    _heartbeatSince = now();
+    _heartbeatTicks = 0;
+    _heartbeatMotionSamples = 0;
+    _heartbeatFixes = 0;
+  }
+
+  /// Emit the liveness proof if a heartbeat interval has elapsed.
+  ///
+  /// `dt` is real elapsed time, not `interval * ticks`: the gap between the two
+  /// is precisely what a Doze suspension looks like from inside the process.
+  void _emitHeartbeat() {
+    final since = _heartbeatSince;
+    if (since == null) return;
+
+    final at = now();
+    final elapsed = at.difference(since);
+    if (elapsed < AppConstants.auditHeartbeatInterval) return;
+
+    final ticks = _heartbeatTicks;
+    final motion = _heartbeatMotionSamples;
+    final fixes = _heartbeatFixes;
+    _resetHeartbeat();
+
+    AuditLog.emit(
+      AuditEvent.heartbeat,
+      () => <String, Object?>{
+        'n': ticks,
+        'mn': motion,
+        'fn': fixes,
+        'dt': elapsed.inMilliseconds,
+      },
+    );
+  }
+
+  /// Run one supervisor tick by hand.
+  ///
+  /// Seam for the tests, same reason as [startDetectionTimer]: the heartbeat
+  /// covers 30 real seconds, which no test can wait for.
+  @visibleForTesting
+  void debugDetectionTick() => _onDetectionTick();
 
   /// One tick of the 1 Hz supervisor.
   void _onDetectionTick() {
     if (_disposed) return;
+    if (AuditLog.enabled) {
+      _heartbeatTicks++;
+      _emitHeartbeat();
+    }
     _checkGpsLossTimeout();
     _checkDetectionTimeout();
   }
@@ -255,6 +325,16 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
   void _openGpsGate() {
     if (_closeLocationSubscription != null) return;
 
+    AuditLog.emit(
+      AuditEvent.gate,
+      () => <String, Object?>{
+        'a': 'open',
+        'why': ref.read(tripStateMachineProvider).hasActiveTrip
+            ? 'trip'
+            : 'motion',
+      },
+    );
+
     _closeLocationSubscription = ref.container
         .listen(
           locationStreamProvider(),
@@ -262,6 +342,11 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
             data: _onLocationData,
             error: (error, stackTrace) {
               // GPS unavailable - continue with motion-only detection
+              AuditLog.emit(
+                AuditEvent.gpsResubscribe,
+                () => <String, Object?>{'a': 'error', 'ex': error.toString()},
+                critical: true,
+              );
               _lastLocation = null;
               _preTripLocations.clear();
             },
@@ -274,6 +359,12 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
   /// Cancel the location subscription and forget the last fix, so detection
   /// degrades to motion-only instead of reasoning about a stale position.
   void _closeGpsGate() {
+    if (_closeLocationSubscription != null) {
+      AuditLog.emit(
+        AuditEvent.gate,
+        () => <String, Object?>{'a': 'close', 'why': 'inactivityTimeout'},
+      );
+    }
     _cancelGpsInactivityTimer();
     _closeLocationSubscription?.call();
     _closeLocationSubscription = null;
@@ -289,6 +380,15 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
   void _scheduleGpsGateClose() {
     if (_closeLocationSubscription == null) return;
     if (_gpsInactivityTimer != null) return;
+
+    AuditLog.emit(
+      AuditEvent.gate,
+      () => <String, Object?>{
+        'a': 'sched',
+        'in': gpsInactivityTimeout.inSeconds,
+        'why': 'stationary',
+      },
+    );
 
     _gpsInactivityTimer = startGpsInactivityTimer(() {
       _gpsInactivityTimer = null;
@@ -311,6 +411,11 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
   /// turning "Automatic detection" off must not break the ride in progress).
   void stopListening() {
     if (_isAnalyzing && ref.read(tripStateMachineProvider).hasActiveTrip) {
+      AuditLog.emit(
+        AuditEvent.session,
+        () => <String, Object?>{'a': 'stop', 'why': 'deferredUntilTripEnds'},
+        critical: true,
+      );
       _stopRequestedAfterTrip = true;
       return;
     }
@@ -319,6 +424,11 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
   }
 
   void _stopNow() {
+    AuditLog.emit(
+      AuditEvent.session,
+      () => <String, Object?>{'a': 'stop'},
+      critical: true,
+    );
     _stopRequestedAfterTrip = false;
     _suspendListening();
     _closeSession();
@@ -342,6 +452,13 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
   /// this provider) alive — used by the paths that immediately restart, and
   /// while a trip that this coordinator started is being recorded.
   void _suspendListening() {
+    if (_isAnalyzing) {
+      AuditLog.emit(
+        AuditEvent.session,
+        () => <String, Object?>{'a': 'suspend'},
+        critical: true,
+      );
+    }
     _cleanup();
     _isAnalyzing = false;
   }
@@ -357,9 +474,33 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
     // period before the first fix is exactly `gpsLossStopTimeout`.
     if (next.hasActiveTrip && previous?.hasActiveTrip != true) {
       _gpsWatchdogReference = now();
+      AuditLog.emit(
+        AuditEvent.gpsWatchdog,
+        () => <String, Object?>{
+          'a': 'arm',
+          'lim': gpsLossStopTimeout.inSeconds,
+          // Which instant the countdown runs from decides whether a slow first
+          // fix can end a ride; item 10 of the checklist is unreadable without
+          // it.
+          'ref': _lastLocation == null ? 'tripStart' : 'lastFix',
+        },
+        critical: true,
+      );
     } else if (!next.hasActiveTrip) {
+      if (_gpsWatchdogReference != null) {
+        AuditLog.emit(
+          AuditEvent.gpsWatchdog,
+          () => <String, Object?>{'a': 'disarm'},
+        );
+      }
       _gpsWatchdogReference = null;
     }
+
+    AuditLog.emit(
+      AuditEvent.stateChange,
+      () => <String, Object?>{'f': previous?.stateName, 'to': next.stateName},
+      critical: true,
+    );
 
     if (!_stopRequestedAfterTrip) return;
     if (next.hasActiveTrip) return;
@@ -386,6 +527,11 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
 
   /// Handle incoming motion data
   Future<void> _onMotionData(MotionData motion) async {
+    if (AuditLog.enabled) {
+      _heartbeatMotionSamples++;
+      _emitSensorSample(motion);
+    }
+
     // Motion drives the GPS gate before it drives detection, so the detector
     // sees the location only while GPS is legitimately running.
     _updateGpsGate(_motionStateOf(motion));
@@ -416,9 +562,56 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
     );
   }
 
+  /// One verbose-level sensor aggregate per second.
+  ///
+  /// Throttled hard on purpose: the stream is 50 Hz, and recording it raw would
+  /// be tens of megabytes an hour and would cost more battery than the pipeline
+  /// it is meant to explain. One sample a second is enough to see the shape of
+  /// a ride against the stationary thresholds.
+  void _emitSensorSample(MotionData motion) {
+    if (!AuditLog.verbose) return;
+
+    final at = now();
+    final last = _lastSensorSampleEmit;
+    if (last != null &&
+        at.difference(last) < AppConstants.auditSensorSampleInterval) {
+      return;
+    }
+    _lastSensorSampleEmit = at;
+
+    AuditLog.emitVerbose(
+      AuditEvent.sensors,
+      () => <String, Object?>{
+        'am': motion.accelerometer.magnitude,
+        'gm': motion.gyroscope.magnitude,
+        'ms': _motionStateOf(motion).name,
+      },
+    );
+  }
+
   /// Handle incoming location data
   void _onLocationData(LocationData location) {
     _lastLocation = location;
+
+    if (AuditLog.enabled) {
+      _heartbeatFixes++;
+      // `gt` is the provider's own timestamp — on a real GNSS fix, disciplined
+      // by the satellites. The median of `t - gt` over a run of fixes is what
+      // lets a log be aligned against a FIT recorded on a second device, whose
+      // clock is not this one's.
+      AuditLog.emit(
+        AuditEvent.fix,
+        () => <String, Object?>{
+          'lat': location.latitude,
+          'lon': location.longitude,
+          'ac': location.accuracy,
+          'sp': location.speed,
+          'al': location.altitude,
+          'hd': location.heading,
+          'gt': location.timestamp.millisecondsSinceEpoch,
+        },
+      );
+    }
 
     // Buffer only while no trip is recording. During a trip the gate is pinned
     // open and the recorder holds its own subscription, so accumulating here
@@ -456,6 +649,17 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
     final elapsed = now().difference(reference);
     if (elapsed < gpsLossStopTimeout) return;
 
+    AuditLog.emit(
+      AuditEvent.gpsWatchdog,
+      () => <String, Object?>{
+        'a': 'fire',
+        'el': elapsed.inSeconds,
+        'lim': gpsLossStopTimeout.inSeconds,
+        'ref': 'lastFix',
+      },
+      critical: true,
+    );
+
     _logger.warning(
       'No GPS fix for ${elapsed.inSeconds}s (limit '
       '${gpsLossStopTimeout.inSeconds}s) — stopping the trip',
@@ -483,6 +687,23 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
     // because `startTripWithId` transitions out of `Detecting` and nothing
     // else.
     final counted = ref.read(tripStartDetectorProvider).consecutiveDetections;
+
+    if (AuditLog.enabled) {
+      final detectorState = ref.read(tripStartDetectorProvider);
+      final fix = _lastLocation;
+      AuditLog.emit(
+        AuditEvent.startEval,
+        () => <String, Object?>{
+          'c': detectorState.confidence,
+          'n': counted,
+          'go': shouldStart,
+          'mag': motion.accelerometer.magnitude,
+          'gyr': motion.gyroscope.magnitude,
+          'spk': fix?.speedKmh,
+        },
+      );
+    }
+
     if (shouldStart || counted > 0) {
       ref.read(tripStateMachineProvider.notifier).startDetecting();
     }
@@ -549,6 +770,20 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
         .read(tripStopDetectorProvider.notifier)
         .analyzeForTripStop(motion, _lastLocation);
 
+    if (AuditLog.enabled) {
+      final stopState = ref.read(tripStopDetectorProvider);
+      AuditLog.emit(
+        AuditEvent.stopEval,
+        () => <String, Object?>{
+          'd': decision.name,
+          'sta': stopState.isStationary,
+          'cs': stopState.consecutiveStationaryDetections,
+          'cm': stopState.consecutiveMovementDetections,
+          'pd': stopState.pauseDuration.inSeconds,
+        },
+      );
+    }
+
     if (decision == StopDecision.pauseTrip) {
       // Pause trip
       ref.read(tripStateMachineProvider.notifier).pauseTrip();
@@ -568,6 +803,18 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
     final shouldResume = ref
         .read(tripStopDetectorProvider.notifier)
         .shouldResumeTrip(motion, _lastLocation);
+
+    if (AuditLog.enabled) {
+      final stopState = ref.read(tripStopDetectorProvider);
+      AuditLog.emit(
+        AuditEvent.resumeEval,
+        () => <String, Object?>{
+          'go': shouldResume,
+          'cm': stopState.consecutiveMovementDetections,
+          'pd': stopState.pauseDuration.inSeconds,
+        },
+      );
+    }
 
     if (shouldResume) {
       // Resume trip
@@ -630,6 +877,15 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
     // going on. The cooldown must follow `reset()`, which returns the detector
     // to `initial()` — the two only compose in this order.
     if (finalTrip?.status == TripStatus.discarded) {
+      AuditLog.emit(
+        AuditEvent.cooldown,
+        () => <String, Object?>{
+          'a': 'arm',
+          'd': AppConstants.tripStartCooldownPeriodSeconds,
+          'why': 'falseStart',
+        },
+        critical: true,
+      );
       _logger.info('Trip discarded as a false start — backing off');
       ref.read(tripStartDetectorProvider.notifier).activateCooldown();
     }
@@ -677,6 +933,14 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
     final stateMachine = ref.read(tripStateMachineProvider.notifier);
 
     if (stateMachine.hasDetectionTimedOut()) {
+      AuditLog.emit(
+        AuditEvent.detectionTimeout,
+        () => <String, Object?>{
+          'el': AppConstants.detectionTimeoutSeconds,
+          'n': ref.read(tripStartDetectorProvider).consecutiveDetections,
+        },
+      );
+
       // Detection timed out - return to idle
       stateMachine.stopTrip();
 

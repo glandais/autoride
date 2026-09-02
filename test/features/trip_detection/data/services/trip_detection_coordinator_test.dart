@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -9,6 +10,8 @@ import 'package:geolocator/geolocator.dart' show LocationSettings;
 import 'package:riverpod_annotation/riverpod_annotation.dart' show Override;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:autoride/core/audit/audit_log.dart';
+import 'package:autoride/core/audit/audit_sink.dart';
 import 'package:autoride/core/constants/app_constants.dart';
 import 'package:autoride/features/trip_detection/data/services/adaptive_location_settings.dart';
 import 'package:autoride/features/trip_detection/data/services/battery_optimizer.dart';
@@ -424,6 +427,22 @@ String _stateName(TripState state) => state.map(
 
 /// Motion sample with a unique timestamp so every emission notifies listeners
 /// (Riverpod skips notifications for values that compare equal).
+/// A sample that reads as stationary: near-gravity acceleration and almost no
+/// rotation, which is what arms the GPS gate's inactivity timeout.
+MotionData _stationaryMotionSample({int index = 0}) {
+  final timestamp = DateTime(2026, 1, 1).add(Duration(milliseconds: index));
+  return MotionData(
+    accelerometer: AccelerometerData(
+      x: 0.0,
+      y: 0.0,
+      z: AppConstants.standardGravity,
+      timestamp: timestamp,
+    ),
+    gyroscope: GyroscopeData(x: 0.0, y: 0.0, z: 0.0, timestamp: timestamp),
+    timestamp: timestamp,
+  );
+}
+
 MotionData _motionSample(int index) {
   final timestamp = DateTime(2026, 1, 1).add(Duration(milliseconds: index));
   return MotionData(
@@ -1687,4 +1706,185 @@ void main() {
       expect(buffered(), isEmpty);
     });
   });
+
+  group('TripDetectionCoordinator - audit instrumentation', () {
+    // The risk this group covers is not a subtle bug: it is an impeccable
+    // instrumentation plan with three `emit` calls missing. A journal that is
+    // silent about the very transition being investigated is worse than no
+    // journal, because it looks like evidence.
+    late _RecordingAuditSink sink;
+
+    setUp(() {
+      sink = _RecordingAuditSink();
+      AuditLog.install(sink, verbose: true);
+      addTearDown(AuditLog.uninstall);
+    });
+
+    Future<void> pushLocation({required int index, double speed = 5.0}) async {
+      locationController.add(_location(speed: speed, index: index));
+      await pumpEventQueue();
+    }
+
+    test('a session start is recorded', () async {
+      await startedCoordinator();
+
+      expect(sink.typesOf('sess'), isNotEmpty);
+      expect(sink.field('sess', 'a'), 'start');
+    });
+
+    test(
+      'the GPS gate is recorded opening and being scheduled to close',
+      () async {
+        await startedCoordinator();
+        await pushMotion(1); // a moving sample opens the gate
+
+        expect(sink.field('gate', 'a'), 'open');
+
+        // A stationary sample arms the inactivity timeout.
+        motionController.add(_stationaryMotionSample());
+        await pumpEventQueue();
+
+        final actions = sink.fieldsOf('gate').map((f) => f['a']).toList();
+        expect(actions, contains('sched'));
+      },
+    );
+
+    test('every fix is recorded with the provider timestamp that aligns it '
+        'against a FIT', () async {
+      await startedCoordinator();
+      await pushMotion(1);
+
+      await pushLocation(index: 1, speed: 6.0);
+
+      final fix = sink.fieldsOf('fix').single;
+      expect(fix['lat'], isNotNull);
+      expect(fix['lon'], isNotNull);
+      // `gt` is the whole basis of the cross-reference: without it a log can
+      // only be aligned to a second device by guesswork.
+      expect(fix['gt'], isNotNull);
+      expect(fix['sp'], isNotNull);
+    });
+
+    test('state transitions are recorded, with both ends named', () async {
+      startDetector.verdict = true;
+      await startedCoordinator();
+      await pushMotion(1);
+
+      final transitions = sink.fieldsOf('st');
+      expect(transitions, isNotEmpty);
+      expect(transitions.map((t) => t['to']), contains('active'));
+    });
+
+    test('the GPS-loss watchdog is recorded arming and firing', () async {
+      startDetector.verdict = true;
+      await startedCoordinator();
+      await pushMotion(1);
+
+      expect(
+        sink.fieldsOf('gpsw').map((f) => f['a']),
+        contains('arm'),
+        reason: 'without an arm event the countdown has no known origin',
+      );
+    });
+
+    test('a start evaluation carries the score and the streak', () async {
+      await startedCoordinator();
+      await pushMotion(1);
+
+      final evaluation = sink.fieldsOf('start').first;
+      expect(evaluation.containsKey('c'), isTrue);
+      expect(evaluation.containsKey('n'), isTrue);
+      expect(evaluation.containsKey('go'), isTrue);
+    });
+
+    test('a stop decision is recorded with its counters', () async {
+      startDetector.verdict = true;
+      await startedCoordinator();
+      await pushMotion(1);
+      startDetector.verdict = false;
+      stopDetector.decision = StopDecision.pauseTrip;
+
+      await pushMotion(2);
+
+      final decision = sink.fieldsOf('stop').last;
+      expect(decision['d'], 'pauseTrip');
+      expect(decision.containsKey('cs'), isTrue);
+      expect(decision.containsKey('pd'), isTrue);
+    });
+
+    test(
+      'the heartbeat reports ticks, samples and real elapsed time',
+      () async {
+        // Needs a movable clock: the heartbeat covers 30 real seconds.
+        container.dispose();
+        container = ProviderContainer(
+          overrides: baseOverrides(
+            extra: [
+              tripDetectionCoordinatorProvider.overrideWith(
+                _WatchdogCoordinator.new,
+              ),
+            ],
+          ),
+        );
+        coordinatorSubscription = container.listen(
+          tripDetectionCoordinatorProvider,
+          (_, _) {},
+        );
+
+        final coordinator = await startedCoordinator() as _WatchdogCoordinator;
+        await pushMotion(1);
+
+        for (var i = 0; i < 30; i++) {
+          coordinator.advance(const Duration(seconds: 1));
+          coordinator.tick();
+        }
+        await pumpEventQueue();
+
+        final heartbeat = sink.fieldsOf('hb');
+        expect(heartbeat, isNotEmpty);
+
+        // 30 ticks over 30 s is a process that ran. Fewer ticks than seconds is
+        // what an OS suspension looks like from the inside, and `mn` separates
+        // "the process ran" from "the sensors delivered".
+        expect(heartbeat.last['n'], 30);
+        expect(heartbeat.last['mn'], greaterThan(0));
+        expect(heartbeat.last['dt'], 30000);
+      },
+    );
+
+    test('nothing is recorded once the log is uninstalled', () async {
+      AuditLog.uninstall();
+
+      await startedCoordinator();
+      await pushMotion(1);
+
+      expect(sink.lines, isEmpty);
+    });
+  });
+}
+
+/// Collects audit lines and decodes them on demand.
+class _RecordingAuditSink implements AuditSink {
+  final List<String> lines = <String>[];
+
+  @override
+  void write(
+    String line, {
+    required int t,
+    required String type,
+    required int lvl,
+    required bool critical,
+  }) => lines.add(line);
+
+  @override
+  Future<void> flush() async {}
+
+  Iterable<Map<String, dynamic>> fieldsOf(String type) => lines
+      .map((l) => jsonDecode(l) as Map<String, dynamic>)
+      .where((m) => m['e'] == type);
+
+  Iterable<String> typesOf(String type) =>
+      fieldsOf(type).map((m) => m['e'] as String);
+
+  Object? field(String type, String key) => fieldsOf(type).first[key];
 }

@@ -3,6 +3,8 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 import '../../domain/models/location_data.dart';
 import '../../domain/models/motion_data.dart';
 import '../../domain/models/trip_stop_state.dart';
+import '../../../../core/audit/audit_event.dart';
+import '../../../../core/audit/audit_log.dart';
 import '../../../../core/constants/app_constants.dart';
 import 'stationary_window.dart';
 
@@ -178,7 +180,43 @@ class TripStopDetector extends _$TripStopDetector {
     }
 
     final speedKmh = _freshSpeedKmh(location, now);
+    final verdict = _stationaryVerdict(speedKmh);
 
+    if (AuditLog.verbose) {
+      // Emitted from the detector rather than from `StationaryWindow`: the
+      // window is mutable scratch state with no vocabulary of its own, and the
+      // interesting part is which of the three arms decided.
+      //
+      // This is the event item 9 of the device checklist turns on. The
+      // "basket case" reads as src:gps with a high speed and sta:false; and a
+      // false pause on a slow climb shows up as src:sensors with a speed
+      // sitting in the dead band between stationarySpeedMaxKmh and
+      // movingSpeedMinKmh, where neither GPS arm applies and the sensors decide
+      // alone.
+      AuditLog.emitVerbose(
+        AuditEvent.window,
+        () => <String, Object?>{
+          'n': _window.length,
+          'sd': _window.accelerationStdDev,
+          'gy': _window.averageRotation,
+          'sta': verdict,
+          'src': speedKmh == null
+              ? 'sensors'
+              : (speedKmh >= AppConstants.movingSpeedMinKmh ||
+                        speedKmh < AppConstants.stationarySpeedMaxKmh
+                    ? 'gps'
+                    : 'sensors'),
+          'spk': speedKmh,
+        },
+      );
+    }
+
+    return verdict;
+  }
+
+  /// The stationary verdict itself, kept separate so it can be reported
+  /// without being computed twice.
+  bool _stationaryVerdict(double? speedKmh) {
     if (speedKmh != null) {
       if (speedKmh >= AppConstants.movingSpeedMinKmh) return false;
       if (speedKmh < AppConstants.stationarySpeedMaxKmh) {

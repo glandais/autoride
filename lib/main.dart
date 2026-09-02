@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -6,6 +8,7 @@ import 'core/permissions/widgets/background_location_banner.dart';
 import 'core/theme/app_theme.dart';
 import 'core/theme/theme_provider.dart';
 import 'core/utils/platform_config_validator.dart';
+import 'features/diagnostics/data/services/audit_log_controller.dart';
 import 'features/onboarding/data/services/onboarding_service.dart';
 import 'features/onboarding/presentation/screens/onboarding_screen.dart';
 import 'features/settings/presentation/screens/settings_screen.dart';
@@ -46,6 +49,15 @@ class _AutoRideAppState extends ConsumerState<AutoRideApp>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Before the early return below, deliberately: `paused` is the one state
+    // that matters most to the audit log, and it is exactly the one the return
+    // discards. Android kills a backgrounded process without `detached` and
+    // without running `ref.onDispose`, so this is the last reliable moment to
+    // get the buffer onto the disk.
+    unawaited(
+      ref.read(auditLogControllerProvider.notifier).onLifecycleState(state),
+    );
+
     // The user may have changed location permission in system settings while
     // the app was backgrounded; without a re-read, automatic detection would
     // stay off until the next cold start.
@@ -68,6 +80,11 @@ class _AutoRideAppState extends ConsumerState<AutoRideApp>
 
     // Listen for trip state changes and auto-navigate to tracking screen
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      // The audit log comes first, before anything it is meant to observe:
+      // instantiated after the coordinator, it would miss the session start of
+      // the very launch being diagnosed.
+      ref.listenManual(auditLogControllerProvider, (_, _) {});
+
       // Close any trip a process death left mid-recording (L-068), before
       // automatic detection below can start a new one. Fire-and-forget: the
       // provider logs its own outcome and a failure must not block launch —

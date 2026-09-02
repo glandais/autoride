@@ -4,6 +4,8 @@ import 'package:battery_plus/battery_plus.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:geolocator/geolocator.dart';
 
+import '../../../../core/audit/audit_event.dart';
+import '../../../../core/audit/audit_log.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../../settings/data/services/settings_service.dart';
 import '../../../settings/domain/models/user_settings.dart';
@@ -21,12 +23,16 @@ enum BatteryLevel {
 /// Power mode configuration
 class PowerModeConfig {
   const PowerModeConfig({
+    required this.name,
     required this.locationAccuracy,
     required this.sensorSamplingRate,
     required this.mlInferenceInterval,
     required this.locationUpdateInterval,
     required this.distanceFilter,
   });
+
+  /// Which of the four modes this is, for logs and the audit journal.
+  final String name;
 
   final LocationAccuracy locationAccuracy;
   final int sensorSamplingRate; // Hz
@@ -36,6 +42,7 @@ class PowerModeConfig {
 
   /// Normal power mode (battery >50%)
   static const normal = PowerModeConfig(
+    name: 'normal',
     locationAccuracy: LocationAccuracy.medium,
     sensorSamplingRate: AppConstants.sensorSamplingRateNormal,
     mlInferenceInterval: Duration(seconds: 10),
@@ -45,6 +52,7 @@ class PowerModeConfig {
 
   /// Medium power mode (battery 20-50%)
   static const medium = PowerModeConfig(
+    name: 'medium',
     locationAccuracy: LocationAccuracy.medium,
     sensorSamplingRate: AppConstants.sensorSamplingRateMedium,
     mlInferenceInterval: Duration(seconds: 12),
@@ -54,6 +62,7 @@ class PowerModeConfig {
 
   /// Low power mode (battery 10-20%)
   static const low = PowerModeConfig(
+    name: 'low',
     locationAccuracy: LocationAccuracy.low,
     sensorSamplingRate: AppConstants.sensorSamplingRateLow,
     mlInferenceInterval: Duration(seconds: 15),
@@ -63,6 +72,7 @@ class PowerModeConfig {
 
   /// Critical power mode (battery <10%)
   static const critical = PowerModeConfig(
+    name: 'critical',
     locationAccuracy: LocationAccuracy.low,
     sensorSamplingRate: AppConstants.sensorSamplingRateCritical,
     mlInferenceInterval: Duration(seconds: 20),
@@ -120,6 +130,7 @@ class BatteryOptimizer extends _$BatteryOptimizer {
       BatteryState batteryState,
     ) async {
       _currentBatteryLevel = await _battery.batteryLevel;
+      _auditBatteryLevel(batteryState);
       await _updatePowerMode();
     });
 
@@ -128,6 +139,7 @@ class BatteryOptimizer extends _$BatteryOptimizer {
       const Duration(minutes: AppConstants.batteryCheckIntervalMinutes),
       (_) async {
         _currentBatteryLevel = await _battery.batteryLevel;
+        _auditBatteryLevel(await _battery.batteryState);
         await _updatePowerMode();
       },
     );
@@ -141,7 +153,41 @@ class BatteryOptimizer extends _$BatteryOptimizer {
   /// Update power mode based on battery level
   Future<void> _updatePowerMode() async {
     final newConfig = _getPowerModeForBatteryLevel(_currentBatteryLevel);
+    final previous = state.value;
     state = AsyncValue.data(newConfig);
+
+    // The power mode is the denominator of the battery-drain measurement
+    // (`tasks/T041-device-validation.md` item 4): a drain figure means nothing
+    // without knowing which sampling rate and distance filter were in force.
+    if (previous != newConfig) {
+      AuditLog.emit(
+        AuditEvent.powerMode,
+        () => <String, Object?>{
+          'm': newConfig.name,
+          'b': _currentBatteryLevel,
+          'hz': newConfig.sensorSamplingRate,
+          'df': newConfig.distanceFilter,
+          'ui': newConfig.locationUpdateInterval.inSeconds,
+          'la': newConfig.locationAccuracy.name,
+        },
+        critical: true,
+      );
+    }
+  }
+
+  /// A battery reading, on the existing 5-minute tick and on every OS-reported
+  /// battery-state change. Two of these bracket a ride and give the %/hour
+  /// figure item 4 asks for, without a profiler attached.
+  void _auditBatteryLevel(BatteryState batteryState) {
+    AuditLog.emit(
+      AuditEvent.battery,
+      () => <String, Object?>{
+        'b': _currentBatteryLevel,
+        'ch':
+            batteryState == BatteryState.charging ||
+            batteryState == BatteryState.full,
+      },
+    );
   }
 
   /// Get power mode configuration for battery level

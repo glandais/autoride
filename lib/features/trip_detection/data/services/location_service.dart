@@ -3,6 +3,8 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../../domain/models/location_data.dart';
 import '../../../../core/constants/app_constants.dart';
+import '../../../../core/audit/audit_event.dart';
+import '../../../../core/audit/audit_log.dart';
 import '../../../../core/utils/logger.dart';
 import 'adaptive_location_settings.dart';
 import 'location_permission_service.dart';
@@ -139,7 +141,22 @@ Stream<LocationData> locationStream(
     }
 
     consecutiveFailures++;
-    await Future<void>.delayed(_retryDelay(consecutiveFailures));
+    final delay = _retryDelay(consecutiveFailures);
+
+    // A backoff that has grown to tens of seconds is the difference between
+    // "the OS stopped delivering" and "the app stopped asking" — the exact
+    // question item 1 of the device checklist puts.
+    AuditLog.emit(
+      AuditEvent.gpsResubscribe,
+      () => <String, Object?>{
+        'a': 'resub',
+        'n': consecutiveFailures,
+        'in': delay.inMilliseconds,
+      },
+      critical: true,
+    );
+
+    await Future<void>.delayed(delay);
   }
 }
 

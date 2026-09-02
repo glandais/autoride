@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
+import '../../../../core/audit/audit_event.dart';
+import '../../../../core/audit/audit_log.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/utils/logger.dart';
 import '../../../onboarding/data/services/onboarding_service.dart';
@@ -89,6 +91,22 @@ class AutoDetectionController extends _$AutoDetectionController {
       onboardingComplete: onboarding.value == false,
     );
 
+    if (AuditLog.enabled && next != state) {
+      // Which of the three inputs is false is exactly what explains "detection
+      // never started" on a device, and none of it is visible after the fact.
+      AuditLog.emit(
+        AuditEvent.permission,
+        () => <String, Object?>{
+          'k': 'autoDetection',
+          'en': next.enabled,
+          'loc': next.permissionGranted,
+          'onb': next.onboardingComplete,
+          'go': next.shouldListen,
+        },
+        critical: true,
+      );
+    }
+
     // Onboarding requests location through `PermissionHandlerService`, which
     // leaves this provider's cached (pre-request) status stale — detection
     // would then wait for an app restart. Re-read it once, right after
@@ -148,6 +166,12 @@ class AutoDetectionController extends _$AutoDetectionController {
   /// soon as this trip ends.
   Future<void> startTripManually() async {
     if (ref.read(tripStateMachineProvider).hasActiveTrip) return;
+
+    AuditLog.emit(
+      AuditEvent.trip,
+      () => <String, Object?>{'a': 'start', 'man': true},
+      critical: true,
+    );
 
     final coordinator = ref.read(tripDetectionCoordinatorProvider.notifier);
     await coordinator.startListening();
@@ -262,6 +286,15 @@ class AutoDetectionController extends _$AutoDetectionController {
       final service = ref.read(backgroundLocationServiceProvider.notifier);
       await service.initialize();
       await service.startTracking();
+
+      // Item 8 of the device checklist stands on this: without the foreground
+      // service the process is Doze-suspended during the listening phase and
+      // `sensors_plus` delivers nothing.
+      AuditLog.emit(
+        AuditEvent.foregroundService,
+        () => <String, Object?>{'a': 'start'},
+        critical: true,
+      );
     } catch (e, stackTrace) {
       // Detection and recording continue without it (the app is then only
       // reliable while the screen is on), so this must not take them down.
@@ -272,6 +305,11 @@ class AutoDetectionController extends _$AutoDetectionController {
   Future<void> _stopForegroundService() async {
     try {
       await ref.read(backgroundLocationServiceProvider.notifier).stopTracking();
+      AuditLog.emit(
+        AuditEvent.foregroundService,
+        () => <String, Object?>{'a': 'stop'},
+        critical: true,
+      );
     } catch (e, stackTrace) {
       _logger.error('Failed to stop the foreground service', e, stackTrace);
     }

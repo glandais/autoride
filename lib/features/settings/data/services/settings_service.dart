@@ -1,6 +1,9 @@
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:autoride/core/audit/audit_event.dart';
+import 'package:autoride/core/audit/audit_log.dart';
+
 import '../../domain/models/user_settings.dart';
 import '../repositories/settings_repository.dart';
 
@@ -34,6 +37,33 @@ class SettingsService extends _$SettingsService {
   Future<void> updateSettings(UserSettings settings) async {
     final repository = await ref.read(settingsRepositoryProvider.future);
 
+    if (AuditLog.enabled) {
+      final previous = state.value;
+      // Only the settings that change what the pipeline does. A log that
+      // cannot tell "detection was off the whole time" from "detection was on
+      // and never fired" answers the wrong question.
+      _auditSettingChange(
+        'automaticDetection',
+        previous?.detection.automaticDetectionEnabled,
+        settings.detection.automaticDetectionEnabled,
+      );
+      _auditSettingChange(
+        'batteryMode',
+        previous?.batteryMode.name,
+        settings.batteryMode.name,
+      );
+      _auditSettingChange(
+        'backgroundLocation',
+        previous?.backgroundLocationEnabled,
+        settings.backgroundLocationEnabled,
+      );
+      _auditSettingChange(
+        'auditLogLevel',
+        previous?.auditLogLevel.name,
+        settings.auditLogLevel.name,
+      );
+    }
+
     // Save to SharedPreferences
     await repository.saveSettings(settings);
 
@@ -51,6 +81,15 @@ class SettingsService extends _$SettingsService {
 
     final updatedSettings = updater(currentSettings);
     await updateSettings(updatedSettings);
+  }
+
+  void _auditSettingChange(String key, Object? from, Object? to) {
+    if (from == to) return;
+    AuditLog.emit(
+      AuditEvent.setting,
+      () => <String, Object?>{'k': key, 'o': from, 'n': to},
+      critical: true,
+    );
   }
 
   /// Reset settings to defaults

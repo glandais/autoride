@@ -8,6 +8,8 @@ import '../../domain/models/location_data.dart';
 import '../../domain/models/trip.dart';
 import '../../domain/models/trip_state.dart';
 import '../../../trip_history/data/repositories/trip_repository.dart';
+import '../../../../core/audit/audit_event.dart';
+import '../../../../core/audit/audit_log.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/utils/logger.dart';
 import 'trip_state_machine.dart';
@@ -229,6 +231,21 @@ class TripRecorderService extends _$TripRecorderService {
     // Update state machine with database ID
     _stateMachine!.startTripWithId(_activeTrip!.id!);
 
+    AuditLog.emit(
+      AuditEvent.trip,
+      () => <String, Object?>{
+        'a': 'start',
+        'id': _activeTrip!.id,
+        'conf': confidenceScore,
+        'act': activity.name,
+        // Zero prior locations is what a manual start looks like: the button
+        // deliberately prefixes nothing, since a button press has no
+        // trustworthy history behind it.
+        'pre': priorLocations.length,
+      },
+      critical: true,
+    );
+
     // Reset metrics
     _totalDistanceMeters = 0.0;
     _maxSpeedKmh = 0.0;
@@ -274,6 +291,16 @@ class TripRecorderService extends _$TripRecorderService {
     _pauseStartTime = DateTime.now();
     _stateMachine!.pauseTrip();
 
+    AuditLog.emit(
+      AuditEvent.trip,
+      () => <String, Object?>{
+        'a': 'pause',
+        'id': _activeTrip!.id,
+        'dist': _totalDistanceMeters,
+      },
+      critical: true,
+    );
+
     // Don't cancel location stream, just stop recording points
     // This allows us to detect resume (motion) faster
   }
@@ -288,6 +315,18 @@ class TripRecorderService extends _$TripRecorderService {
 
     _stateMachine!.resumeTrip();
     _updateMetrics();
+
+    AuditLog.emit(
+      AuditEvent.trip,
+      () => <String, Object?>{
+        'a': 'resume',
+        'id': _activeTrip!.id,
+        // The running total is what decides how much of a ride counted as
+        // moving time, so it is worth carrying at every pause boundary.
+        'pau': _totalPauseDuration.inSeconds,
+      },
+      critical: true,
+    );
   }
 
   /// Stop recording and save the final trip.
@@ -370,6 +409,21 @@ class TripRecorderService extends _$TripRecorderService {
     final discarded = !candidate.isValidTrip;
     final finalTrip = candidate.copyWith(
       status: discarded ? TripStatus.discarded : TripStatus.completed,
+    );
+
+    AuditLog.emit(
+      AuditEvent.trip,
+      () => <String, Object?>{
+        'a': discarded ? 'discard' : 'stop',
+        'id': finalTrip.id,
+        'dist': finalTrip.distance,
+        'dur': finalTrip.duration,
+        'pau': finalTrip.pauseDuration,
+        'avg': finalTrip.avgSpeed,
+        'max': finalTrip.maxSpeed,
+        'pts': flushed ? null : _routePointBuffer.length,
+      },
+      critical: true,
     );
 
     if (discarded) {
@@ -511,6 +565,19 @@ class TripRecorderService extends _$TripRecorderService {
     if (!firstKept.isBefore(trip.startTime)) return;
 
     _activeTrip = trip.copyWith(startTime: firstKept);
+
+    AuditLog.emit(
+      AuditEvent.backdate,
+      () => <String, Object?>{
+        'id': trip.id,
+        'k': ordered.length,
+        'm': _totalDistanceMeters,
+        'ts': firstKept!.millisecondsSinceEpoch,
+        'was': trip.startTime.millisecondsSinceEpoch,
+      },
+      critical: true,
+    );
+
     _logger.info(
       'Trip ${trip.id} back-dated to $firstKept from '
       '${ordered.length} pre-trip fixes '
@@ -559,11 +626,13 @@ class TripRecorderService extends _$TripRecorderService {
 
     // Filter by accuracy
     if (location.accuracy > AppConstants.maxLocationAccuracyMeters) {
+      _auditDroppedPoint(location, 'acc');
       return false; // Poor GPS fix, skip
     }
 
     // Filter by speed (outlier rejection)
     if (location.speedKmh > AppConstants.maxCyclingSpeedKmh) {
+      _auditDroppedPoint(location, 'speed');
       return false; // Unlikely for cycling, probably GPS error
     }
 
@@ -573,6 +642,7 @@ class TripRecorderService extends _$TripRecorderService {
 
       // Skip if too close (GPS drift)
       if (distance < AppConstants.minRoutePointDistanceMeters) {
+        _auditDroppedPoint(location, 'dist', distance: distance);
         return false;
       }
 
@@ -595,12 +665,48 @@ class TripRecorderService extends _$TripRecorderService {
     // Update UI metrics
     _updateMetrics();
 
+    if (AuditLog.enabled) {
+      AuditLog.emit(
+        AuditEvent.routePoint,
+        () => <String, Object?>{
+          'a': 'keep',
+          'd': _totalDistanceMeters,
+          'spk': location.speedKmh,
+          'ac': location.accuracy,
+        },
+      );
+    }
+
     // Flush if buffer full
     if (_routePointBuffer.length >= AppConstants.routePointBufferSize) {
       _flushRoutePointBuffer();
     }
 
     return true;
+  }
+
+  /// A fix the recording filters rejected, and why.
+  ///
+  /// Verbose-only: on a normal ride most fixes are rejected by the 15 m
+  /// distance filter, so at normal level this would be the single largest
+  /// contributor to the file for very little insight. It earns its place when
+  /// the question is why a route has a hole in it.
+  void _auditDroppedPoint(
+    LocationData location,
+    String reason, {
+    double? distance,
+  }) {
+    if (!AuditLog.verbose) return;
+    AuditLog.emitVerbose(
+      AuditEvent.routePoint,
+      () => <String, Object?>{
+        'a': 'drop',
+        'why': reason,
+        'ac': location.accuracy,
+        'spk': location.speedKmh,
+        'd': distance,
+      },
+    );
   }
 
   /// Flush route point buffer to database.
@@ -613,8 +719,20 @@ class TripRecorderService extends _$TripRecorderService {
       if (_routePointBuffer.isEmpty) return true;
 
       try {
+        final count = _routePointBuffer.length;
+        final startedAt = DateTime.now();
         await _repository!.saveRoutePoints(_routePointBuffer);
         _routePointBuffer.clear();
+
+        AuditLog.emit(
+          AuditEvent.flush,
+          () => <String, Object?>{
+            'a': 'points',
+            'n': count,
+            'ms': DateTime.now().difference(startedAt).inMilliseconds,
+            'ok': true,
+          },
+        );
         return true;
       } catch (e, stackTrace) {
         _logger.error(

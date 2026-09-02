@@ -36,6 +36,19 @@ sealed class TripState with _$TripState {
 
 /// Extensions for state queries
 extension TripStateExtensions on TripState {
+  /// Name of this state, for logs and the audit journal.
+  ///
+  /// Spelled out rather than derived from the runtime type: the generated
+  /// freezed class names (`_Idle`, `_Active`) are an implementation detail, and
+  /// an exported audit log has to stay readable across a code-generation
+  /// change.
+  String get stateName => map(
+    idle: (_) => 'idle',
+    detecting: (_) => 'detecting',
+    active: (_) => 'active',
+    paused: (_) => 'paused',
+  );
+
   /// Whether a trip is currently active (Active or Paused)
   bool get hasActiveTrip => map(
     idle: (_) => false,
