@@ -100,6 +100,13 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
   // `mn == 0` means the process ran but `sensors_plus` delivered nothing —
   // opposite verdicts for items 3 and 8 of the device checklist, and
   // indistinguishable from a plain hole in the timestamps.
+  /// False while the counters below describe a period the log was NOT
+  /// recording. Enabling the log mid-ride (the normal flow: start riding, then
+  /// flip the switch) would otherwise make the first `hb` report a single tick
+  /// over a `dt` of minutes — which is exactly the signature of the OS having
+  /// frozen the 1 Hz timer, and would invert items 3 and 8 of the checklist.
+  bool _heartbeatArmed = false;
+
   int _heartbeatTicks = 0;
   int _heartbeatMotionSamples = 0;
   int _heartbeatFixes = 0;
@@ -148,7 +155,7 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
     // Initialize with idle state
     ref.onDispose(() {
       _disposed = true;
-      _cleanup();
+      _cleanup('dispose');
       _closeSession();
     });
 
@@ -219,6 +226,7 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
   }
 
   void _resetHeartbeat() {
+    _heartbeatArmed = true;
     _heartbeatSince = now();
     _heartbeatTicks = 0;
     _heartbeatMotionSamples = 0;
@@ -253,6 +261,42 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
     );
   }
 
+  /// Discard the pre-trip buffer, saying why.
+  ///
+  /// Always through here rather than `clear()` directly: an analyst asking
+  /// "why did the ride start at the corner instead of at my door" needs to see
+  /// which of the four events dropped the approach, and silence looks exactly
+  /// like "the buffer never filled".
+  void _clearPreTripBuffer(String why) {
+    if (_preTripLocations.isEmpty) return;
+    _emitBuffer('clear', why: why);
+    _preTripLocations.clear();
+  }
+
+  /// One `buf` line describing the pre-trip buffer.
+  ///
+  /// Verbose-only, and the fields are computed inside the closure: the buffer
+  /// is touched on every fix, so nothing may be allocated on the path where
+  /// the log is off or at normal level. Emitted *before* a `clear` and *after*
+  /// an `add`, so `n` always counts the fixes the line is about.
+  void _emitBuffer(String action, {String? why, int? kept}) {
+    if (!AuditLog.verbose) return;
+    AuditLog.emitVerbose(AuditEvent.buffer, () {
+      final fixes = _preTripLocations.locations;
+      return <String, Object?>{
+        'a': action,
+        'n': fixes.length,
+        'sp': fixes.isEmpty
+            ? 0
+            : fixes.last.timestamp
+                  .difference(fixes.first.timestamp)
+                  .inMilliseconds,
+        'kp': kept,
+        'why': why,
+      };
+    });
+  }
+
   /// Run one supervisor tick by hand.
   ///
   /// Seam for the tests, same reason as [startDetectionTimer]: the heartbeat
@@ -264,8 +308,14 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
   void _onDetectionTick() {
     if (_disposed) return;
     if (AuditLog.enabled) {
+      // Re-arm lazily on the first tick after an off->on flip, so the interval
+      // that gets reported only ever covers time the log was actually on.
+      if (!_heartbeatArmed) _resetHeartbeat();
       _heartbeatTicks++;
       _emitHeartbeat();
+    } else {
+      // Disabled hot path: a static load and a bool store, no allocation.
+      _heartbeatArmed = false;
     }
     _checkGpsLossTimeout();
     _checkDetectionTimeout();
@@ -348,7 +398,7 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
                 critical: true,
               );
               _lastLocation = null;
-              _preTripLocations.clear();
+              _clearPreTripBuffer('gpsError');
             },
             loading: () {},
           ),
@@ -358,11 +408,13 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
 
   /// Cancel the location subscription and forget the last fix, so detection
   /// degrades to motion-only instead of reasoning about a stale position.
-  void _closeGpsGate() {
+  /// [why] is journalled as-is: a gate closed by session teardown must not read
+  /// as a stationary timeout, which is a statement about the *rider*.
+  void _closeGpsGate(String why) {
     if (_closeLocationSubscription != null) {
       AuditLog.emit(
         AuditEvent.gate,
-        () => <String, Object?>{'a': 'close', 'why': 'inactivityTimeout'},
+        () => <String, Object?>{'a': 'close', 'why': why},
       );
     }
     _cancelGpsInactivityTimer();
@@ -371,7 +423,7 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
     _lastLocation = null;
     // The gate closing means the rider stood still long enough for the buffered
     // approach to have stopped describing a departure.
-    _preTripLocations.clear();
+    _clearPreTripBuffer(why);
   }
 
   /// Arm the inactivity timeout once, on the first stationary sample after
@@ -394,7 +446,7 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
       _gpsInactivityTimer = null;
       if (_disposed) return;
       if (ref.read(tripStateMachineProvider).hasActiveTrip) return;
-      _closeGpsGate();
+      _closeGpsGate('inactivityTimeout');
     });
   }
 
@@ -424,13 +476,21 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
   }
 
   void _stopNow() {
-    AuditLog.emit(
-      AuditEvent.session,
-      () => <String, Object?>{'a': 'stop'},
-      critical: true,
-    );
+    // Only a session that was actually running can stop: `stopListening()` on
+    // an idle coordinator is a no-op, and journalling a `stop` for it would
+    // invent a session that never existed.
+    if (_isAnalyzing) {
+      AuditLog.emit(
+        AuditEvent.session,
+        () => <String, Object?>{'a': 'stop'},
+        critical: true,
+      );
+    }
     _stopRequestedAfterTrip = false;
-    _suspendListening();
+    // `emitSuspend: false`: the teardown below is the *stop* already recorded
+    // above, not a suspend-and-restart. Two session events for one stop made
+    // the session count in an exported log wrong.
+    _suspendListening(emitSuspend: false);
     _closeSession();
   }
 
@@ -451,15 +511,15 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
   /// Tear down the streams and the timer but keep the session (and therefore
   /// this provider) alive — used by the paths that immediately restart, and
   /// while a trip that this coordinator started is being recorded.
-  void _suspendListening() {
-    if (_isAnalyzing) {
+  void _suspendListening({bool emitSuspend = true}) {
+    if (_isAnalyzing && emitSuspend) {
       AuditLog.emit(
         AuditEvent.session,
         () => <String, Object?>{'a': 'suspend'},
         critical: true,
       );
     }
-    _cleanup();
+    _cleanup(emitSuspend ? 'session' : 'stop');
     _isAnalyzing = false;
   }
 
@@ -617,9 +677,10 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
     // open and the recorder holds its own subscription, so accumulating here
     // would grow a list nobody reads.
     if (ref.read(tripStateMachineProvider).hasActiveTrip) {
-      _preTripLocations.clear();
+      _clearPreTripBuffer('recording');
     } else {
       _preTripLocations.add(location, now());
+      _emitBuffer('add');
     }
 
     // Reception time, not `location.timestamp`: a fix replayed from a plugin
@@ -719,6 +780,9 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
       // must not become part of the ride. Emptied either way — confirmed or
       // failed, this departure is no longer pending.
       final priorLocations = _preTripLocations.ridingTail;
+      // `kp` against `n` is what shows the riding-tail cut working: a walk to
+      // the bike that was correctly dropped reads as n > kp.
+      _emitBuffer('tail', kept: priorLocations.length);
       _preTripLocations.clear();
 
       try {
@@ -868,7 +932,7 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
 
     // Anything buffered during the ride (there should be nothing — see
     // `_onLocationData`) belongs to the trip that just ended, not to the next.
-    _preTripLocations.clear();
+    _clearPreTripBuffer('tripEnd');
 
     // THIS is a false start: a recording the recorder threw away because it was
     // shorter than `minTripDurationSeconds` (L-068). Backing off for
@@ -949,8 +1013,9 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
     }
   }
 
-  /// Clean up resources
-  void _cleanup() {
+  /// Clean up resources. [gateWhy] is what the GPS gate's `close` event will
+  /// report — see [_closeGpsGate].
+  void _cleanup(String gateWhy) {
     _detectionTimer?.cancel();
     _detectionTimer = null;
 
@@ -963,6 +1028,6 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
     // Suspending the session also closes the GPS gate: the recorder owns its
     // own location subscription while a trip runs, so nothing is lost. Closing
     // the gate clears the pre-trip buffer too.
-    _closeGpsGate();
+    _closeGpsGate(gateWhy);
   }
 }

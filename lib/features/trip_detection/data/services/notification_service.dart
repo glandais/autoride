@@ -1,5 +1,7 @@
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
+import 'package:autoride/core/audit/audit_event.dart';
+import 'package:autoride/core/audit/audit_log.dart';
 import 'package:autoride/core/constants/app_constants.dart';
 import 'package:autoride/features/settings/data/services/settings_service.dart';
 import 'package:autoride/features/trip_detection/data/services/trip_recorder_service.dart';
@@ -123,6 +125,14 @@ class NotificationService extends _$NotificationService {
   /// are fire-and-forget. Without this guard a thrown StateError (e.g. stop with
   /// no active trip) or a repository exception becomes an unhandled async error.
   void _runAction(String name, Future<void> Function() action) {
+    // Critical: a trip stopped from the notification never reaches the
+    // detection pipeline, so without this line the log shows a ride ending for
+    // no reason the journal can account for.
+    AuditLog.emit(
+      AuditEvent.notification,
+      () => <String, Object?>{'a': 'action', 'k': name},
+      critical: true,
+    );
     Future(() async {
       try {
         await action();
@@ -189,6 +199,13 @@ class NotificationService extends _$NotificationService {
       subtitle: 'Distance: $distanceKm km • Duration: $durationStr',
     );
 
+    // Verbose: the ongoing notification is refreshed on every metrics update,
+    // so at normal level this would be one line per second for nothing.
+    AuditLog.emitVerbose(
+      AuditEvent.notification,
+      () => <String, Object?>{'a': 'show', 'k': 'fg'},
+    );
+
     await _notifications.show(
       id: AppConstants.foregroundNotificationId,
       title: 'AutoRide - Trip in Progress',
@@ -228,6 +245,11 @@ class NotificationService extends _$NotificationService {
       presentSound: settings.soundOnTripStartStop,
     );
 
+    AuditLog.emit(
+      AuditEvent.notification,
+      () => <String, Object?>{'a': 'show', 'k': 'start'},
+    );
+
     await _notifications.show(
       id: AppConstants.tripStartNotificationId,
       title: 'Trip Started',
@@ -240,6 +262,10 @@ class NotificationService extends _$NotificationService {
 
     // Auto-dismiss after 5 seconds
     Future.delayed(const Duration(seconds: 5), () {
+      AuditLog.emit(
+        AuditEvent.notification,
+        () => <String, Object?>{'a': 'cancel', 'k': 'start'},
+      );
       _notifications.cancel(id: AppConstants.tripStartNotificationId);
     });
   }
@@ -289,6 +315,11 @@ class NotificationService extends _$NotificationService {
       subtitle: 'Distance: $distanceKm km • Duration: $durationStr',
     );
 
+    AuditLog.emit(
+      AuditEvent.notification,
+      () => <String, Object?>{'a': 'show', 'k': 'stop'},
+    );
+
     await _notifications.show(
       id: AppConstants.tripStopNotificationId,
       title: 'Trip Completed',
@@ -303,6 +334,10 @@ class NotificationService extends _$NotificationService {
 
   // Cancel foreground notification
   Future<void> cancelForegroundNotification() async {
+    AuditLog.emit(
+      AuditEvent.notification,
+      () => <String, Object?>{'a': 'cancel', 'k': 'fg'},
+    );
     await _notifications.cancel(id: AppConstants.foregroundNotificationId);
   }
 

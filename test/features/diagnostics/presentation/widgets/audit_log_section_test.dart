@@ -1,4 +1,5 @@
 import 'package:autoride/core/audit/audit_level.dart';
+import 'package:autoride/features/diagnostics/data/services/audit_log_controller.dart';
 import 'package:autoride/features/diagnostics/data/services/audit_export_service.dart';
 import 'package:autoride/features/diagnostics/domain/models/audit_log_stats.dart';
 import 'package:autoride/features/diagnostics/presentation/widgets/audit_log_section.dart';
@@ -17,10 +18,18 @@ import '../../../../helpers/widget/pump_app.dart';
 void main() {
   late _SpyExportService exportService;
   late _FakeSettingsService settingsService;
+  late _FakeAuditLogController logController;
+
+  /// How many times the stats row was (re)computed. The row is what tells the
+  /// user the log is now empty, so a clear that does not refresh it leaves a
+  /// stale count on screen.
+  late int statsBuilds;
 
   setUp(() {
     exportService = _SpyExportService();
     settingsService = _FakeSettingsService();
+    logController = _FakeAuditLogController();
+    statsBuilds = 0;
   });
 
   Future<void> pumpSection(
@@ -56,9 +65,11 @@ void main() {
       overrides: <Override>[
         settingsServiceProvider.overrideWith(() => settingsService),
         auditExportServiceProvider.overrideWithValue(exportService),
-        auditLogStatsProvider.overrideWith(
-          (ref) async => stats ?? AuditLogStats.empty(level),
-        ),
+        auditLogControllerProvider.overrideWith(() => logController),
+        auditLogStatsProvider.overrideWith((ref) async {
+          statsBuilds++;
+          return stats ?? AuditLogStats.empty(level);
+        }),
       ],
     );
     await tester.pumpAndSettle();
@@ -180,6 +191,36 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Clear diagnostic log?'), findsOneWidget);
+      expect(logController.clearCalls, 0);
+    });
+
+    testWidgets('Cancel really cancels', (tester) async {
+      await pumpSection(tester);
+
+      await tester.tap(find.text('Clear log'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+
+      expect(logController.clearCalls, 0);
+    });
+
+    testWidgets('Delete erases the log and refreshes what is on screen', (
+      tester,
+    ) async {
+      await pumpSection(tester);
+      final buildsBefore = statsBuilds;
+
+      await tester.tap(find.text('Clear log'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Delete'));
+      await tester.pumpAndSettle();
+
+      expect(logController.clearCalls, 1);
+      // Invalidating the stats provider is the only thing that takes the old
+      // event count off the screen.
+      expect(statsBuilds, greaterThan(buildsBefore));
+      expect(find.text('Diagnostic log cleared'), findsOneWidget);
     });
   });
 }
@@ -197,6 +238,17 @@ class _SpyExportService implements AuditExportService {
 
   @override
   Future<File> writeLogFile({DateTime? since}) async => File('unused');
+}
+
+/// Controller double: no sink, no database, just a call counter.
+class _FakeAuditLogController extends AuditLogController {
+  int clearCalls = 0;
+
+  @override
+  AuditLogLevel build() => AuditLogLevel.normal;
+
+  @override
+  Future<void> clear() async => clearCalls++;
 }
 
 class _FakeSettingsService extends SettingsService {

@@ -191,16 +191,17 @@ class _AuditLogSectionState extends ConsumerState<AuditLogSection> {
     if (confirmed != true) return;
 
     await ref.read(auditLogControllerProvider.notifier).clear();
+    // Leaving the settings screen mid-delete disposes this element, and both
+    // `ref` and `context` are dead after the await.
+    if (!mounted) return;
     ref.invalidate(auditLogStatsProvider);
 
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Diagnostic log cleared'),
-          backgroundColor: AppColors.success,
-        ),
-      );
-    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Diagnostic log cleared'),
+        backgroundColor: AppColors.success,
+      ),
+    );
   }
 
   /// Source rect for the iPad share popover.

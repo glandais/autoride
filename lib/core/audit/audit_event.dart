@@ -17,13 +17,15 @@ abstract final class AuditEvent {
   /// App lifecycle change. `st` = resumed|inactive|paused|hidden|detached.
   static const String lifecycle = 'app';
 
-  /// Permission state. `k` = loc|locBg|notif|motion, `st`, `pre` (precise).
+  /// Whether the pipeline is allowed to run. `k` names the gate
+  /// (`autoDetection`), `en` the user's setting, `loc` the location
+  /// permission, `onb` onboarding completion, `go` the resulting verdict.
   static const String permission = 'perm';
 
   /// A user setting changed. `k`, `o` (old), `n` (new).
   static const String setting = 'set';
 
-  /// The log talking about itself. `a` = overflow|purge|clkjump.
+  /// The log talking about itself. `a` = overflow, with `n` lines dropped.
   static const String audit = 'aud';
 
   /// Wall-clock vs monotonic clock pair, re-emitted when they drift apart.
@@ -33,7 +35,10 @@ abstract final class AuditEvent {
   /// Coordinator session. `a` = start|stop|suspend.
   static const String session = 'sess';
 
-  /// Trip state machine transition. `f` (from), `to`, `why`.
+  /// Trip state machine transition. `f` (from), `to` — the union case names.
+  ///
+  /// The *reason* is not carried here: it is whatever event immediately
+  /// precedes the transition (`start`, `stop`, `dto`, `gpsw fire`).
   static const String stateChange = 'st';
 
   /// Motion-gated GPS gate. `a` = open|close|sched|cancel, `why`, `in` (s).
@@ -69,7 +74,8 @@ abstract final class AuditEvent {
   /// Trip-stop decision. `d` = continue|pause|stop, `cs`, `cm`, `pd`.
   static const String stopEval = 'stop';
 
-  /// Resume evaluation while paused. `go`, `md` (movement duration).
+  /// Resume evaluation while paused. `go`, `cm` (consecutive movement
+  /// detections), `pd` (accumulated pause, seconds).
   static const String resumeEval = 'res';
 
   // --- Trip lifecycle ----------------------------------------------------
@@ -79,7 +85,12 @@ abstract final class AuditEvent {
   /// Pre-trip fixes replayed and the start back-dated (L-076).
   static const String backdate = 'bdate';
 
-  /// Pre-trip location buffer activity (verbose). `a` = add|clear|tail.
+  /// Pre-trip location buffer activity (verbose).
+  ///
+  /// `a` = add (a fix was buffered) | tail (the buffer was handed to the
+  /// recorder) | clear (it was discarded), `n` the fixes involved, `sp` the
+  /// span they cover in ms, `kp` how many the riding-tail cut kept, and `why`
+  /// on a clear.
   static const String buffer = 'buf';
 
   /// GPS-loss watchdog (L-074). `a` = arm|fire|disarm, `el`, `lim`, `ref`.
@@ -104,7 +115,8 @@ abstract final class AuditEvent {
   /// Foreground service. `a` = start|stop.
   static const String foregroundService = 'fgs';
 
-  /// Notification activity. `a` = show|update|cancel|action.
+  /// Notification activity. `a` = show|cancel|action, `k` = fg|start|stop for
+  /// a show or cancel and the action id for an action. Never the message text.
   static const String notification = 'noti';
 
   // --- Diagnostics -------------------------------------------------------

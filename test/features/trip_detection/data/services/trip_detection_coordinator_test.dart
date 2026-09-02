@@ -417,6 +417,36 @@ class _WatchdogCoordinator extends TripDetectionCoordinator {
   void tick() => _onTick?.call();
 }
 
+/// Everything the audit assertions need in one double: a movable clock, a
+/// hand-fired 1 Hz supervisor and an exposed GPS inactivity timer. The audit
+/// group asserts on events that only exist at a timeout, so none of the three
+/// may depend on real time.
+class _ScriptedCoordinator extends TripDetectionCoordinator {
+  DateTime clock = DateTime(2026, 1, 1, 12);
+  void Function()? _onTick;
+  _ManualTimer? _inactivityTimer;
+
+  /// The armed GPS inactivity timer, or `null` if none was ever armed.
+  _ManualTimer? get inactivityTimer => _inactivityTimer;
+
+  @override
+  DateTime now() => clock;
+
+  @override
+  Timer startDetectionTimer(void Function() onTick) {
+    _onTick = onTick;
+    return _ManualTimer(() {});
+  }
+
+  @override
+  Timer startGpsInactivityTimer(void Function() onElapsed) =>
+      _inactivityTimer = _ManualTimer(onElapsed);
+
+  void advance(Duration by) => clock = clock.add(by);
+
+  void tick() => _onTick?.call();
+}
+
 /// Name of the current union case (the generated union classes are private).
 String _stateName(TripState state) => state.map(
   idle: (_) => 'idle',
@@ -1859,6 +1889,221 @@ void main() {
       await pushMotion(1);
 
       expect(sink.lines, isEmpty);
+    });
+
+    // -----------------------------------------------------------------------
+    // The events above all happen on the happy path. These need a timeout, a
+    // teardown or a trip ending, so they run against a coordinator whose
+    // clock, supervisor tick and GPS inactivity timer are all fired by hand.
+    // Each one pins an emit whose removal would make the log silent about a
+    // transition an analyst has no other way to see.
+    // -----------------------------------------------------------------------
+    group('at the edges', () {
+      late _ScriptedCoordinator coordinator;
+
+      setUp(() {
+        container.dispose();
+        container = ProviderContainer(
+          overrides: baseOverrides(
+            extra: [
+              tripDetectionCoordinatorProvider.overrideWith(
+                _ScriptedCoordinator.new,
+              ),
+            ],
+          ),
+        );
+        coordinatorSubscription = container.listen(
+          tripDetectionCoordinatorProvider,
+          (_, _) {},
+        );
+      });
+
+      Future<void> begin() async {
+        coordinator = await startedCoordinator() as _ScriptedCoordinator;
+      }
+
+      Future<void> tick() async {
+        coordinator.tick();
+        await pumpEventQueue();
+      }
+
+      Future<void> elapseInactivity() async {
+        coordinator.inactivityTimer?.fire();
+        await pumpEventQueue();
+      }
+
+      _TestTripStateMachine machine() =>
+          container.read(tripStateMachineProvider.notifier)
+              as _TestTripStateMachine;
+
+      /// Opens the GPS gate with a moving sample, then buffers one fix.
+      Future<void> openGateAndBuffer({double speed = 6.0}) async {
+        await pushMotion(1);
+        locationController.add(_location(speed: speed, index: 1));
+        await pumpEventQueue();
+      }
+
+      Iterable<Object?> actionsOf(String type) =>
+          sink.fieldsOf(type).map((f) => f['a']);
+
+      test('the gate closing on a stationary timeout says so', () async {
+        await begin();
+        await pushMotion(1);
+        motionController.add(_stationaryMotionSample(index: 2));
+        await pumpEventQueue();
+
+        await elapseInactivity();
+
+        final close = sink.fieldsOf('gate').where((f) => f['a'] == 'close');
+        expect(close, hasLength(1));
+        expect(close.single['why'], 'inactivityTimeout');
+      });
+
+      test('a gate closed by the session teardown is not journalled as a '
+          'stationary rider', () async {
+        await begin();
+        await pushMotion(1);
+
+        coordinator.stopListening();
+        await pumpEventQueue();
+
+        final close = sink.fieldsOf('gate').where((f) => f['a'] == 'close');
+        expect(close, hasLength(1));
+        // R-07: this used to read `inactivityTimeout`, i.e. a statement about
+        // the rider standing still, for a gate the app itself closed.
+        expect(close.single['why'], 'stop');
+      });
+
+      test('a detection timeout is recorded with the streak it dropped',
+          () async {
+        startDetector.countedDetections = 1;
+        await begin();
+        await pushMotion(1);
+        expect(
+          _stateName(container.read(tripStateMachineProvider)),
+          'detecting',
+        );
+
+        machine().forceDetectionTimeout = true;
+        await tick();
+
+        final timeout = sink.fieldsOf('dto').single;
+        expect(timeout['el'], AppConstants.detectionTimeoutSeconds);
+        expect(timeout.containsKey('n'), isTrue);
+      });
+
+      test('the cooldown armed by a false start is recorded', () async {
+        recorder.discardOnStop = true;
+        startDetector.verdict = true;
+        await begin();
+        await pushMotion(1);
+
+        stopDetector.decision = StopDecision.stopTrip;
+        await pushMotion(2);
+
+        final cooldown = sink.fieldsOf('cool').single;
+        expect(cooldown['a'], 'arm');
+        expect(cooldown['why'], 'falseStart');
+        expect(cooldown['d'], AppConstants.tripStartCooldownPeriodSeconds);
+      });
+
+      test('the GPS-loss watchdog is recorded disarming when the trip ends',
+          () async {
+        startDetector.verdict = true;
+        await begin();
+        await pushMotion(1);
+        expect(actionsOf('gpsw'), contains('arm'));
+
+        stopDetector.decision = StopDecision.stopTrip;
+        await pushMotion(2);
+
+        // Without this the log shows a countdown that was armed and never
+        // ended, which reads as a watchdog that failed to fire.
+        expect(actionsOf('gpsw'), contains('disarm'));
+      });
+
+      test('the pre-trip buffer is recorded filling and being handed over',
+          () async {
+        await begin();
+        await openGateAndBuffer();
+
+        final added = sink.fieldsOf('buf').where((f) => f['a'] == 'add');
+        expect(added, hasLength(1));
+        expect(added.single['n'], 1);
+
+        startDetector.verdict = true;
+        await pushMotion(2);
+
+        final tail = sink.fieldsOf('buf').where((f) => f['a'] == 'tail');
+        expect(tail, hasLength(1));
+        // `n` buffered, `kp` kept by the riding-tail cut (L-076).
+        expect(tail.single['n'], 1);
+        expect(tail.single['kp'], 1);
+      });
+
+      test('a discarded pre-trip buffer says what discarded it', () async {
+        await begin();
+        await openGateAndBuffer();
+
+        motionController.add(_stationaryMotionSample(index: 2));
+        await pumpEventQueue();
+        await elapseInactivity();
+
+        final cleared = sink.fieldsOf('buf').where((f) => f['a'] == 'clear');
+        expect(cleared, hasLength(1));
+        expect(cleared.single['n'], 1);
+        expect(cleared.single['why'], 'inactivityTimeout');
+      });
+
+      test('enabling the log mid-session re-arms the heartbeat baseline',
+          () async {
+        AuditLog.uninstall();
+        await begin();
+        await pushMotion(1);
+
+        // Five minutes of riding before the user flips the switch.
+        for (var i = 0; i < 300; i++) {
+          coordinator.advance(const Duration(seconds: 1));
+          coordinator.tick();
+        }
+
+        AuditLog.install(sink, verbose: true);
+
+        // 31 ticks: the first one re-arms the baseline, so the interval that
+        // closes covers the 30 s after it.
+        for (var i = 0; i < 31; i++) {
+          coordinator.advance(const Duration(seconds: 1));
+          coordinator.tick();
+        }
+        await pumpEventQueue();
+
+        final heartbeat = sink.fieldsOf('hb');
+        expect(heartbeat, isNotEmpty);
+        // R-08: this used to be n:1 over a dt of 300 000 ms — the exact
+        // signature the ledger defines as "the OS froze the 1 Hz timer".
+        expect(heartbeat.first['n'], 31);
+        expect(heartbeat.first['dt'], 30000);
+      });
+
+      test('a stop records exactly one session event', () async {
+        await begin();
+
+        coordinator.stopListening();
+        await pumpEventQueue();
+
+        // R-17: `stop` immediately followed by `suspend` made one stop look
+        // like two session events in the exported log.
+        expect(actionsOf('sess'), ['start', 'stop']);
+      });
+
+      test('stopping a session that never started records nothing', () async {
+        final coordinator = await readCoordinator();
+
+        coordinator.stopListening();
+        await pumpEventQueue();
+
+        expect(sink.fieldsOf('sess'), isEmpty);
+      });
     });
   });
 }

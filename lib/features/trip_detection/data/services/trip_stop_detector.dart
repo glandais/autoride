@@ -200,12 +200,17 @@ class TripStopDetector extends _$TripStopDetector {
           'sd': _window.accelerationStdDev,
           'gy': _window.averageRotation,
           'sta': verdict,
+          // Three arms, three sources: GPS alone decides "moving"; below the
+          // stationary threshold GPS only *admits* a stop and the vibration
+          // check has the last word (`gps+vib`); in the dead band between the
+          // two the sensors decide alone.
           'src': speedKmh == null
               ? 'sensors'
-              : (speedKmh >= AppConstants.movingSpeedMinKmh ||
-                        speedKmh < AppConstants.stationarySpeedMaxKmh
-                    ? 'gps'
-                    : 'sensors'),
+              : speedKmh >= AppConstants.movingSpeedMinKmh
+              ? 'gps'
+              : speedKmh < AppConstants.stationarySpeedMaxKmh
+              ? 'gps+vib'
+              : 'sensors',
           'spk': speedKmh,
         },
       );

@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -5,6 +7,8 @@ import 'package:autoride/features/trip_detection/data/services/trip_stop_detecto
 import 'package:autoride/features/trip_detection/domain/models/motion_data.dart';
 import 'package:autoride/features/trip_detection/domain/models/location_data.dart';
 import 'package:autoride/features/trip_detection/domain/models/trip_stop_state.dart';
+import 'package:autoride/core/audit/audit_log.dart';
+import 'package:autoride/core/audit/audit_sink.dart';
 import 'package:autoride/core/constants/app_constants.dart';
 
 void main() {
@@ -900,5 +904,95 @@ void main() {
       expect(state.pauseDuration, equals(Duration.zero));
       expect(state.consecutiveStationaryDetections, equals(0));
     });
+
+    // -----------------------------------------------------------------
+    // `win.src` names which of the three arms of `_isStationary` decided.
+    // Item 9 of the T041 checklist is read off exactly this field, so an arm
+    // that reports the wrong source turns a sensor verdict into a GPS one and
+    // sends the analyst after the wrong subsystem (R-19).
+    // -----------------------------------------------------------------
+    group('the window verdict names its real source', () {
+      late _RecordingAuditSink sink;
+
+      setUp(() {
+        sink = _RecordingAuditSink();
+        AuditLog.install(sink, verbose: true);
+        addTearDown(AuditLog.uninstall);
+      });
+
+      /// Runs one evaluation at [speedKmh] and returns the `src` reported.
+      Future<Object?> srcAt(double speedKmh) async {
+        final container = createContainer();
+        addTearDown(container.dispose);
+
+        final detector = container.read(tripStopDetectorProvider.notifier);
+        final now = DateTime(2026, 1, 1);
+        await detector.analyzeForTripStop(
+          noisyMotion(0, accelStdDev: 0.1, gyro: 0.1),
+          locationAt(now, speedKmh),
+          now: now,
+        );
+
+        return sink.fieldsOf('win').last['src'];
+      }
+
+      test('a fix at riding speed is GPS alone', () async {
+        expect(await srcAt(AppConstants.movingSpeedMinKmh + 5), 'gps');
+      });
+
+      test('a fix at a standstill is GPS plus the vibration check', () async {
+        // This arm returns `_window.isVibrationFree`: the sensors have the
+        // last word, so reporting plain `gps` blamed the wrong input.
+        expect(await srcAt(0.0), 'gps+vib');
+      });
+
+      test('the dead band between the two thresholds is the sensors', () async {
+        expect(
+          await srcAt(
+            (AppConstants.stationarySpeedMaxKmh +
+                    AppConstants.movingSpeedMinKmh) /
+                2,
+          ),
+          'sensors',
+        );
+      });
+
+      test('no fix at all is the sensors', () async {
+        final container = createContainer();
+        addTearDown(container.dispose);
+
+        final now = DateTime(2026, 1, 1);
+        await container
+            .read(tripStopDetectorProvider.notifier)
+            .analyzeForTripStop(
+              noisyMotion(0, accelStdDev: 0.1, gyro: 0.1),
+              null,
+              now: now,
+            );
+
+        expect(sink.fieldsOf('win').last['src'], 'sensors');
+      });
+    });
   });
+}
+
+/// Collects audit lines and decodes them on demand.
+class _RecordingAuditSink implements AuditSink {
+  final List<String> lines = <String>[];
+
+  @override
+  void write(
+    String line, {
+    required int t,
+    required String type,
+    required int lvl,
+    required bool critical,
+  }) => lines.add(line);
+
+  @override
+  Future<void> flush() async {}
+
+  Iterable<Map<String, dynamic>> fieldsOf(String type) => lines
+      .map((l) => jsonDecode(l) as Map<String, dynamic>)
+      .where((m) => m['e'] == type);
 }

@@ -57,6 +57,14 @@ class SettingsService extends _$SettingsService {
         previous?.backgroundLocationEnabled,
         settings.backgroundLocationEnabled,
       );
+      // Declared here so the log ends with a line saying it was turned off:
+      // the sink is still installed at this point, so the emit lands. Without
+      // it the journal simply stops, which is indistinguishable from a kill.
+      _auditSettingChange(
+        'auditLog',
+        previous?.auditLogEnabled,
+        settings.auditLogEnabled,
+      );
       _auditSettingChange(
         'auditLogLevel',
         previous?.auditLogLevel.name,

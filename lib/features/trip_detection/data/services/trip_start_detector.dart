@@ -3,6 +3,8 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 import '../../domain/models/location_data.dart';
 import '../../domain/models/motion_data.dart';
 import '../../domain/models/trip_start_state.dart';
+import '../../../../core/audit/audit_event.dart';
+import '../../../../core/audit/audit_log.dart';
 import '../../../../core/constants/app_constants.dart';
 
 part 'trip_start_detector.g.dart';
@@ -50,7 +52,17 @@ class TripStartDetector extends _$TripStartDetector {
         now,
         const Duration(seconds: AppConstants.tripStartCooldownPeriodSeconds),
       )) {
-        // Cooldown expired, deactivate it
+        // Cooldown expired, deactivate it. Journalled because the blind
+        // window it opened is a reason a departure could be missed, and its
+        // end is what makes the window measurable against `cool a:"arm"`.
+        AuditLog.emit(
+          AuditEvent.cooldown,
+          () => <String, Object?>{
+            'a': 'expire',
+            'd': AppConstants.tripStartCooldownPeriodSeconds,
+          },
+          critical: true,
+        );
         state = state.deactivateCooldown();
       } else {
         // Still in cooldown, don't detect
