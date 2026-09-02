@@ -47,17 +47,27 @@ Stream<GyroscopeData> gyroscopeStream(Ref ref) async* {
 /// generated functions), so a single shared subscription per sensor is opened
 /// and tests can inject fakes by overriding
 /// [accelerometerStreamProvider] / [gyroscopeStreamProvider].
+///
+/// The **accelerometer is the pacer**: one `MotionData` per accelerometer
+/// sample, carrying the most recent gyroscope reading. Emitting on *either*
+/// sensor instead made the merged stream run at twice the configured rate —
+/// two independent 50 Hz sources interleave into ~100 Hz — and every sample
+/// costs a full pass through the coordinator: gate re-evaluation, detector,
+/// audit. A T043 log measured 108 Hz on a Pixel 6a and 103 Hz on an iPhone in
+/// `normal` mode, where `PowerModeConfig.sensorSamplingRate` asks for 50. The
+/// gyroscope is sampled-and-held rather than dropped: it is an input to the
+/// verdict, not a trigger for one.
 @riverpod
 Stream<MotionData> motionDataStream(Ref ref) {
   final controller = StreamController<MotionData>();
 
-  AccelerometerData? lastAccel;
   GyroscopeData? lastGyro;
 
-  void emitIfReady() {
-    final accel = lastAccel;
+  void emit(AccelerometerData accel) {
     final gyro = lastGyro;
-    if (accel == null || gyro == null || controller.isClosed) return;
+    // Nothing to pair with yet: the first accelerometer samples of a session
+    // arrive before the gyroscope has produced anything.
+    if (gyro == null || controller.isClosed) return;
 
     controller.add(
       MotionData(
@@ -76,22 +86,12 @@ Stream<MotionData> motionDataStream(Ref ref) {
   }
 
   ref.listen(accelerometerStreamProvider, (previous, next) {
-    next.when(
-      data: (data) {
-        lastAccel = data;
-        emitIfReady();
-      },
-      error: forwardError,
-      loading: () {},
-    );
+    next.when(data: emit, error: forwardError, loading: () {});
   });
 
   ref.listen(gyroscopeStreamProvider, (previous, next) {
     next.when(
-      data: (data) {
-        lastGyro = data;
-        emitIfReady();
-      },
+      data: (data) => lastGyro = data,
       error: forwardError,
       loading: () {},
     );

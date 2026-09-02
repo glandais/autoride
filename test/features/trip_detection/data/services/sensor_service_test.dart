@@ -185,14 +185,75 @@ void main() {
       await pumpEventQueue();
       expect(emitted, isEmpty);
 
+      // The gyroscope is sampled-and-held, not a trigger: it arriving does not
+      // by itself produce a sample.
       gyroController.add(
         GyroscopeData(x: 1.0, y: 0.5, z: 0.5, timestamp: DateTime(2026)),
+      );
+      await pumpEventQueue();
+      expect(emitted, isEmpty);
+
+      accelController.add(
+        AccelerometerData(
+          x: 3.0,
+          y: 3.0,
+          z: 10.0,
+          timestamp: DateTime(2026, 1, 1, 0, 0, 1),
+        ),
       );
       await pumpEventQueue();
 
       expect(emitted, hasLength(1));
       expect(emitted.single.accelerometer.z, 10.0);
       expect(emitted.single.gyroscope.x, 1.0);
+    });
+
+    test('the accelerometer paces the merged stream', () async {
+      final emitted = <MotionData>[];
+      container.listen(motionDataStreamProvider, (previous, next) {
+        next.whenData(emitted.add);
+      });
+      await pumpEventQueue();
+
+      gyroController.add(
+        GyroscopeData(x: 0.1, y: 0.1, z: 0.1, timestamp: DateTime(2026)),
+      );
+      accelController.add(
+        AccelerometerData(x: 0.0, y: 0.0, z: 9.8, timestamp: DateTime(2026)),
+      );
+      await pumpEventQueue();
+      expect(emitted, hasLength(1));
+
+      // Two independent sensors at the same rate used to interleave into a
+      // merged stream running at twice it — 108 Hz measured on a Pixel 6a for a
+      // configured 50 — and every extra sample costs a full pass through the
+      // coordinator. Gyroscope samples now only update the held value.
+      for (var i = 0; i < 5; i++) {
+        gyroController.add(
+          GyroscopeData(
+            x: 0.2,
+            y: 0.2,
+            z: 0.2,
+            timestamp: DateTime(2026).add(Duration(milliseconds: i)),
+          ),
+        );
+        await pumpEventQueue();
+      }
+      expect(emitted, hasLength(1));
+
+      accelController.add(
+        AccelerometerData(
+          x: 0.0,
+          y: 0.0,
+          z: 9.8,
+          timestamp: DateTime(2026, 1, 1, 0, 0, 1),
+        ),
+      );
+      await pumpEventQueue();
+
+      expect(emitted, hasLength(2));
+      // ... and the pairing carries the most recent gyroscope reading.
+      expect(emitted.last.gyroscope.x, 0.2);
     });
 
     test('forwards sensor errors to the merged stream', () async {

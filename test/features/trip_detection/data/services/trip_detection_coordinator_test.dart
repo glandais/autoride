@@ -337,15 +337,24 @@ class _ManualTimer implements Timer {
 /// elapse inside a `pumpEventQueue`, closing the gate before the assertion that
 /// it is still open. Nothing else is overridden.
 class _ManualGateCoordinator extends TripDetectionCoordinator {
+  DateTime clock = DateTime(2026, 1, 1, 12);
   _ManualTimer? _lastTimer;
 
   /// The armed inactivity timer, or `null` if none was ever armed.
   _ManualTimer? get inactivityTimer => _lastTimer;
 
+  /// Movable, like [_ScriptedCoordinator]'s: the motion window ages on this
+  /// clock, so a test that wants a *windowed* stationary verdict has to let
+  /// the earlier moving samples fall out of it.
+  @override
+  DateTime now() => clock;
+
   @override
   Timer startGpsInactivityTimer(void Function() onElapsed) {
     return _lastTimer = _ManualTimer(onElapsed);
   }
+
+  void advance(Duration by) => clock = clock.add(by);
 }
 
 /// Start-detector double that reproduces just enough of the real streak rule
@@ -458,22 +467,6 @@ String _stateName(TripState state) => state.map(
 
 /// Motion sample with a unique timestamp so every emission notifies listeners
 /// (Riverpod skips notifications for values that compare equal).
-/// A sample that reads as stationary: near-gravity acceleration and almost no
-/// rotation, which is what arms the GPS gate's inactivity timeout.
-MotionData _stationaryMotionSample({int index = 0}) {
-  final timestamp = DateTime(2026, 1, 1).add(Duration(milliseconds: index));
-  return MotionData(
-    accelerometer: AccelerometerData(
-      x: 0.0,
-      y: 0.0,
-      z: AppConstants.standardGravity,
-      timestamp: timestamp,
-    ),
-    gyroscope: GyroscopeData(x: 0.0, y: 0.0, z: 0.0, timestamp: timestamp),
-    timestamp: timestamp,
-  );
-}
-
 MotionData _motionSample(int index) {
   final timestamp = DateTime(2026, 1, 1).add(Duration(milliseconds: index));
   return MotionData(
@@ -617,6 +610,43 @@ void main() {
   /// Pushes one motion sample and lets the coordinator process it.
   Future<void> pushMotion(int index) async {
     motionController.add(_motionSample(index));
+    await pumpEventQueue();
+  }
+
+  /// Bring the *windowed* motion state to `stationary`.
+  ///
+  /// The gate averages over `stationaryWindowDuration` rather than trusting one
+  /// sample, so a single calm reading right after movement does not — and must
+  /// not — flip the verdict: that per-sample flapping is what kept GPS alive
+  /// indefinitely. Advancing the clock past the window ages the moving samples
+  /// out, which is what a rider actually coming to a halt does.
+  ///
+  /// A double with a movable clock gets the deterministic route: age the
+  /// window out, then push one calm sample. Against the real coordinator the
+  /// clock is wall time, so the window is instead *outweighed* — which is what
+  /// a phone actually going still does, at the sensor rate, in well under the
+  /// 1.5 s the window spans.
+  Future<void> pushStationary(int index) async {
+    final coordinator = container.read(
+      tripDetectionCoordinatorProvider.notifier,
+    );
+    final advance =
+        AppConstants.stationaryWindowDuration + const Duration(milliseconds: 1);
+
+    if (coordinator is _ManualGateCoordinator) {
+      coordinator.advance(advance);
+    } else if (coordinator is _ScriptedCoordinator) {
+      coordinator.advance(advance);
+    } else {
+      // One `_motionSample` carries 1.22 rad/s against a 0.2 rad/s ceiling, so
+      // seven calm samples are what it takes to pull the mean under it.
+      for (var i = 0; i < 7; i++) {
+        motionController.add(_stationarySample(index * 100 + i));
+        await pumpEventQueue();
+      }
+    }
+
+    motionController.add(_stationarySample(index));
     await pumpEventQueue();
   }
 
@@ -1050,8 +1080,7 @@ void main() {
         await pushMotion(1);
         expect(gpsSubscribed, isTrue);
 
-        motionController.add(_stationarySample(2));
-        await pumpEventQueue();
+        await pushStationary(2);
         // Still open: the timeout is armed but has not elapsed yet.
         expect(gpsSubscribed, isTrue);
         expect(armedInactivityTimer()?.isActive, isTrue);
@@ -1066,8 +1095,7 @@ void main() {
       await startedCoordinator();
       await pushMotion(1);
 
-      motionController.add(_stationarySample(2));
-      await pumpEventQueue();
+      await pushStationary(2);
       expect(armedInactivityTimer()?.isActive, isTrue);
 
       await pushMotion(3); // moving again: cancels the pending shutdown
@@ -1089,11 +1117,9 @@ void main() {
         await pushMotion(2);
         expect(startDetector.seenLocations.last, isNotNull);
 
-        motionController.add(_stationarySample(3));
-        await pumpEventQueue();
+        await pushStationary(3);
         await elapseInactivity();
-        motionController.add(_stationarySample(4));
-        await pumpEventQueue();
+        await pushStationary(4);
 
         expect(startDetector.seenLocations.last, isNull);
       },
@@ -1705,8 +1731,7 @@ void main() {
       await pushLocation(index: 1);
       expect(buffered(), hasLength(1));
 
-      motionController.add(_stationarySample(2));
-      await pumpEventQueue();
+      await pushStationary(2);
       await elapseInactivity();
 
       expect(gpsSubscribed, isFalse);
@@ -1771,9 +1796,8 @@ void main() {
 
         expect(sink.field('gate', 'a'), 'open');
 
-        // A stationary sample arms the inactivity timeout.
-        motionController.add(_stationaryMotionSample());
-        await pumpEventQueue();
+        // A settled stationary window arms the inactivity timeout.
+        await pushStationary(2);
 
         final actions = sink.fieldsOf('gate').map((f) => f['a']).toList();
         expect(actions, contains('sched'));
@@ -1947,11 +1971,68 @@ void main() {
       Iterable<Object?> actionsOf(String type) =>
           sink.fieldsOf(type).map((f) => f['a']);
 
+      // The `start` event fires on the detection hot path, so it is the one
+      // event whose *volume* is a defect in itself. A T043 log came back with
+      // 107 757 of them out of 108 870 lines — 99 % of the file, ~110 a second
+      // — which buries every other event and makes the log's own write cost the
+      // dominant term in the battery measurement it exists to support.
+      group('the start evaluation is throttled', () {
+        test(
+          'samples inside one evaluation interval collapse to one',
+          () async {
+            await begin();
+
+            for (var i = 0; i < 50; i++) {
+              coordinator.advance(const Duration(milliseconds: 10));
+              await pushMotion(i);
+            }
+
+            // Half a second of samples at 100 Hz: one interval, one line.
+            expect(sink.fieldsOf('start'), hasLength(1));
+          },
+        );
+
+        test('the interval elapsing lets the next one through', () async {
+          await begin();
+          await pushMotion(1);
+          expect(sink.fieldsOf('start'), hasLength(1));
+
+          coordinator.advance(AppConstants.detectionEvaluationInterval);
+          await pushMotion(2);
+
+          expect(sink.fieldsOf('start'), hasLength(2));
+        });
+
+        test('a streak change is never dropped', () async {
+          await begin();
+          await pushMotion(1);
+          final before = sink.fieldsOf('start').length;
+
+          // The streak advances inside the interval — the transition that
+          // explains how the detector reached its verdict, and the reason
+          // throttling cannot be a plain rate limit.
+          startDetector.countedDetections = 1;
+          await pushMotion(2);
+
+          expect(sink.fieldsOf('start'), hasLength(before + 1));
+          expect(sink.fieldsOf('start').last['n'], isNot(0));
+        });
+
+        test('the departure decision is never dropped', () async {
+          await begin();
+          startDetector.verdict = true;
+
+          await pushMotion(1);
+
+          final go = sink.fieldsOf('start').where((f) => f['go'] == true);
+          expect(go, hasLength(1));
+        });
+      });
+
       test('the gate closing on a stationary timeout says so', () async {
         await begin();
         await pushMotion(1);
-        motionController.add(_stationaryMotionSample(index: 2));
-        await pumpEventQueue();
+        await pushStationary(2);
 
         await elapseInactivity();
 
@@ -2052,8 +2133,7 @@ void main() {
         await begin();
         await openGateAndBuffer();
 
-        motionController.add(_stationaryMotionSample(index: 2));
-        await pumpEventQueue();
+        await pushStationary(2);
         await elapseInactivity();
 
         final cleared = sink.fieldsOf('buf').where((f) => f['a'] == 'clear');

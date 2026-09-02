@@ -12,6 +12,7 @@ import '../../domain/models/motion_data.dart';
 import '../../domain/models/trip.dart';
 import '../../domain/models/trip_state.dart';
 import '../../domain/models/trip_stop_state.dart';
+import 'motion_state_window.dart';
 import 'pre_trip_location_buffer.dart';
 import 'sensor_service.dart';
 import 'location_service.dart';
@@ -73,6 +74,11 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
 
   LocationData? _lastLocation;
 
+  /// Recent motion samples, averaged into the [MotionState] that drives the GPS
+  /// gate. Cleared on session teardown: samples from before a suspension say
+  /// nothing about the rider now.
+  final MotionStateWindow _motionStateWindow = MotionStateWindow();
+
   /// Fixes received while the GPS gate was open but no trip was recording yet.
   /// Replayed into the recorder when a trip is confirmed, so the ride starts
   /// where the rider actually set off instead of where the detector made up its
@@ -112,6 +118,10 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
   int _heartbeatFixes = 0;
   DateTime? _heartbeatSince;
   DateTime? _lastSensorSampleEmit;
+
+  /// Throttle state for the `start` audit event — see [_emitStartEval].
+  DateTime? _lastStartEvalEmit;
+  int? _lastStartEvalStreak;
 
   /// Set when [stopListening] is called while a trip is being recorded. The
   /// session is kept running so auto-pause/auto-stop still work, and the actual
@@ -336,15 +346,12 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
   // container-owned location subscription for the whole recording anyway.
   // ---------------------------------------------------------------------------
 
-  /// Motion state of a single sample, using the same thresholds as the
-  /// windowed analysis in [MotionWindow.state].
-  MotionState _motionStateOf(MotionData motion) {
-    return MotionWindow(
-      samples: [motion],
-      startTime: motion.timestamp,
-      endTime: motion.timestamp,
-    ).state;
-  }
+  /// Motion state over the last [AppConstants.stationaryWindowDuration], using
+  /// the same thresholds as the windowed analysis in [MotionWindow.state].
+  ///
+  /// Windowed rather than per-sample: see [MotionStateWindow] for what the
+  /// single-sample verdict did to the gate.
+  MotionState get _motionState => _motionStateWindow.state;
 
   /// Re-evaluate the GPS gate for [motionState].
   void _updateGpsGate(MotionState motionState) {
@@ -587,6 +594,10 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
 
   /// Handle incoming motion data
   Future<void> _onMotionData(MotionData motion) async {
+    // Retained before anything reads the window: the gate, the audit sample and
+    // the detector must all see the same sample included.
+    _motionStateWindow.add(motion, now());
+
     if (AuditLog.enabled) {
       _heartbeatMotionSamples++;
       _emitSensorSample(motion);
@@ -594,7 +605,7 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
 
     // Motion drives the GPS gate before it drives detection, so the detector
     // sees the location only while GPS is legitimately running.
-    _updateGpsGate(_motionStateOf(motion));
+    _updateGpsGate(_motionState);
 
     // Get current state machine state
     final currentState = ref.read(tripStateMachineProvider);
@@ -644,7 +655,54 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
       () => <String, Object?>{
         'am': motion.accelerometer.magnitude,
         'gm': motion.gyroscope.magnitude,
-        'ms': _motionStateOf(motion).name,
+        'ms': _motionState.name,
+      },
+    );
+  }
+
+  /// One `start` audit event per evaluation interval, plus every event that
+  /// carries a decision.
+  ///
+  /// Unthrottled, this fired once per motion sample: a T043 log was 107 757
+  /// `start` lines out of 108 870 — 99 % of the file, ~110 a second — which
+  /// buries every other event, blows through the log's retention in minutes,
+  /// and makes the write cost itself the dominant term in any battery
+  /// measurement the log was meant to support (checklist item 4).
+  ///
+  /// [AppConstants.detectionEvaluationInterval] is the right period because it
+  /// is the rate at which a *detection* is actually counted
+  /// (`TripStartDetector.analyzeForTripStart`); samples in between only refresh
+  /// the confidence score. The two exceptions are never dropped: `shouldStart`
+  /// is the departure decision, and a change in the streak is the transition
+  /// that explains how the detector got there.
+  void _emitStartEval(
+    MotionData motion, {
+    required int counted,
+    required bool shouldStart,
+  }) {
+    if (!AuditLog.enabled) return;
+
+    final at = now();
+    final last = _lastStartEvalEmit;
+    final throttled =
+        last != null &&
+        at.difference(last) < AppConstants.detectionEvaluationInterval;
+    if (throttled && !shouldStart && counted == _lastStartEvalStreak) return;
+
+    _lastStartEvalEmit = at;
+    _lastStartEvalStreak = counted;
+
+    final detectorState = ref.read(tripStartDetectorProvider);
+    final fix = _lastLocation;
+    AuditLog.emit(
+      AuditEvent.startEval,
+      () => <String, Object?>{
+        'c': detectorState.confidence,
+        'n': counted,
+        'go': shouldStart,
+        'mag': motion.accelerometer.magnitude,
+        'gyr': motion.gyroscope.magnitude,
+        'spk': fix?.speedKmh,
       },
     );
   }
@@ -749,21 +807,7 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
     // else.
     final counted = ref.read(tripStartDetectorProvider).consecutiveDetections;
 
-    if (AuditLog.enabled) {
-      final detectorState = ref.read(tripStartDetectorProvider);
-      final fix = _lastLocation;
-      AuditLog.emit(
-        AuditEvent.startEval,
-        () => <String, Object?>{
-          'c': detectorState.confidence,
-          'n': counted,
-          'go': shouldStart,
-          'mag': motion.accelerometer.magnitude,
-          'gyr': motion.gyroscope.magnitude,
-          'spk': fix?.speedKmh,
-        },
-      );
-    }
+    _emitStartEval(motion, counted: counted, shouldStart: shouldStart);
 
     if (shouldStart || counted > 0) {
       ref.read(tripStateMachineProvider.notifier).startDetecting();
@@ -1021,6 +1065,11 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
 
     _closeMotionSubscription?.call();
     _closeMotionSubscription = null;
+
+    // Samples from before a suspension describe a rider the session can no
+    // longer vouch for; a resumed session must re-fill the window before the
+    // gate acts on it.
+    _motionStateWindow.clear();
 
     // Nothing supervises the watchdog while the timer is down.
     _gpsWatchdogReference = null;
