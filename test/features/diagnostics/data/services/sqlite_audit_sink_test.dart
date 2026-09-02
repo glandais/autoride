@@ -60,7 +60,9 @@ void main() {
   /// NDJSON, not just the row count.
   Future<List<Map<String, Object?>>> decodedLines() async {
     return (await rows())
-        .map((row) => jsonDecode(row['line']! as String) as Map<String, Object?>)
+        .map(
+          (row) => jsonDecode(row['line']! as String) as Map<String, Object?>,
+        )
         .toList();
   }
 
@@ -403,36 +405,42 @@ void main() {
       },
     );
 
-    test('a flush during a flush keeps write order and loses nothing', () async {
-      final gate = _GatedAuditDatabase(database);
-      final sink = buildSink(on: gate);
+    test(
+      'a flush during a flush keeps write order and loses nothing',
+      () async {
+        final gate = _GatedAuditDatabase(database);
+        final sink = buildSink(on: gate);
 
-      gate.block();
-      writeLines(sink, AppConstants.auditFlushBatchSize);
-      await pumpEventQueue();
-      for (var i = 0; i < 20; i++) {
-        sink.write(
-          '{"t":${1000 + i},"e":"fix","n":${1000 + i}}',
-          t: 1000 + i,
-          type: 'fix',
-          lvl: 0,
-          critical: true,
+        gate.block();
+        writeLines(sink, AppConstants.auditFlushBatchSize);
+        await pumpEventQueue();
+        for (var i = 0; i < 20; i++) {
+          sink.write(
+            '{"t":${1000 + i},"e":"fix","n":${1000 + i}}',
+            t: 1000 + i,
+            type: 'fix',
+            lvl: 0,
+            critical: true,
+          );
+        }
+        gate.release();
+        await sink.flush();
+        await pumpEventQueue();
+
+        final written = (await decodedLines())
+            .map((line) => line['n'] as int)
+            .toList();
+        expect(written, hasLength(AppConstants.auditFlushBatchSize + 20));
+        expect(
+          written,
+          orderedEquals(<int>[
+            for (var i = 0; i < AppConstants.auditFlushBatchSize; i++) i,
+            for (var i = 0; i < 20; i++) 1000 + i,
+          ]),
         );
-      }
-      gate.release();
-      await sink.flush();
-      await pumpEventQueue();
-
-      final written = (await decodedLines())
-          .map((line) => line['n'] as int)
-          .toList();
-      expect(written, hasLength(AppConstants.auditFlushBatchSize + 20));
-      expect(written, orderedEquals(<int>[
-        for (var i = 0; i < AppConstants.auditFlushBatchSize; i++) i,
-        for (var i = 0; i < 20; i++) 1000 + i,
-      ]));
-      expect(sink.bufferedCount, 0);
-    });
+        expect(sink.bufferedCount, 0);
+      },
+    );
 
     test('a failed batch is retried from the buffer, not lost', () async {
       final flaky = _FlakyAuditDatabase(database);
@@ -462,24 +470,27 @@ void main() {
   });
 
   group('clear', () {
-    test('a flush spanning a clear does not resurrect the erased lines', () async {
-      final gate = _GatedAuditDatabase(database);
-      final sink = buildSink(on: gate);
+    test(
+      'a flush spanning a clear does not resurrect the erased lines',
+      () async {
+        final gate = _GatedAuditDatabase(database);
+        final sink = buildSink(on: gate);
 
-      gate.block();
-      writeLines(sink, AppConstants.auditFlushBatchSize);
-      await pumpEventQueue();
+        gate.block();
+        writeLines(sink, AppConstants.auditFlushBatchSize);
+        await pumpEventQueue();
 
-      // "Clear log" while the batch is committing. Without a generation check
-      // the flush would reopen the database and insert the batch it just
-      // erased, so the user's delete would silently not happen.
-      await sink.clear();
-      gate.release();
-      await pumpEventQueue();
+        // "Clear log" while the batch is committing. Without a generation check
+        // the flush would reopen the database and insert the batch it just
+        // erased, so the user's delete would silently not happen.
+        await sink.clear();
+        gate.release();
+        await pumpEventQueue();
 
-      expect(await rows(), isEmpty);
-      expect(sink.bufferedCount, 0);
-    });
+        expect(await rows(), isEmpty);
+        expect(sink.bufferedCount, 0);
+      },
+    );
 
     test('lines written after a clear still land', () async {
       final sink = buildSink();
@@ -583,7 +594,6 @@ void main() {
       expect(remaining.length, lessThan(3000));
     });
   });
-
 }
 
 /// [AuditDatabase] backed by an in-memory database built from the production

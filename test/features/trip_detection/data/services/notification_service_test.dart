@@ -116,7 +116,6 @@ void main() {
       expect(cancelled['a'], 'cancel');
       expect(cancelled['k'], 'fg');
     });
-
   });
 }
 

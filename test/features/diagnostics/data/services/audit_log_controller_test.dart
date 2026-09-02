@@ -148,7 +148,10 @@ void main() {
         final container = mutableContainer(
           const UserSettings(auditLogEnabled: true),
         );
-        expect(container.read(auditLogControllerProvider), AuditLogLevel.normal);
+        expect(
+          container.read(auditLogControllerProvider),
+          AuditLogLevel.normal,
+        );
 
         // Sound has nothing to do with the log. Watching the whole settings
         // object rebuilt the controller here, and the rebuild's `onDispose`
@@ -158,7 +161,10 @@ void main() {
           auditLogEnabled: true,
           soundOnTripStartStop: true,
         );
-        expect(container.read(auditLogControllerProvider), AuditLogLevel.normal);
+        expect(
+          container.read(auditLogControllerProvider),
+          AuditLogLevel.normal,
+        );
         expect(AuditLog.enabled, isTrue);
 
         AuditLog.emit(
@@ -176,35 +182,50 @@ void main() {
         );
         // One launch must read as one launch: the analysis skill bounds
         // process launches by counting `hdr` rows.
-        expect(lines.where((line) => line['e'] == AuditEvent.header), hasLength(1));
+        expect(
+          lines.where((line) => line['e'] == AuditEvent.header),
+          hasLength(1),
+        );
       },
     );
 
-    test('changing the audit level keeps the sink and adds no header', () async {
-      final container = mutableContainer(
-        const UserSettings(auditLogEnabled: true),
-      );
-      container.read(auditLogControllerProvider);
+    test(
+      'changing the audit level keeps the sink and adds no header',
+      () async {
+        final container = mutableContainer(
+          const UserSettings(auditLogEnabled: true),
+        );
+        container.read(auditLogControllerProvider);
 
-      container.read(settings.notifier).state = const UserSettings(
-        auditLogEnabled: true,
-        auditLogLevel: AuditLogLevel.verbose,
-      );
+        container.read(settings.notifier).state = const UserSettings(
+          auditLogEnabled: true,
+          auditLogLevel: AuditLogLevel.verbose,
+        );
 
-      expect(container.read(auditLogControllerProvider), AuditLogLevel.verbose);
-      expect(AuditLog.verbose, isTrue);
+        expect(
+          container.read(auditLogControllerProvider),
+          AuditLogLevel.verbose,
+        );
+        expect(AuditLog.verbose, isTrue);
 
-      AuditLog.emit(
-        AuditEvent.trip,
-        () => <String, Object?>{'a': 'start'},
-        critical: true,
-      );
-      await pumpEventQueue();
+        AuditLog.emit(
+          AuditEvent.trip,
+          () => <String, Object?>{'a': 'start'},
+          critical: true,
+        );
+        await pumpEventQueue();
 
-      final lines = await recorded();
-      expect(lines.where((line) => line['e'] == AuditEvent.trip), hasLength(1));
-      expect(lines.where((line) => line['e'] == AuditEvent.header), hasLength(1));
-    });
+        final lines = await recorded();
+        expect(
+          lines.where((line) => line['e'] == AuditEvent.trip),
+          hasLength(1),
+        );
+        expect(
+          lines.where((line) => line['e'] == AuditEvent.header),
+          hasLength(1),
+        );
+      },
+    );
 
     test('turning the log off and on again emits a second header', () async {
       final container = mutableContainer(
@@ -224,22 +245,31 @@ void main() {
       // Off→on is a new recording session: the reader needs the thresholds
       // again, and the gap in between is real.
       final lines = await recorded();
-      expect(lines.where((line) => line['e'] == AuditEvent.header), hasLength(2));
-    });
-
-    test('clear re-emits the header, so the file is never headerless', () async {
-      final container = mutableContainer(
-        const UserSettings(auditLogEnabled: true),
+      expect(
+        lines.where((line) => line['e'] == AuditEvent.header),
+        hasLength(2),
       );
-      container.read(auditLogControllerProvider);
-      final controller = container.read(auditLogControllerProvider.notifier);
-
-      await controller.clear();
-      await pumpEventQueue();
-
-      final lines = await recorded();
-      expect(lines.where((line) => line['e'] == AuditEvent.header), hasLength(1));
     });
+
+    test(
+      'clear re-emits the header, so the file is never headerless',
+      () async {
+        final container = mutableContainer(
+          const UserSettings(auditLogEnabled: true),
+        );
+        container.read(auditLogControllerProvider);
+        final controller = container.read(auditLogControllerProvider.notifier);
+
+        await controller.clear();
+        await pumpEventQueue();
+
+        final lines = await recorded();
+        expect(
+          lines.where((line) => line['e'] == AuditEvent.header),
+          hasLength(1),
+        );
+      },
+    );
   });
 
   test('stats report nothing when the log has never been on', () async {

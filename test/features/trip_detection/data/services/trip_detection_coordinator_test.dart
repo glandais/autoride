@@ -1974,23 +1974,25 @@ void main() {
         expect(close.single['why'], 'stop');
       });
 
-      test('a detection timeout is recorded with the streak it dropped',
-          () async {
-        startDetector.countedDetections = 1;
-        await begin();
-        await pushMotion(1);
-        expect(
-          _stateName(container.read(tripStateMachineProvider)),
-          'detecting',
-        );
+      test(
+        'a detection timeout is recorded with the streak it dropped',
+        () async {
+          startDetector.countedDetections = 1;
+          await begin();
+          await pushMotion(1);
+          expect(
+            _stateName(container.read(tripStateMachineProvider)),
+            'detecting',
+          );
 
-        machine().forceDetectionTimeout = true;
-        await tick();
+          machine().forceDetectionTimeout = true;
+          await tick();
 
-        final timeout = sink.fieldsOf('dto').single;
-        expect(timeout['el'], AppConstants.detectionTimeoutSeconds);
-        expect(timeout.containsKey('n'), isTrue);
-      });
+          final timeout = sink.fieldsOf('dto').single;
+          expect(timeout['el'], AppConstants.detectionTimeoutSeconds);
+          expect(timeout.containsKey('n'), isTrue);
+        },
+      );
 
       test('the cooldown armed by a false start is recorded', () async {
         recorder.discardOnStop = true;
@@ -2007,39 +2009,43 @@ void main() {
         expect(cooldown['d'], AppConstants.tripStartCooldownPeriodSeconds);
       });
 
-      test('the GPS-loss watchdog is recorded disarming when the trip ends',
-          () async {
-        startDetector.verdict = true;
-        await begin();
-        await pushMotion(1);
-        expect(actionsOf('gpsw'), contains('arm'));
+      test(
+        'the GPS-loss watchdog is recorded disarming when the trip ends',
+        () async {
+          startDetector.verdict = true;
+          await begin();
+          await pushMotion(1);
+          expect(actionsOf('gpsw'), contains('arm'));
 
-        stopDetector.decision = StopDecision.stopTrip;
-        await pushMotion(2);
+          stopDetector.decision = StopDecision.stopTrip;
+          await pushMotion(2);
 
-        // Without this the log shows a countdown that was armed and never
-        // ended, which reads as a watchdog that failed to fire.
-        expect(actionsOf('gpsw'), contains('disarm'));
-      });
+          // Without this the log shows a countdown that was armed and never
+          // ended, which reads as a watchdog that failed to fire.
+          expect(actionsOf('gpsw'), contains('disarm'));
+        },
+      );
 
-      test('the pre-trip buffer is recorded filling and being handed over',
-          () async {
-        await begin();
-        await openGateAndBuffer();
+      test(
+        'the pre-trip buffer is recorded filling and being handed over',
+        () async {
+          await begin();
+          await openGateAndBuffer();
 
-        final added = sink.fieldsOf('buf').where((f) => f['a'] == 'add');
-        expect(added, hasLength(1));
-        expect(added.single['n'], 1);
+          final added = sink.fieldsOf('buf').where((f) => f['a'] == 'add');
+          expect(added, hasLength(1));
+          expect(added.single['n'], 1);
 
-        startDetector.verdict = true;
-        await pushMotion(2);
+          startDetector.verdict = true;
+          await pushMotion(2);
 
-        final tail = sink.fieldsOf('buf').where((f) => f['a'] == 'tail');
-        expect(tail, hasLength(1));
-        // `n` buffered, `kp` kept by the riding-tail cut (L-076).
-        expect(tail.single['n'], 1);
-        expect(tail.single['kp'], 1);
-      });
+          final tail = sink.fieldsOf('buf').where((f) => f['a'] == 'tail');
+          expect(tail, hasLength(1));
+          // `n` buffered, `kp` kept by the riding-tail cut (L-076).
+          expect(tail.single['n'], 1);
+          expect(tail.single['kp'], 1);
+        },
+      );
 
       test('a discarded pre-trip buffer says what discarded it', () async {
         await begin();
@@ -2055,35 +2061,37 @@ void main() {
         expect(cleared.single['why'], 'inactivityTimeout');
       });
 
-      test('enabling the log mid-session re-arms the heartbeat baseline',
-          () async {
-        AuditLog.uninstall();
-        await begin();
-        await pushMotion(1);
+      test(
+        'enabling the log mid-session re-arms the heartbeat baseline',
+        () async {
+          AuditLog.uninstall();
+          await begin();
+          await pushMotion(1);
 
-        // Five minutes of riding before the user flips the switch.
-        for (var i = 0; i < 300; i++) {
-          coordinator.advance(const Duration(seconds: 1));
-          coordinator.tick();
-        }
+          // Five minutes of riding before the user flips the switch.
+          for (var i = 0; i < 300; i++) {
+            coordinator.advance(const Duration(seconds: 1));
+            coordinator.tick();
+          }
 
-        AuditLog.install(sink, verbose: true);
+          AuditLog.install(sink, verbose: true);
 
-        // 31 ticks: the first one re-arms the baseline, so the interval that
-        // closes covers the 30 s after it.
-        for (var i = 0; i < 31; i++) {
-          coordinator.advance(const Duration(seconds: 1));
-          coordinator.tick();
-        }
-        await pumpEventQueue();
+          // 31 ticks: the first one re-arms the baseline, so the interval that
+          // closes covers the 30 s after it.
+          for (var i = 0; i < 31; i++) {
+            coordinator.advance(const Duration(seconds: 1));
+            coordinator.tick();
+          }
+          await pumpEventQueue();
 
-        final heartbeat = sink.fieldsOf('hb');
-        expect(heartbeat, isNotEmpty);
-        // R-08: this used to be n:1 over a dt of 300 000 ms — the exact
-        // signature the ledger defines as "the OS froze the 1 Hz timer".
-        expect(heartbeat.first['n'], 31);
-        expect(heartbeat.first['dt'], 30000);
-      });
+          final heartbeat = sink.fieldsOf('hb');
+          expect(heartbeat, isNotEmpty);
+          // R-08: this used to be n:1 over a dt of 300 000 ms — the exact
+          // signature the ledger defines as "the OS froze the 1 Hz timer".
+          expect(heartbeat.first['n'], 31);
+          expect(heartbeat.first['dt'], 30000);
+        },
+      );
 
       test('a stop records exactly one session event', () async {
         await begin();
