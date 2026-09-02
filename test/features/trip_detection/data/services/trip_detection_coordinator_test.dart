@@ -121,6 +121,17 @@ class _RecorderLog {
   int stopCalls = 0;
   bool throwOnStart = false;
 
+  /// Thrown by `startRecording` instead of the generic failure, so a test can
+  /// script the recorder's own "someone else already owns this start"
+  /// rejection (L-080) rather than a database error.
+  Object? failStartWith;
+
+  /// Holds `startRecording` open, the way the real one is held open by its
+  /// `await saveTrip`. The window between the coordinator's decision and the
+  /// state machine leaving `Detecting` is where the second trip of L-080 was
+  /// born, and it exists only while that future is pending.
+  Completer<void>? startGate;
+
   /// Makes `stopRecording` hand back a trip flagged `discarded`, as the real
   /// recorder does for a ride shorter than `minTripDurationSeconds` (L-068).
   bool discardOnStop = false;
@@ -152,6 +163,11 @@ class _SpyTripRecorderService extends TripRecorderService {
     log.startedWithConfidence.add(confidenceScore);
     log.startedWithActivity.add(activity);
     log.startedWithPriorLocations.add(List<LocationData>.from(priorLocations));
+    // Recorded before the wait, so a test can assert on the call while the
+    // start is still in flight and the state machine still says `detecting`.
+    await log.startGate?.future;
+    final scripted = log.failStartWith;
+    if (scripted != null) throw scripted;
     ref.read(tripStateMachineProvider.notifier).startTripWithId(1);
   }
 
@@ -1623,6 +1639,152 @@ void main() {
 
       expect(recorder.stopCalls, 1);
       expect(startDetector.cooldownCalls, 0);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // One departure, one trip (L-080)
+  // -------------------------------------------------------------------------
+  group('TripDetectionCoordinator - one departure, one trip (L-080)', () {
+    setUp(() {
+      // The real recorder pins itself with `ref.keepAlive()` for the lifetime
+      // of a recording; the spy does not, and these tests are the only ones
+      // that hold a start open across several event-queue pumps — long enough
+      // for autoDispose to collect the provider mid-call.
+      container.listen(tripRecorderServiceProvider, (_, _) {});
+    });
+
+    test('samples arriving while a start is in flight do not start a second '
+        'trip', () async {
+      startDetector.verdict = true;
+      recorder.startGate = Completer<void>();
+      await startedCoordinator();
+
+      // The departure. `startRecording` is now parked on the gate, exactly
+      // where the real one is parked on its database write.
+      await pushMotion(1);
+      expect(recorder.startedWithConfidence, hasLength(1));
+      expect(
+        _stateName(container.read(tripStateMachineProvider)),
+        'detecting',
+        reason: 'the state machine only leaves Detecting on startTripWithId',
+      );
+
+      // The 50 Hz stream does not stop for the database, and the detector goes
+      // on answering `shouldStart` for the rest of the evaluation interval.
+      await pushMotion(2);
+      await pushMotion(3);
+
+      expect(
+        recorder.startedWithConfidence,
+        hasLength(1),
+        reason:
+            'trips 5 and 6 of the 2026-09-02 control run were two '
+            'startRecording calls from one departure',
+      );
+
+      recorder.startGate!.complete();
+      await pumpEventQueue();
+
+      expect(_stateName(container.read(tripStateMachineProvider)), 'active');
+      expect(recorder.startedWithConfidence, hasLength(1));
+    });
+
+    test(
+      'the pre-trip buffer is handed over once, not once per sample',
+      () async {
+        startDetector.verdict = true;
+        recorder.startGate = Completer<void>();
+        await startedCoordinator();
+
+        await pushMotion(1);
+        await pushMotion(2);
+        recorder.startGate!.complete();
+        await pumpEventQueue();
+
+        // A second hand-over would have found the buffer already cleared and
+        // given the trip an empty prefix — or, worse, split one ride's fixes
+        // across two rows.
+        expect(recorder.startedWithPriorLocations, hasLength(1));
+      },
+    );
+
+    test('a released departure can be retried on a later sample', () async {
+      startDetector.verdict = true;
+      recorder.throwOnStart = true;
+      await startedCoordinator();
+
+      await pushMotion(1);
+      await pumpEventQueue();
+
+      // The failed start released the claim: the guard must not wedge the
+      // coordinator into never starting a trip again.
+      expect(_stateName(container.read(tripStateMachineProvider)), 'idle');
+      recorder.throwOnStart = false;
+
+      await pushMotion(2);
+
+      expect(recorder.startedWithConfidence, hasLength(1));
+      expect(_stateName(container.read(tripStateMachineProvider)), 'active');
+    });
+
+    test(
+      'a start rejected because another caller won leaves that trip alone',
+      () async {
+        startDetector.verdict = true;
+        recorder.startGate = Completer<void>();
+        await startedCoordinator();
+
+        // The coordinator decides to start and parks on the recorder.
+        await pushMotion(1);
+        expect(recorder.startedWithConfidence, hasLength(1));
+
+        // Meanwhile the manual button gets its trip through: the state machine
+        // goes `active` with an id this coordinator never chose, and every
+        // further `startRecording` is rejected by the recorder's own guard.
+        container.read(tripStateMachineProvider.notifier).startTripWithId(7);
+        recorder.failStartWith = TripAlreadyStartingError(
+          'Trip already recording',
+        );
+        recorder.startGate!.complete();
+        await pumpEventQueue();
+
+        // The coordinator's own call is the one that was rejected. Its error
+        // path used to answer that by stopping the state machine — ending the
+        // ride the other caller had just begun.
+        expect(_stateName(container.read(tripStateMachineProvider)), 'active');
+        expect(container.read(tripStateMachineProvider).currentTripId, 7);
+        expect(
+          container.read(tripDetectionCoordinatorProvider).hasError,
+          isFalse,
+          reason: 'losing a race is not a failure to surface to the UI',
+        );
+      },
+    );
+
+    test('a claim is released even if the departure never reaches the '
+        'recorder', () async {
+      final coordinator = await startedCoordinator();
+      startDetector.verdict = true;
+
+      // `_analyzeForTripStart` claims the departure before the pre-trip buffer
+      // hand-off; anything throwing in between used to leave the claim set for
+      // the life of the process, with detection silently dead and no line in
+      // the log to say so. Nothing here can be made to throw from the outside,
+      // so the guarantee is asserted through the session boundary instead: a
+      // restarted session always starts from an unclaimed coordinator.
+      await pushMotion(1);
+      expect(recorder.startedWithConfidence, hasLength(1));
+
+      coordinator.stopListening();
+      await pumpEventQueue();
+      container.read(tripStateMachineProvider.notifier).stopTrip();
+      await coordinator.startListening();
+      await pumpEventQueue();
+
+      await pushMotion(2);
+
+      expect(recorder.startedWithConfidence, hasLength(2));
     });
   });
 

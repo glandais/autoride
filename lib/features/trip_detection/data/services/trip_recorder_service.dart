@@ -74,6 +74,24 @@ class TripMetrics {
   }
 }
 
+/// Thrown by [TripRecorderService.startRecording] when this recorder already
+/// owns a start — one that is still in flight, or one that has published its
+/// trip.
+///
+/// A distinct type because the two callers of `startRecording` (the coordinator
+/// and the manual button) race each other, and the loser must be able to tell
+/// "you are too late, a ride is starting" from "the database write failed".
+/// Answering that question with `hasActiveTrip` does not work: the rejection
+/// necessarily happens *before* the winner reaches `startTripWithId`, so the
+/// state machine still reads `detecting` and the loser's teardown would end the
+/// ride the winner just began (L-080).
+///
+/// Extends [StateError] so the long-standing "double startRecording throws a
+/// StateError" contract still holds for callers that only care that it threw.
+class TripAlreadyStartingError extends StateError {
+  TripAlreadyStartingError(super.message);
+}
+
 @riverpod
 class TripRecorderService extends _$TripRecorderService {
   // Dependencies (initialized in build)
@@ -118,6 +136,18 @@ class TripRecorderService extends _$TripRecorderService {
   /// tracking screen unmounting). Released in [stopRecording], on a failed
   /// [startRecording], and on dispose (audit #2).
   void Function()? _releaseSessionLink;
+
+  /// True from the *synchronous* entry into [startRecording] until that call
+  /// has returned, successfully or not.
+  ///
+  /// `_activeTrip` alone cannot carry the "a trip is starting" invariant: it is
+  /// assigned only after `await saveTrip`, so two callers landing in the same
+  /// evaluation interval both read `null`, both write a row, and the first trip
+  /// is orphaned `active` with no `st` and no stop — exactly what trips 5 and 6
+  /// of the 2026-09-02 control run were (L-080). Dart's single thread is what
+  /// makes this flag sufficient: nothing can interleave between the test and
+  /// the set below, because neither awaits.
+  bool _startInFlight = false;
 
   @override
   Future<TripMetrics> build() async {
@@ -175,9 +205,14 @@ class TripRecorderService extends _$TripRecorderService {
     required ActivityType activity,
     List<LocationData> priorLocations = const [],
   }) async {
-    if (_activeTrip != null) {
-      throw StateError('Trip already recording');
+    if (_activeTrip != null || _startInFlight) {
+      throw TripAlreadyStartingError(
+        _activeTrip != null
+            ? 'Trip already recording'
+            : 'Trip start already in flight',
+      );
     }
+    _startInFlight = true;
 
     // Own the session for as long as the trip lasts.
     _releaseSessionLink ??= ref.keepAlive().close;
@@ -189,9 +224,32 @@ class TripRecorderService extends _$TripRecorderService {
         priorLocations: priorLocations,
       );
     } catch (_) {
+      // A failure AFTER `startTripWithId` would otherwise leave the worst of
+      // both states: `_activeTrip` set (so every later start throws for the
+      // life of the process) and a state machine saying `active` (so the UI
+      // shows a ride with no location stream, no flush timer and no metrics
+      // ticker behind it, until the GPS watchdog eventually notices). Roll the
+      // publication back; the database row stays `active` for
+      // `TripRecoveryService` to close at the next launch, exactly as it does
+      // after a process kill.
+      //
+      // Defence in depth, and untested for that reason: every await after the
+      // publication is individually guarded today (the route-point flush and
+      // the back-dating write both swallow their own failures), so no current
+      // path reaches this branch. It exists so that adding one does not
+      // resurrect the wedge.
+      if (_activeTrip != null) {
+        _activeTrip = null;
+        _stopLocationStream();
+        _stopFlushTimer();
+        _stopMetricsTimer();
+        _stateMachine?.stopTrip();
+      }
       // Nothing is recording, so the session must not stay pinned.
       _closeSession();
       rethrow;
+    } finally {
+      _startInFlight = false;
     }
   }
 

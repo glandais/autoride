@@ -48,6 +48,11 @@ class _FakeTripRepository extends TripRepository {
   bool throwOnSaveRoutePoints = false;
   bool throwOnSaveTrip = false;
 
+  /// Holds `saveTrip` open. The recorder publishes `_activeTrip` only from that
+  /// future's result, so this is the exact window in which a second caller used
+  /// to read `null` and write a second row (L-080).
+  Completer<void>? saveTripGate;
+
   /// Pushes the started trip's `startTime` this far into the past.
   ///
   /// The recorder computes a ride's duration from the trip it got back from
@@ -61,6 +66,7 @@ class _FakeTripRepository extends TripRepository {
     if (throwOnSaveTrip) {
       throw TripRepositoryException('forced save failure');
     }
+    await saveTripGate?.future;
     final backdate = backdateStartBy;
     final withId = trip.copyWith(
       id: _nextId++,
@@ -355,6 +361,91 @@ void main() {
         expect(tripState.currentTripId, 1);
       },
     );
+
+    test('a second startRecording during the first one\'s database write is '
+        'rejected (L-080)', () async {
+      final recorder = await readRecorder();
+      fakeRepository.saveTripGate = Completer<void>();
+      container.read(tripStateMachineProvider.notifier).startDetecting();
+
+      final first = recorder.startRecording(
+        confidenceScore: 0.85,
+        activity: ActivityType.cycling,
+      );
+      await pumpEventQueue();
+
+      // Where trips 5 and 6 came from: `_activeTrip` is still null, the state
+      // machine is still `detecting`, and the detector is still saying go.
+      expect(fakeRepository.savedTrips, isEmpty);
+      await expectLater(
+        recorder.startRecording(
+          confidenceScore: 0.85,
+          activity: ActivityType.cycling,
+        ),
+        throwsStateError,
+      );
+
+      fakeRepository.saveTripGate!.complete();
+      await first;
+      await pumpEventQueue();
+
+      expect(fakeRepository.savedTrips, hasLength(1));
+      expect(container.read(tripStateMachineProvider).currentTripId, 1);
+    });
+
+    test('a rejected concurrent start does not release the first one\'s '
+        'session (L-080)', () async {
+      final recorder = await readRecorder();
+      fakeRepository.saveTripGate = Completer<void>();
+      container.read(tripStateMachineProvider.notifier).startDetecting();
+
+      final first = recorder.startRecording(
+        confidenceScore: 0.85,
+        activity: ActivityType.cycling,
+      );
+      await pumpEventQueue();
+      await expectLater(
+        recorder.startRecording(
+          confidenceScore: 0.85,
+          activity: ActivityType.cycling,
+        ),
+        throwsStateError,
+      );
+
+      fakeRepository.saveTripGate!.complete();
+      await first;
+      await pumpEventQueue();
+
+      // The rejection returns before the session is claimed, so its `catch`
+      // cannot unpin the recording that is actually running: dropping every
+      // external listener must still leave the same notifier alive.
+      await dropExternalListeners();
+      expect(
+        container.read(tripRecorderServiceProvider.notifier),
+        same(recorder),
+      );
+      expect(container.read(tripStateMachineProvider).isRecording, isTrue);
+    });
+
+    test('a failed start can be retried (L-080 guard releases)', () async {
+      final recorder = await readRecorder();
+      fakeRepository.throwOnSaveTrip = true;
+      container.read(tripStateMachineProvider.notifier).startDetecting();
+
+      await expectLater(
+        recorder.startRecording(
+          confidenceScore: 0.85,
+          activity: ActivityType.cycling,
+        ),
+        throwsA(isA<TripRepositoryException>()),
+      );
+
+      fakeRepository.throwOnSaveTrip = false;
+      await startTrip(recorder);
+
+      expect(fakeRepository.savedTrips, hasLength(1));
+      expect(container.read(tripStateMachineProvider).currentTripId, 1);
+    });
 
     test('double startRecording throws StateError', () async {
       final recorder = await readRecorder();

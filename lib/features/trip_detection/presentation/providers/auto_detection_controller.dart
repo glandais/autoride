@@ -77,6 +77,11 @@ class AutoDetectionController extends _$AutoDetectionController {
   /// Mirrors the state machine: true exactly while a trip is being recorded.
   bool _recording = false;
 
+  /// True from the synchronous entry into [startTripManually] until it returns.
+  /// See there: `hasActiveTrip` only becomes true after the recorder's database
+  /// write, so it cannot keep one tap from becoming two trips (L-080).
+  bool _startInFlight = false;
+
   /// True while the foreground service has been asked to run. It is the
   /// disjunction of "detection is listening" and "a trip is recording", so
   /// neither phase can pull the service out from under the other.
@@ -249,7 +254,23 @@ class AutoDetectionController extends _$AutoDetectionController {
   /// soon as this trip ends.
   Future<void> startTripManually() async {
     if (ref.read(tripStateMachineProvider).hasActiveTrip) return;
+    // `hasActiveTrip` alone is the guard L-080 showed to be insufficient: it
+    // only becomes true at `startTripWithId`, i.e. after the recorder's
+    // database write, so a second tap — or a tap landing while the coordinator
+    // is starting a trip — sails past it. Claimed synchronously, before the
+    // audit line and before the first `await`, so a rejected tap writes no
+    // second `trip start` either.
+    if (_startInFlight) return;
+    _startInFlight = true;
 
+    try {
+      await _startTripManually();
+    } finally {
+      _startInFlight = false;
+    }
+  }
+
+  Future<void> _startTripManually() async {
     AuditLog.emit(
       AuditEvent.trip,
       () => <String, Object?>{'a': 'start', 'man': true},
@@ -269,6 +290,19 @@ class AutoDetectionController extends _$AutoDetectionController {
           .startRecording(confidenceScore: 1.0, activity: ActivityType.cycling);
     } catch (e, stackTrace) {
       _logger.error('Manual trip start failed', e, stackTrace);
+      // Not when the coordinator won the race: it is what the recorder's
+      // rejection means, and that rejection lands *before* the winner reaches
+      // `startTripWithId` — so `hasActiveTrip` is still false here and cannot
+      // be the discriminant. Stopping anyway would end the ride the
+      // coordinator just began (L-080, the manual side of the same
+      // re-entrancy).
+      if (e is TripAlreadyStartingError) {
+        // A trip *is* starting — the coordinator's, one motion sample ahead of
+        // this tap. The user asked for a ride and is getting one, so this is
+        // not an error to put in front of them (the tracking screen turns a
+        // throw into a "Could not start the trip" snackbar).
+        return;
+      }
       ref.read(tripStateMachineProvider.notifier).stopTrip();
       if (!state.shouldListen) coordinator.stopListening();
       rethrow;

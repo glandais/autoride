@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -96,6 +97,15 @@ class _RecorderLog {
   final List<double> startedWithConfidence = [];
   final List<ActivityType> startedWithActivity = [];
   bool throwOnStart = false;
+
+  /// Holds `startRecording` open where the real one is held open by its
+  /// `await saveTrip` — the window in which one tap could become two trips
+  /// (L-080).
+  Completer<void>? startGate;
+
+  /// Thrown instead of the generic failure, so a test can script the
+  /// recorder's own "someone else already owns this start" rejection.
+  Object? failStartWith;
 }
 
 class _SpyTripRecorderService extends TripRecorderService {
@@ -119,6 +129,9 @@ class _SpyTripRecorderService extends TripRecorderService {
     if (log.throwOnStart) throw StateError('forced start failure');
     log.startedWithConfidence.add(confidenceScore);
     log.startedWithActivity.add(activity);
+    await log.startGate?.future;
+    final scripted = log.failStartWith;
+    if (scripted != null) throw scripted;
     ref.read(tripStateMachineProvider.notifier).startTripWithId(1);
   }
 
@@ -479,6 +492,70 @@ void main() {
       await controller.startTripManually();
 
       expect(recorder.startedWithConfidence, hasLength(1));
+    });
+
+    test('a second tap during the first one\'s database write starts no '
+        'second trip (L-080)', () async {
+      final sink = _RecordingAuditSink();
+      AuditLog.install(sink, verbose: false);
+      addTearDown(AuditLog.uninstall);
+
+      final controller = await startController(overridesFor());
+      recorder.startGate = Completer<void>();
+      // The real recorder pins itself with `ref.keepAlive()` for the lifetime
+      // of a recording; the spy does not, and these two tests are the only ones
+      // holding a start open across event-queue pumps.
+      container.listen(tripRecorderServiceProvider, (_, _) {});
+
+      // `hasActiveTrip` — the only guard this path had — is false for the whole
+      // of the first tap's database write, and the button is neither disabled
+      // nor debounced while it runs.
+      final first = controller.startTripManually();
+      await pumpEventQueue();
+      expect(recorder.startedWithConfidence, hasLength(1));
+      expect(container.read(tripStateMachineProvider).hasActiveTrip, isFalse);
+
+      await controller.startTripManually();
+
+      recorder.startGate!.complete();
+      await first;
+      await pumpEventQueue();
+
+      expect(recorder.startedWithConfidence, hasLength(1));
+      // And exactly one `trip start` line, since the audit emit sits behind the
+      // guard: two of them are how L-080 was diagnosed in the first place.
+      expect(
+        sink.fieldsOf('trip').where((f) => f['a'] == 'start'),
+        hasLength(1),
+      );
+    });
+
+    test('losing the race to the coordinator does not stop its trip and does '
+        'not look like a failure (L-080)', () async {
+      final controller = await startController(overridesFor());
+      recorder.startGate = Completer<void>();
+      // The real recorder pins itself with `ref.keepAlive()` for the lifetime
+      // of a recording; the spy does not, and these two tests are the only ones
+      // holding a start open across event-queue pumps.
+      container.listen(tripRecorderServiceProvider, (_, _) {});
+
+      final tap = controller.startTripManually();
+      await pumpEventQueue();
+
+      // The coordinator got there first: the state machine is `active` with an
+      // id this tap never chose, and the recorder rejects every further start.
+      container.read(tripStateMachineProvider.notifier).startTripWithId(7);
+      recorder.failStartWith = TripAlreadyStartingError(
+        'Trip already recording',
+      );
+      recorder.startGate!.complete();
+
+      // No throw: the user asked for a ride and is getting one, so the tracking
+      // screen must not show "Could not start the trip".
+      await tap;
+
+      expect(container.read(tripStateMachineProvider).hasActiveTrip, isTrue);
+      expect(container.read(tripStateMachineProvider).currentTripId, 7);
     });
 
     test('a failing start returns to idle and rethrows', () async {

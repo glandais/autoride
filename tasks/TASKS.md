@@ -379,10 +379,11 @@ acceptance test. **Diagnosis only at this stage — no solution has been chosen 
 
 - ☐ **T044**: Trip Start Decision — one departure, one trip, and only a real one
   - *Detail*: ledger L-079, L-080, L-081 (create `tasks/T044-trip-start-decision.md` on request)
+  - *Partly done*: 2026-09-02 — **L-080 closed** by ledger remediation row 20. One departure can no longer become two trips: the recorder, the coordinator and the manual button each claim the start synchronously, before the first `await` of their start path, so the ~50 Hz samples (or the second tap) that arrive while `saveTrip` is in flight are rejected instead of writing a second row. The loser of a race gets a typed `TripAlreadyStartingError` and skips its teardown — `hasActiveTrip` reads false in exactly that window, so both error paths would have stopped the trip the *other* caller had just started. Tests 654 → 664. **Not device-validated** — the acceptance test is the next control run. L-079 and L-081 keep this task open.
   - *Scope*: the three defects between "the detector says go" and "a ride is in History". Walking scores as cycling when no GPS speed is there to correct it (L-079); one departure starts two trips because nothing is re-entrant between the go and the state transition, leaving an orphan `active` row (L-080); a trip with no route point is saved, and only ever ends through the watchdog or `maxPause` (L-081). One task because the three share the same evidence and the same acceptance test: repeat the shopping run and expect zero trips in History and zero `active` rows in the database.
   - *Dependencies*: T041 (the pipeline), T043 (the log that decides it)
   - *Cross-refs*: L-011 (dead three-layer detector), L-022 (streak fixed, confidence not), L-068 (sub-60 s rule), L-074, L-075
-  - *Estimate*: multi-session — the L-080 half is bounded, the L-079 half is the detection problem itself
+  - *Estimate*: multi-session — the L-080 half is done, the L-079 half is the detection problem itself
 
 - ☐ **T045**: Carried-Phone Motion Semantics — counters in seconds, a gate that closes on a walker
   - *Detail*: ledger L-082, L-083
@@ -407,7 +408,7 @@ acceptance test. **Diagnosis only at this stage — no solution has been chosen 
   - *Cross-refs*: L-077 (silent retention purge, by design), T041 §0 table
   - *Estimate*: half a session
 
-- *Recommended order*: T047 (done) → T044 (L-080 half) → T045 → T046 (decision first). Ledger §6 says why.
+- *Recommended order*: T047 (done) → T044 (L-080 half, done) → T045 → T044 (L-081) → T046 (decision first). Ledger §6 says why.
 
 ---
 
@@ -453,8 +454,8 @@ acceptance test. **Diagnosis only at this stage — no solution has been chosen 
 **Blocked**: 0
 
 **Current Phase**: Phase 10 - Release Preparation, alongside the Phase 11 audit backlog and the Phase 12 export work
-**Last Completed**: T047 - audit log cost and honesty (2026-09-02)
-**Current Task**: T044–T046 (Phase 11.2) — the 2026-09-02 control run without a ride produced four 0 m trips on the Pixel and an invisible outing on the iPhone; ledger §6 holds the diagnoses. T047 is done, so the next verbose run keeps its own header. Then T039/T041 — iOS release is 2 blockers from submittable (build attach + screenshots); T041 device validation under way (first iPhone run done: prompts OK, one crash found and fixed — see `tasks/T041-device-validation.md`). T038 open on manual Play Console setup; T037 open (§5.6/§5.7).
+**Last Completed**: T047 - audit log cost and honesty (2026-09-02); T044's L-080 half (one departure, one trip) the same day
+**Current Task**: T044–T046 (Phase 11.2) — the 2026-09-02 control run without a ride produced four 0 m trips on the Pixel and an invisible outing on the iPhone; ledger §6 holds the diagnoses. T047 is done, so the next verbose run keeps its own header, and T044's L-080 half is closed (one departure can no longer become two trips); L-079, L-081, T045 and T046 remain. Then T039/T041 — iOS release is 2 blockers from submittable (build attach + screenshots); T041 device validation under way (first iPhone run done: prompts OK, one crash found and fixed — see `tasks/T041-device-validation.md`). T038 open on manual Play Console setup; T037 open (§5.6/§5.7).
 **Next Task**: T039 - iOS Release Configuration (T038 now owns the version scheme and `publish_beta.sh`, so T039 can extend both)
 **Audit backlog**: `tasks/AUDIT-FINDINGS.md` (2026-06-17) and `tasks/LEDGER.md` (2026-08-31) record open defects that are not otherwise tracked here; the blocked core-pipeline cluster is T041.
 

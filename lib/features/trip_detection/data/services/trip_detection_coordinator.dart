@@ -101,6 +101,20 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
   bool _isAnalyzing = false;
   bool _disposed = false;
 
+  /// True from the moment this coordinator decides to start a trip until the
+  /// recorder has answered.
+  ///
+  /// The motion stream runs at ~50 Hz and `_onMotionData` is `async`: every
+  /// sample that arrives while `startRecording` is awaiting its database write
+  /// re-enters `_analyzeForTripStart` with the state machine still in
+  /// `Detecting` and a detector that keeps answering `shouldStart` for the rest
+  /// of the evaluation interval. On 2026-09-02 that turned one departure into
+  /// two trips in the same millisecond (L-080). The recorder now rejects the
+  /// second call, but rejecting it here is what keeps the departure a *single*
+  /// decision: no second pre-trip buffer hand-off, no `StateError` to unwind,
+  /// and one `start` in the log per departure.
+  bool _startInFlight = false;
+
   // Heartbeat counters (T043). Three integers every 30 s, and they are what
   // makes a gap in the audit log readable at all: `n < expected` means the OS
   // froze the 1 Hz timer (the process was suspended), while `n` intact with
@@ -187,6 +201,10 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
     _stopRequestedAfterTrip = false;
     if (_isAnalyzing) return;
     _isAnalyzing = true;
+    // Belt and braces against a claim that outlived its session: nothing else
+    // clears it, and a stuck claim would silently stop this coordinator from
+    // ever starting a trip again.
+    _startInFlight = false;
 
     // A detection session owns its own lifetime (audit #2).
     _releaseSessionLink ??= ref.keepAlive().close;
@@ -809,6 +827,11 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
 
   /// Analyze motion and location for trip start
   Future<void> _analyzeForTripStart(MotionData motion) async {
+    // A departure already being acted on. Evaluating this sample could only
+    // produce a second one (L-080), and the detector's verdict for it is
+    // answered by the trip that is starting.
+    if (_startInFlight) return;
+
     // Call trip start detector
     final shouldStart = await ref
         .read(tripStartDetectorProvider.notifier)
@@ -831,22 +854,34 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
     }
 
     if (shouldStart) {
-      // Get confidence score from detector
-      final detector = ref.read(tripStartDetectorProvider);
-      final confidence = detector.confidence;
-
-      // Hand the recorder the fixes already collected during detection, cut
-      // back to the first one at cycling speed (L-076): the gate opens on any
-      // movement, so the head of the buffer is usually the walk to the bike and
-      // must not become part of the ride. Emptied either way — confirmed or
-      // failed, this departure is no longer pending.
-      final priorLocations = _preTripLocations.ridingTail;
-      // `kp` against `n` is what shows the riding-tail cut working: a walk to
-      // the bike that was correctly dropped reads as n > kp.
-      _emitBuffer('tail', kept: priorLocations.length);
-      _preTripLocations.clear();
+      // Re-checked, because the guard at the top of this method only rejects
+      // samples that arrive *after* a departure was decided. A sample that
+      // entered before it is parked on the detector's `await` above and lands
+      // here too — the very interleaving that produced trips 5 and 6 (L-080).
+      // Claimed on the same synchronous run as the check, and released in the
+      // `finally` below — which is why everything that can throw between here
+      // and the recorder call sits inside the `try`: a claim released nowhere
+      // else would stop this coordinator from ever starting another trip, for
+      // the life of the process and without a line in the log to say so.
+      if (_startInFlight) return;
+      _startInFlight = true;
 
       try {
+        // Get confidence score from detector
+        final detector = ref.read(tripStartDetectorProvider);
+        final confidence = detector.confidence;
+
+        // Hand the recorder the fixes already collected during detection, cut
+        // back to the first one at cycling speed (L-076): the gate opens on any
+        // movement, so the head of the buffer is usually the walk to the bike
+        // and must not become part of the ride. Emptied either way — confirmed
+        // or failed, this departure is no longer pending.
+        final priorLocations = _preTripLocations.ridingTail;
+        // `kp` against `n` is what shows the riding-tail cut working: a walk to
+        // the bike that was correctly dropped reads as n > kp.
+        _emitBuffer('tail', kept: priorLocations.length);
+        _preTripLocations.clear();
+
         // Trigger trip recording (T015)
         // This will create trip in database and update state machine
         await ref
@@ -862,13 +897,30 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
         // fails to start, and the UI never learns about it. Reset to idle so the
         // detector can retry on the next motion sample.
         _logger.error('Failed to start trip recording', e, stackTrace);
-        ref.read(tripStateMachineProvider.notifier).stopTrip();
-        ref.read(tripStartDetectorProvider.notifier).reset();
-        if (!_disposed) {
-          state = AsyncValue.error(e, stackTrace);
+        // Except when the recorder rejected us because it already owns a start
+        // (the manual button won the race): the rejection necessarily arrives
+        // *before* the winner reaches `startTripWithId`, so the state machine
+        // still reads `detecting` and this teardown would leave the winner's
+        // trip published to a database row nothing drives. Asking
+        // `hasActiveTrip` cannot tell the two apart — during that window it is
+        // false either way — which is why the recorder throws a type.
+        if (e is! TripAlreadyStartingError) {
+          ref.read(tripStateMachineProvider.notifier).stopTrip();
+          ref.read(tripStartDetectorProvider.notifier).reset();
+          if (!_disposed) {
+            state = AsyncValue.error(e, stackTrace);
+          }
         }
         return;
+      } finally {
+        _startInFlight = false;
       }
+
+      // The provider can be disposed while `startRecording` is awaited (the
+      // session torn down, the app killed): every `ref.read` below would then
+      // throw inside a callback launched with `unawaited`, i.e. as an unhandled
+      // asynchronous error.
+      if (_disposed) return;
 
       // The stop detector inherits whatever it accumulated during the previous
       // ride (or during a paused-then-resumed one), so a new recording starts
