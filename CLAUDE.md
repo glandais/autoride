@@ -6,25 +6,27 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Essential Commands**:
 ```bash
-# Code generation (MUST run during development)
+# Code generation (leave running while developing)
 dart run build_runner watch
 
 # Quality gates (run in order)
 ./check.sh                       # pub get + codegen + analyze + test (what CI runs)
-flutter analyze                  # MUST pass before testing
+flutter analyze                  # must pass before the tests
 flutter test                     # All tests must pass
 flutter test test/path/to/specific_test.dart  # Run single test
 flutter run --release            # Test on physical device (sensors/GPS)
 ```
 
-**Critical Rules**:
-- **NEVER commit autonomously** - Only commit when user executes `/commit` command
+**Project rules**:
+- Don't commit on your own: commits are triggered by `/commit`, which applies the subject
+  format below and the attribution trailers.
 - Always use `sealed class` with freezed models (see `location_data.dart`)
-- Stream providers use `Ref ref`, not specific ref types
-- Run `flutter analyze` BEFORE `flutter test`
+- Stream providers take `Ref ref`, and consume other providers through
+  `streamFromProvider(ref, provider)` — never by calling the generated function
+- Run `./check.sh`: it chains pub get → codegen → analyze → test, in the order where
+  analysis has to precede the tests, and it is the definition of "green" for CI
 - Test sensor/location features on **physical devices only** (not emulators)
 - Check `AppConstants` for all thresholds before implementation
-- Follow existing patterns in the codebase
 
 **Main Branch**: `develop` (use for PRs)
 **Task Tracker**: `tasks/TASKS.md` (authoritative progress and current phase)
@@ -38,7 +40,8 @@ flutter run --release            # Test on physical device (sensors/GPS)
 | **All Constants/Thresholds** | `lib/core/constants/app_constants.dart` |
 | **Task Tracker** | `tasks/TASKS.md` (authoritative progress) |
 | **Freezed Pattern Example** | `lib/features/trip_detection/domain/models/location_data.dart` |
-| **Stream Provider Pattern** | `lib/features/trip_detection/data/services/location_service.dart:85-105` |
+| **Stream Provider Pattern** | `locationStream` in `lib/features/trip_detection/data/services/location_service.dart` |
+| **Consuming a Stream Provider** | `streamFromProvider` in `lib/core/utils/provider_stream.dart` |
 | **Cycling Detection Logic** | `lib/features/trip_detection/data/services/cycling_pattern_detector.dart` |
 | **GPS Motion-Gating** | `lib/features/trip_detection/data/services/trip_detection_coordinator.dart` |
 | **Auto-Detection Lifecycle** | `lib/features/trip_detection/presentation/providers/auto_detection_controller.dart` |
@@ -70,7 +73,7 @@ flutter run --release            # Test on physical device (sensors/GPS)
 1. `./check.sh` — pub get, code generation, `flutter analyze` (MUST pass), `flutter test`.
    Same script CI and `publish_beta.sh` invoke, so there is one definition of "green".
 2. Physical device test (for sensor/location tasks)
-3. Wait for user to run `/commit` (NEVER commit autonomously)
+3. Wait for the user to run `/commit`
 
 **Task Dependencies**: Never start a task before its dependencies are complete. See `tasks/TASKS.md` for dependency tree.
 
@@ -178,12 +181,12 @@ extension ModelNameExtensions on ModelName {
 ```dart
 @riverpod
 Stream<Data> dataStream(
-  Ref ref,  // ✅ Use plain 'Ref', NOT DataStreamRef
+  Ref ref,  // ✅ plain 'Ref' — no DataStreamRef is generated
 ) async* {
-  // ✅ Call provider function directly (no .stream property)
-  final otherStream = otherStreamProvider(ref);
-
-  await for (final data in otherStream) {
+  // ✅ Consume the other provider THROUGH the provider. Calling the generated
+  // function (`otherStream(ref)`) bypasses overrides and opens a second,
+  // unmanaged subscription — see lib/core/utils/provider_stream.dart.
+  await for (final data in streamFromProvider(ref, otherStreamProvider)) {
     yield processedData;
   }
 }
@@ -205,7 +208,9 @@ class MyService extends _$MyService {
 }
 ```
 
-**Reference**: See `lib/features/trip_detection/data/services/location_service.dart:85-105`
+**Reference**: the `locationStream` provider in
+`lib/features/trip_detection/data/services/location_service.dart`, and
+`streamFromProvider` in `lib/core/utils/provider_stream.dart` for consuming one.
 
 ### Code Generation
 
@@ -279,49 +284,25 @@ see `tasks/T041-device-validation.md`.
 
 ## Cycling Detection Logic
 
-> ⚠️ **This algorithm is implemented but not wired up.** `CyclingPatternDetector` has zero
-> references anywhere in `lib/`, and the test file named after it never imports it. What actually
-> decides a trip start today is `TripStartDetector`: an instantaneous single-sample accel+gyro fit
-> with no frequency analysis and no speed layer. The three-layer design below is the intended
-> target, not current behaviour — see `tasks/LEDGER.md` L-011 and task **T041**. Its layer-3
-> `currentLocation` is never assigned, so `speedScore` is a hardcoded 0.5.
+What decides a trip start today is `TripStartDetector`: an instantaneous single-sample
+accel+gyro fit, with no frequency analysis and no speed layer.
 
-**Multi-Layer Approach**:
+`CyclingPatternDetector` implements the intended three-layer design (motion 40 % / speed
+35 % / frequency 25 %, threshold 0.6) but has **no call site in production** — only two
+mentions in comments (`app_constants.dart:207`, `activity_confidence.dart:59`). It is
+covered by tests; its layer-3 `currentLocation` is never assigned, so `speedScore` is a
+hardcoded 0.5.
 
-1. **Motion Pattern Analysis** (Layer 1)
-   - Acceleration range: 10-20 m/s² (cycling range)
-   - Rotation range: 0.5-3.0 rad/s (pedaling motion)
-   - Score: 0-1 based on how well values fit cycling profile
-
-2. **Pedaling Frequency Analysis** (Layer 2)
-   - Detect peaks in acceleration (pedaling cycles)
-   - Expected frequency: 0.5-2.0 Hz (30-120 RPM)
-   - Typical: 1.2 Hz (72 RPM)
-
-3. **GPS Speed Validation** (Layer 3 - when available)
-   - Cycling speed range: 8-40 km/h
-   - Typical: 18 km/h
-   - Too slow (<8): likely walking
-   - Too fast (>40): likely driving
-
-**Final Confidence Score**:
-- Motion score: 40% weight
-- Speed score: 35% weight
-- Frequency score: 25% weight
-- Threshold: 0.6 minimum for detection
-
-**All thresholds defined in**: `lib/core/constants/app_constants.dart`
-
-**Implementation**: `lib/features/trip_detection/data/services/cycling_pattern_detector.dart`
+Full specification and wiring plan: `tasks/T041-device-validation.md` (appendix) and
+`tasks/LEDGER.md` L-011. Thresholds: `lib/core/constants/app_constants.dart`.
+Implementation: `lib/features/trip_detection/data/services/cycling_pattern_detector.dart`.
 
 ---
 
 ## Testing Strategy
 
-**Order matters**: `flutter analyze` MUST pass before `flutter test`.
-
-**Critical**: Sensor and location features MUST be tested on **physical devices** —
-emulators do not produce usable sensor data.
+Sensor and location features are tested on **physical devices** — emulators do not
+produce usable sensor data.
 
 Test layout, provider mocking with `ProviderContainer` overrides, and the physical-device
 scenario checklist are in the **`autoride-testing`** skill.
@@ -330,56 +311,32 @@ scenario checklist are in the **`autoride-testing`** skill.
 
 ## Common Issues Quick Reference
 
-| Issue | Quick Fix | Reference |
-|-------|-----------|-----------|
-| `Undefined class XxxRef` | Use `Ref ref`, not specific types | Mistake #2 |
-| Freezed compilation errors | Check `sealed class`, constructor order | Mistake #1 |
-| Tests fail unexpectedly | Verify test data meets thresholds | Mistake #4 |
-| Unused import/variable warnings | Run `flutter analyze`, remove them | Mistake #3 |
-| `sort_constructors_first` warning | Move all constructors before fields | Mistake #5 |
-| Code generation not working | Check `part 'file.g.dart';` directive | - |
-| Build runner conflicts | Run with `--delete-conflicting-outputs` | - |
-| Sensor data in emulator | Use physical device, emulators don't work | - |
+| Issue | Quick Fix |
+|-------|-----------|
+| `Undefined class XxxRef` | Use `Ref ref`, not specific types |
+| A stream emits twice, or `overrideWith` is ignored in a test | You called the generated function; go through `streamFromProvider(ref, provider)` |
+| Freezed compilation errors | Check `sealed class`, constructor order |
+| Tests fail unexpectedly | Verify test data meets thresholds |
+| Unused import/variable warnings | Run `flutter analyze`, remove them |
+| `sort_constructors_first` warning | Move all constructors before fields |
+| Code generation not working | Check `part 'file.g.dart';` directive |
+| Build runner conflicts | Run with `--delete-conflicting-outputs` |
+| Sensor data in emulator | Use physical device, emulators don't work |
+
+Worked ❌/✅ examples: the `freezed-riverpod-patterns` skill.
 
 ---
 
-## Development Workflow
-
-### Daily Pattern
+## Before Committing
 
 ```bash
-# Terminal 1: Code generation watcher
-dart run build_runner watch
-
-# Terminal 2: Run app on physical device
-flutter run --release  # Test battery in release mode
-
-# Check logs
-flutter logs --verbose
-
-# Profile battery (critical!)
-# Android: Android Studio → Profiler → Energy
-# iOS: Xcode → Debug Navigator → Energy Impact
-```
-
-### Before Committing
-
-**IMPORTANT**: Never create commits autonomously. Only commit when user executes `/commit` command.
-
-```bash
-flutter analyze          # Must pass
-flutter test            # All tests must pass
+./check.sh              # pub get + codegen + analyze + test
 git status              # Check what's staged
-git diff               # Review changes
-
-# Wait for user to run /commit - DO NOT run git commit yourself
+git diff                # Review changes
 ```
 
-### Creating New Features
-
-```bash
-mkdir -p lib/features/feature_name/{data,domain,presentation,services}
-```
+The day-to-day dev loop (watcher, release runs, battery profiling) is in
+[README.md](README.md) → Development Workflow.
 
 ---
 

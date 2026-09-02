@@ -1,16 +1,16 @@
 ---
 name: freezed-riverpod-patterns
-description: Freezed model and Riverpod provider patterns for AutoRide, plus the concrete mistakes made while building them and how to avoid repeating them. Use when writing or debugging freezed models, sealed classes, Riverpod providers (stream, class/notifier), code generation, or when hitting errors like "Undefined class XxxRef", missing-implementation errors on a freezed class, or sort_constructors_first lint warnings.
+description: Freezed model and Riverpod provider patterns for AutoRide, with the wrong/right forms for each. Use when writing or debugging freezed models, sealed classes, Riverpod providers (stream, class/notifier), code generation, when consuming one stream provider from another, or when hitting errors like "Undefined class XxxRef", missing-implementation errors on a freezed class, a stream that emits twice, an ignored overrideWith in a test, or sort_constructors_first lint warnings.
 ---
 
 # Freezed & Riverpod Patterns (AutoRide)
 
 Reference: `lib/features/trip_detection/domain/models/location_data.dart` (freezed),
-`lib/features/trip_detection/data/services/location_service.dart:85-105` (stream provider).
+`lib/features/trip_detection/data/services/location_service.dart` → `locationStream`
+(stream provider), `lib/core/utils/provider_stream.dart` → `streamFromProvider`
+(consuming one).
 
-**This section documents concrete mistakes from development. Learn from these to avoid repeating them.**
-
-### Mistake 1: Incorrect Freezed Class Structure (T007)
+### Freezed class structure
 
 **Problem**: Using `class` instead of `sealed class` and placing methods inside the freezed class body.
 
@@ -63,9 +63,10 @@ extension AccelerometerDataExtensions on AccelerometerData {
 
 ---
 
-### Mistake 2: Incorrect Riverpod Stream Provider Usage (T007)
+### Consuming a Riverpod stream provider
 
-**Problem**: Trying to access `.stream` property and using wrong Ref types.
+**Problem**: reaching for a `.stream` property that Riverpod 3 removed, using a
+generated ref type that does not exist, or calling the generated provider *function*.
 
 ❌ **Wrong**:
 ```dart
@@ -73,7 +74,8 @@ extension AccelerometerDataExtensions on AccelerometerData {
 Stream<MotionData> motionDataStream(
   MotionDataStreamRef ref,  // ❌ Specific ref type doesn't exist
 ) async* {
-  final accelStream = ref.watch(accelerometerStreamProvider.stream);  // ❌ No .stream property
+  final a = ref.watch(accelerometerStreamProvider.stream);  // ❌ No .stream property
+  final b = accelerometerStream(ref);  // ❌ Bypasses overrides, opens a 2nd subscription
 }
 ```
 
@@ -83,8 +85,8 @@ Stream<MotionData> motionDataStream(
 Stream<MotionData> motionDataStream(
   Ref ref,  // ✅ Plain 'Ref'
 ) async* {
-  // ✅ Call the function directly
-  final accelStream = accelerometerStream(ref);
+  // ✅ Through the provider: one shared subscription, and testable via overrideWith
+  final accelStream = streamFromProvider(ref, accelerometerStreamProvider);
   await for (final data in accelStream) {
     yield processedData;
   }
@@ -93,13 +95,18 @@ Stream<MotionData> motionDataStream(
 
 **Key Lessons**:
 - Stream providers use `Ref ref`, not specific ref types
-- Call provider functions directly: `streamProvider(ref)`
-- No `.stream` property exists
+- Riverpod 3 removed `.stream`; the replacement is `streamFromProvider(ref, provider)`
+  (`lib/core/utils/provider_stream.dart`)
+- Do **not** call the generated function (`streamProvider(ref)`): it bypasses overrides
+  and opens a second, unmanaged subscription to the underlying platform stream — that is
+  audit #5, see `trip_recorder_service.dart` → `_startLocationStream`
+- A provider with parameters is a family: `locationStreamProvider()`, with the
+  parentheses; a parameterless one is passed bare: `accelerometerStreamProvider`
 - `ref.watch(streamProvider)` returns `AsyncValue<T>`, not `Stream<T>`
 
 ---
 
-### Mistake 3: Unused Variables and Imports (T007)
+### Unused variables and imports
 
 **Problem**: Declaring variables/fields that aren't used.
 
@@ -140,7 +147,7 @@ final window = MotionWindow(
 
 ---
 
-### Mistake 4: Test Data Not Meeting Detection Thresholds (T007)
+### Test data and detection thresholds
 
 **Problem**: Writing tests with data that doesn't meet the conditions being tested.
 
@@ -184,7 +191,7 @@ test('should detect cycling', () {
 
 ---
 
-### Mistake 5: Incorrect Constructor Ordering (Lint Rule)
+### Constructor ordering (`sort_constructors_first`)
 
 **Problem**: Placing field declarations before constructors violates the `sort_constructors_first` lint rule.
 
@@ -248,27 +255,6 @@ class ErrorView extends StatelessWidget {
 
 ---
 
-### Best Practices Summary
-
-**Before Starting**:
-1. Check existing similar code for patterns
-2. Review `AppConstants` for relevant configuration
-3. Read generated `.g.dart` files to understand provider types
-
-**During Implementation**:
-1. Run `flutter pub run build_runner watch` in separate terminal
-2. Write tests with calculated values that meet thresholds
-3. Run `flutter analyze` before `flutter test`
-4. Test on physical devices for sensor/location features
-
-**When Encountering Errors**:
-1. Read full error message carefully
-2. Check generated `.g.dart` and `.freezed.dart` files
-3. Compare with working examples in codebase
-4. Verify test data mathematically
-
----
-
 ---
 
 ## Reference Examples
@@ -325,6 +311,7 @@ extension LocationDataExtensions on LocationData {
 ```dart
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:geolocator/geolocator.dart';
+import '../../../../core/utils/provider_stream.dart';
 import '../../domain/models/location_data.dart';
 
 part 'location_service.g.dart';
@@ -345,7 +332,8 @@ Stream<LocationData> locationStream(Ref ref) async* {
 class LocationService extends _$LocationService {
   @override
   Stream<LocationData> build() async* {
-    final stream = locationStream(ref);
+    // `locationStream` takes a parameter, so its provider is a family: note the ().
+    final stream = streamFromProvider(ref, locationStreamProvider());
     await for (final location in stream) {
       yield location;
     }

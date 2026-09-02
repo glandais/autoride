@@ -6,10 +6,10 @@ import 'package:autoride/features/trip_detection/data/services/motion_detection_
 import 'package:autoride/features/trip_detection/domain/models/activity_confidence.dart';
 import 'package:autoride/features/trip_detection/domain/models/motion_data.dart';
 
-/// Tests for the real [CyclingPatternDetector] — the three-layer detector the
-/// README and CLAUDE.md document.
+/// Tests for the real [CyclingPatternDetector] — the three-layer detector
+/// specified in `tasks/T041-device-validation.md` (appendix).
 ///
-/// IMPORTANT: this service is still deliberately **unwired**. `TripStartDetector`
+/// NOTE: this service is still deliberately **unwired**. `TripStartDetector`
 /// is what actually decides a trip start; `cyclingPatternDetectorProvider` has no
 /// consumer in `lib/` pending a product decision (L-011). These tests therefore
 /// characterise the detector as it stands — including the layer-3 defect below —

@@ -187,6 +187,20 @@ dart format .
 flutter pub outdated
 ```
 
+**Battery profiling** (sensors and GPS only behave realistically on a physical device)
+```bash
+# Run on a real phone, in release mode — debug builds distort drain
+flutter run --release
+
+# Follow the device logs while riding
+flutter logs --verbose
+```
+
+Then read the energy trace: **Android** — Android Studio → Profiler → Energy;
+**iOS** — Xcode → Debug Navigator → Energy Impact. The target is < 5 % drain per hour
+of active tracking; see `tasks/T041-device-validation.md` item 4 for the measurement
+protocol (it requires the diagnostic log at `normal` level, and a control run).
+
 ### Project Structure
 
 ```

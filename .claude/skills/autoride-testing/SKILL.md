@@ -58,4 +58,5 @@ testWidgets('test description', (tester) async {
 ## Test Data Must Meet Thresholds
 
 Verify test data mathematically against `AppConstants` before asserting on detection
-state. See the `freezed-riverpod-patterns` skill (Mistake #4) for a worked example.
+state. See the `freezed-riverpod-patterns` skill → "Test data and detection thresholds"
+for a worked example.

@@ -225,3 +225,33 @@ seconds, and the recorder started counting from its own second fix.
   confirmation ate most of its length should now survive; a real false start (a bump, a
   mis-tap) still has no fixes above 8 km/h to prefix, still measures only the seconds it
   lasted, and is still deleted with its points.
+
+---
+
+## Appendix — the intended three-layer cycling detector
+
+Moved out of `CLAUDE.md` (2026-09-02): it described a target design, not current
+behaviour, and cost 36 lines in the always-loaded file. `CyclingPatternDetector`
+implements it; nothing in `lib/` calls it. See `tasks/LEDGER.md` L-011.
+
+**Multi-layer approach**
+
+1. **Motion pattern analysis** (layer 1)
+   - Acceleration range: 10–20 m/s² (cycling range)
+   - Rotation range: 0.5–3.0 rad/s (pedaling motion)
+   - Score: 0–1 based on how well values fit the cycling profile
+
+2. **Pedaling frequency analysis** (layer 2)
+   - Detect peaks in acceleration (pedaling cycles)
+   - Expected frequency: 0.5–2.0 Hz (30–120 RPM)
+   - Typical: 1.2 Hz (72 RPM)
+
+3. **GPS speed validation** (layer 3, when available)
+   - Cycling speed range: 8–40 km/h — typical 18 km/h
+   - Too slow (< 8): likely walking · too fast (> 40): likely driving
+   - **Not reachable today**: `currentLocation` is never assigned, so `speedScore`
+     is a hardcoded 0.5.
+
+**Final confidence score**: motion 40 % + speed 35 % + frequency 25 %, with a
+minimum of 0.6 for detection. All thresholds live in
+`lib/core/constants/app_constants.dart`.
