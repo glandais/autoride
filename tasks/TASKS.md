@@ -364,7 +364,7 @@
   - *Estimate*: multi-session; land one dependency-chain step at a time, validating each on-device
   - *Decisions (maintainer, 2026-08-31)*: (a) session lifetime = scoped `ref.keepAlive()` opened on start, released on stop/error/dispose (note: Riverpod 3 deactivates `ref.listen` subscriptions when the last listener leaves, so session streams are container-owned); (b) GPS gating inside the coordinator, `GPSController` deleted; (c) auto-detection setting-gated (`automaticDetectionEnabled`, default ON); (d) foreground stream is the single source of truth — the background isolate only holds the foreground-service notification.
   - *Status*: **code complete** — landed in three commits per the dependency order: `7afb833` (#5 providerize + #2 sessions), `529db42` (#3 gating + #4 adaptive), `da3ad62` (#11 entry point + #7/#8 isolate). 245 tests, analyze clean.
-  - *Validation*: **physical device required** — see `tasks/T041-device-validation.md`. T041 closes only when that checklist passes.
+  - *Validation*: **physical device required** — see `tasks/T041-device-validation.md`. T041 closes only when that checklist passes. Since T043 the checklist is run with the diagnostic log on, and items 1, 4, 8, 9, 10 and 11 are settled from the exported log rather than from a cable and an impression — see that file's section 0 for which level each item needs.
   - *2026-09-01 (`4559820`)*: background-location status surfaced — `backgroundLocationStatusProvider` (OS grant + accuracy), home banner and settings switch bound to it, platform-specific "Always" / "Precise Location" guidance with a settings link; `PermissionRationaleDialog.show` double-pop fixed. Verified on iPhone 13 Pro (ledger L-071, validation item 6).
   - *References*: `tasks/BLOCKED-pipeline-refactor.md` (decisions + dependency order), `tasks/AUDIT-FINDINGS.md` (2026-06-17, deferred cluster), `tasks/LEDGER.md` (2026-08-31, §3 findings and §5 step 4)
   - *Retires*: the blocked halves of T006 and T013; unblocks T032 and the recorder/coordinator tests under T029/T031
@@ -386,13 +386,28 @@
   - *Not validated*: the share sheet itself and an actual import into Strava/Garmin Connect (needs a device), and a multi-hour ride's encode time.
   - *Not covered*: pause intervals (the model stores only the pause total, so no per-pause timer events), heart rate, cadence and power (not recorded), and there is no import side.
 
+- ⏳ **T043**: Opt-in Audit Log
+  - *Detail*: this entry (no separate task doc); analysis side in `.claude/skills/autoride-audit-log/`
+  - *Scope*: an opt-in diagnostic journal of what the detection pipeline does, exportable as gzipped NDJSON through the share sheet, so the `tasks/T041-device-validation.md` checklist can be settled from evidence instead of impressions. Several of its items say "log line to look for", but `Logger` only writes `debugPrint` behind `kDebugMode` — invisible in a release build — and nothing at all traced the `idle→detecting→active→paused` transitions, the GPS gate, the power mode or the detectors' decisions.
+  - *Dependencies*: T041's pipeline (what is being observed), T011 settings, T042 (the share-sheet pattern it copies)
+  - *Decisions (maintainer, 2026-09-02)*: NDJSON gzipped · share sheet only, no backend · two levels (normal/verbose, never raw 50 Hz sensors) · circular buffer 7 days / 200 000 rows / ~20 MB
+  - *Implementation*:
+    - `lib/core/audit/` — the port, pure Dart: `AuditLog` (static, because the call sites are stream callbacks and plain-Dart pipeline pieces with no `Ref`, including `core/utils/logger.dart`), `AuditSink`, the event vocabulary and line encoder, and `AuditSchema.thresholds()` which stamps the build's own `AppConstants` into every export.
+    - `lib/features/diagnostics/` — the adapter: a **separate** `autoride_audit.db` (WAL, `synchronous = NORMAL`), a batching sink (200 lines / 5 s / immediately on a `critical` event / on `AppLifecycleState.paused`), amortised purge, streaming gzip export, and the settings section.
+    - `Logger` now mirrors into the log, which captures the two lines T041 cites literally, in release builds.
+    - A heartbeat (`hb`, 30 s: ticks, motion samples, fixes, real elapsed) — without it a gap in the timeline cannot distinguish an OS suspension from a lost buffer, which are opposite verdicts for items 3 and 8.
+  - *Privacy*: the file holds unrounded coordinates (the cross-reference against a Strava FIT needs them). A blocking dialog states that before the share sheet, and that dialog is the condition under which `store-metadata/data-safety.md` §3.3 can keep answering "nothing shared". Policy §2.5/§3.1/§3.2/§3.3/§6/§7.1 updated, and T042's export — missing from the policy until now — covered in the same pass.
+  - *Tests*: 75 (472 → 547), including a group that pins the emitted event sequence in the coordinator: the real risk here is not a subtle bug but three missing `emit` calls, which would make the journal look like evidence while being silent about the transition under investigation.
+  - *Replaces*: the dead `debugLoggingEnabled` setting, which nothing ever read.
+  - *Not validated*: the share sheet itself, a 200 000-row log on a device, and exporting while Doze-suspended.
+
 ---
 
 ## Progress Summary
 
-**Total Tasks**: 42
+**Total Tasks**: 43
 **Completed**: 25
-**In Progress**: 8 (T006, T013, T030, T037, T038, T039, T041, T042)
+**In Progress**: 9 (T006, T013, T030, T037, T038, T039, T041, T042, T043)
 **Pending**: 9
 **Blocked**: 0
 

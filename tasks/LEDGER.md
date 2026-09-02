@@ -48,6 +48,63 @@ Executed the same day as the audit, one commit per step, each by an Opus subagen
 | 16 — a trip starts where the riding started | (this change) | **L-076** (new) | Every automatic ride used to be clipped at the front. The coordinator opens the GPS gate on the first moving sample and keeps only the *last* fix (`_lastLocation`, for the start detector's speed score); the trip is confirmed 2-3 s later at the earliest and up to `detectionTimeoutSeconds` (30 s) later at the latest, and only then does `TripRecorderService` open its own location subscription, stamp `startTime = now` and begin counting distance from its **second** fix. Everything in between was discarded — typically **50-200 m and 10-40 s at the head of every trip**. The coordinator now keeps those fixes in a bounded `PreTripLocationBuffer` (new plain-Dart file next to `stationary_window.dart`; `AppConstants.preTripLocationBufferDuration` = 90 s and `preTripLocationBufferMaxPoints` = 64, two independent bounds), skims them to the tail starting at the first fix at `cyclingSpeedMin` (8 km/h) so the walk to the bike is not recorded, and hands that tail to `startRecording(priorLocations:)`. The recorder replays them chronologically through the **same** code path as live fixes — `_handleLocationUpdate`'s filter/accumulate half is factored into `_recordLocation`, so accuracy, speed-outlier and 15 m distance filters, distance, max speed and the route-point buffer all behave identically — and back-dates `startTime` to the first point that survived those filters (`now` if none did), with one immediate `updateTrip` so a process death in the first 30 s recovers the real start. The buffer is emptied at the gate closing, on a location-stream error, at hand-over, when a trip ends and while one is recording (the gate is pinned open then and the recorder owns its own subscription). Manual start (`AutoDetectionController.startTripManually`) passes nothing and is unchanged: there is no trustworthy history behind a button press. Neither the score formula nor any detection threshold is touched. Tests 448 → 472 (+24). |
 
 
+| 17 — the app can say what it did | (this change) | **L-077** (new) | An opt-in **audit log** (T043). `lib/core/audit/` holds the port — a static `AuditLog` with a lazy-closure API — and `lib/features/diagnostics/` the SQLite adapter, the gzip-streaming export and the settings section. Instrumented: the coordinator (session, state transitions, GPS gate, fixes, detector evaluations, watchdog, detection timeout, cooldown, heartbeat), the recorder (trip lifecycle, back-dating, route points kept/dropped, flushes), the stop detector's stationary window, the battery optimiser, the location stream's resubscription, the auto-detection controller, settings changes, app lifecycle, and `Logger` itself. `debugLoggingEnabled` — dead since it was added — is replaced by `auditLogEnabled` + `auditLogLevel`. Tests 472 → 547. |
+
+**Decision (2026-09-02) — L-077: the journal is a separate database, a static port, and it declares its own gaps.**
+
+Six choices, and the reasons that are not obvious:
+
+1. **A separate `autoride_audit.db`, not schema v4 on `autoride.db`.** The usual arguments apply —
+   the journal is disposable while trips are not, clearing it is one `deleteDatabase()`, and no
+   migration is imposed on the trip database for a diagnostic feature. The one that actually
+   decided it is different: the audit database runs `synchronous = NORMAL` under WAL, and putting
+   audit batches on the trip database would have charged an fsync per batch to the very code path
+   whose battery cost item 4 of the device checklist is trying to measure. An observer that
+   changes the measurement is not an observer.
+
+2. **The stored line is the already-serialized NDJSON**, with `t` and `type` duplicated into
+   indexed columns. Exporting is then a concatenation — no decode/re-encode of 200 000 objects —
+   the serialization happens outside the transaction, and the field schema can change without a
+   migration because the column is opaque text. The duplication costs ~19 % before gzip and ~2 %
+   after.
+
+3. **Static port, provider lifetime.** The call sites are inside stream callbacks, inside
+   plain-Dart pipeline pieces (`stationary_window.dart`) and inside `core/utils/logger.dart`.
+   Threading a `Ref` through them would pollute a dozen signatures and make the pure pieces
+   un-instrumentable; and if the emitting API lived in a feature, `core/` would have to import
+   one. So `core/audit` defines the port and `features/diagnostics` installs the adapter.
+
+4. **A lazy closure *and* an explicit `if (AuditLog.enabled)` guard on anything at 1 Hz or more.**
+   The guard is not belt-and-braces. A closure that captures locals allocates a context object
+   every time it is evaluated — including when the log is off — because the allocation is in
+   building the argument, not in the call; only a non-capturing closure is canonicalised. The
+   guard is what keeps the disabled cost at a static load and a branch.
+
+5. **A heartbeat (`hb`).** Three integers every 30 s, and without them a gap in the timeline is
+   ambiguous: the OS suspended the process (a failure of items 3 and 8) or the log lost its buffer
+   to a kill (no conclusion available). `n` below the elapsed seconds means the timer was frozen;
+   `n` intact with `mn == 0` means the process ran while `sensors_plus` delivered nothing — which
+   is precisely the regression item 8 exists to catch.
+
+6. **Gaps are declared, never silent.** The buffer is bounded at 5 000 lines; past that the oldest
+   are dropped and an `aud {a:"overflow"}` marker is written, because a silent hole would be read
+   as an OS suspension. For the same reason every event whose absence would make the log
+   inconclusive (`st`, `trip`, `bdate`, `gpsw`, `perm`, `pwr`, `err`, `app`) is flushed
+   immediately, so it reaches the disk before the thing it announces happens.
+
+Corrections to the plan this change came from, found while building it: 200 000 rows is ~26 MB at
+~130 bytes a line, above the 20 MB target, so retention needs a third bound in bytes
+(`PRAGMA page_count * page_size`, which also avoids `DiskSpace` reasoning in the iOS privacy
+manifest); and at verbose level a full journal covers about seven *hours of riding*, not seven
+days, so the settings screen shows the span actually covered rather than repeating the promise.
+Two real defects were fixed in the sink while testing it: a failed batch used to be dropped rather
+than retried, and `flush()` returned early while another flush was in flight — which would have
+shipped an export missing its last batch.
+
+Also corrected on the way: `docs/legal/privacy-policy.md` claimed map tiles were "the only
+transmission" and that nothing expires automatically, and its §10 still said file export was not
+implemented — untrue since T042, whose FIT export the policy had never covered.
+
 **Decision (2026-09-01) — L-071: the app reports the OS grant it actually has, and the fix is a settings link.**
 Two facts about iOS drove this. First, "Always" is never offered in the first location prompt: the
 system asks "While Using / Once / Don't Allow", and the "Change to Always?" upgrade dialog appears once

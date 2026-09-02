@@ -41,6 +41,38 @@ None of the items below are observable from `flutter analyze`/`flutter test` or 
 emulator — run them on a physical device in `--release` mode. T041 (and the reopened
 halves of T006/T013) close only when this checklist passes.
 
+## 0. Before you start — turn the diagnostic log on (T043)
+
+Most of the items below cannot be settled by watching the phone. Several say "log line to look
+for", and until T043 those lines existed only in a debug build with a cable attached. They are now
+recorded on-device and exportable.
+
+**Settings → Diagnostic log → on**, pick the level from the table, ride, then
+**Export log…** and send the `.ndjson.gz`. Analyse it with the `autoride-audit-log` skill, which
+carries the event schema, the jq recipes and a per-item verdict procedure.
+
+| Item | Level | Events that decide it |
+|---|---|---|
+| 1 — GPS stops when stationary | normal | `gate sched` → 30 s with no `fix` → `gate close`, then **no** `fix` |
+| 4 — battery drain | **normal, never verbose** | `bat` every 5 min, `pwr`, and the summed `gate open`→`close` time |
+| 8 — detection with the screen off | normal | `app paused`, then `hb` with `mn > 0` and no `app resumed`, then `trip start` |
+| 9 — auto-pause/stop, phone carried | **verbose** | `win` (`sd`/`gy`/`sta`/`src`/`spk`), `stop`, `res`, `st` |
+| 10 — trip ends on GPS loss | normal | `gpsw arm` → `gpsw fire` → `log` warning → `trip stop` |
+| 11 — trip starts where riding started | verbose | `bdate` plus the `fix` lines preceding it |
+
+Two things to keep in mind when reading a log:
+
+- **The log is not a free observer.** It writes to its own database, so item 4 must be measured at
+  *normal* level, and a control run with the log off is worth doing before quoting a drain figure.
+- **Read the header first.** Its `k` block holds the thresholds of the build that produced the
+  file. Interpreting an old log against today's `AppConstants` is how you reach the opposite
+  conclusion.
+
+Item 1 keeps one irreducible gap: the OS location indicator is not observable from Dart, so the
+log proves the app stopped *asking* for positions, not that the OS switched the chip off. It does
+give the exact instant the indicator should go dark, which turns a vague observation into a
+checkable one.
+
 ## 1. GPS stops when stationary (T006 / L-004)
 - Automatic detection ON, permissions granted, app open, phone at rest for
   ≥ `gpsInactivityTimeout` (30 s): the OS location indicator must go dark and stay dark.
