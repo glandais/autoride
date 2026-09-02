@@ -1,5 +1,6 @@
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:autoride/core/constants/app_constants.dart';
+import 'package:autoride/features/diagnostics/data/services/audit_database.dart';
 import 'package:autoride/features/trip_detection/data/services/database_service.dart';
 
 /// Opens an in-memory database using the **production** schema.
@@ -21,6 +22,28 @@ Future<Database> createTestDatabase() async {
       onCreate: service.onCreate,
       onUpgrade: service.onUpgrade,
       onConfigure: service.onConfigure,
+    ),
+  );
+}
+
+/// Opens an in-memory **audit** database using the production schema.
+///
+/// Same reasoning as [createTestDatabase]: the DDL and pragmas come from
+/// [AuditDatabase] itself, never re-declared here (L-014).
+///
+/// One caveat worth knowing when reading these tests: WAL does not apply to an
+/// in-memory database, so `onConfigure` running successfully is what can be
+/// asserted, not the resulting journal mode.
+Future<Database> createTestAuditDatabase() async {
+  final auditDatabase = AuditDatabase();
+
+  return await databaseFactory.openDatabase(
+    inMemoryDatabasePath,
+    options: OpenDatabaseOptions(
+      version: AppConstants.auditDatabaseVersion,
+      onCreate: auditDatabase.onCreate,
+      onUpgrade: auditDatabase.onUpgrade,
+      onConfigure: auditDatabase.onConfigure,
     ),
   );
 }

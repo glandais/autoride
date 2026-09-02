@@ -42,7 +42,7 @@ void main() {
       expect(settings.themeMode, equals(ThemeMode.system));
 
       // Developer defaults
-      expect(settings.debugLoggingEnabled, isFalse);
+      expect(settings.auditLogEnabled, isFalse);
       expect(settings.showSensorOverlay, isFalse);
 
       // Metadata
@@ -86,7 +86,7 @@ void main() {
         'distanceUnit': 'imperial',
         'speedUnit': 'mph',
         'themeMode': 'dark',
-        'debugLoggingEnabled': true,
+        'auditLogEnabled': true,
         'showSensorOverlay': true,
         'version': 1,
       };

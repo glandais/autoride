@@ -180,7 +180,7 @@ void main() {
           distanceUnit: DistanceUnit.imperial,
           speedUnit: SpeedUnit.mph,
           themeMode: ThemeMode.dark,
-          debugLoggingEnabled: true,
+          auditLogEnabled: true,
           showSensorOverlay: true,
         );
 
@@ -233,8 +233,8 @@ void main() {
         expect(loadedSettings.speedUnit, equals(testSettings.speedUnit));
         expect(loadedSettings.themeMode, equals(testSettings.themeMode));
         expect(
-          loadedSettings.debugLoggingEnabled,
-          equals(testSettings.debugLoggingEnabled),
+          loadedSettings.auditLogEnabled,
+          equals(testSettings.auditLogEnabled),
         );
         expect(
           loadedSettings.showSensorOverlay,

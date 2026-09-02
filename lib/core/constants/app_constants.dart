@@ -346,6 +346,59 @@ class AppConstants {
   // after the fact — for history display and for the startup recovery.
   static const int databaseVersion = 3;
 
+  // Audit Log (T043) — the opt-in diagnostic journal
+  //
+  // A separate database from `autoride.db` on purpose. The log is disposable
+  // and the trips are not, so clearing it is one `deleteDatabase()` and a
+  // corrupt journal can never threaten ride history. It also lets the journal
+  // run WAL + `synchronous = NORMAL` without relaxing anything on the trip
+  // database — which matters because an fsync charged to the trip database on
+  // every audit batch would bias the very battery-drain measurement of
+  // `tasks/T041-device-validation.md` item 4. The observer has to stay neutral.
+  static const String auditDatabaseName = 'autoride_audit.db';
+  static const int auditDatabaseVersion = 1;
+
+  // Retention: whichever bound is reached first. The byte bound is not
+  // redundant with the row bound — at ~130 bytes per line, 200 000 rows is
+  // ~26 MB, above the 20 MB the log is allowed to occupy.
+  static const Duration auditRetention = Duration(days: 7);
+  static const int auditMaxEvents = 200000;
+  static const int auditMaxBytes = 20 * 1024 * 1024;
+
+  // A batch is ~26 KB, which commits in a few ms under WAL. Ten times smaller
+  // would multiply commits for no latency gain; ten times larger would put
+  // minutes of events at the mercy of a Doze kill.
+  static const int auditFlushBatchSize = 200;
+  static const Duration auditFlushInterval = Duration(seconds: 5);
+
+  // Backstop for a stalled or full disk: past this the oldest buffered lines
+  // are dropped and the gap is *declared* (an `aud` event) rather than left
+  // silent. The log must never take down the app it observes.
+  static const int auditMaxBufferedEvents = 5000;
+
+  // Purge is amortised over writes (~one purge every 2 h at normal level)
+  // instead of running on a timer that would fire while nothing is happening.
+  static const int auditPurgeWriteInterval = 20000;
+  static const int auditPurgeChunkSize = 20000;
+
+  // Liveness proof, on the coordinator's existing 1 Hz supervisor. Without it
+  // a gap in the timeline cannot distinguish "the OS suspended the process"
+  // from "the log lost its buffer", which are opposite verdicts for items 3
+  // and 8 of the device checklist.
+  static const Duration auditHeartbeatInterval = Duration(seconds: 30);
+
+  // Past this much drift between the wall clock and the monotonic clock, a
+  // fresh `clk` event is emitted: an NTP correction mid-session otherwise
+  // poisons the median used to align the log against a Strava FIT.
+  static const Duration auditClockDriftThreshold = Duration(seconds: 2);
+
+  // Verbose-only sensor aggregates are throttled to this; the raw stream is
+  // 50 Hz and is never recorded.
+  static const Duration auditSensorSampleInterval = Duration(seconds: 1);
+
+  // Rows read per page when exporting. Keyset pagination, never OFFSET.
+  static const int auditExportPageSize = 5000;
+
   // Onboarding Configuration (T021)
   static const String onboardingCompleteKey = 'onboarding_complete';
 

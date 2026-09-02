@@ -1,6 +1,8 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 import 'package:geolocator/geolocator.dart';
 
+import 'package:autoride/core/audit/audit_level.dart';
+
 import 'detection_settings.dart';
 
 part 'user_settings.freezed.dart';
@@ -65,8 +67,15 @@ sealed class UserSettings with _$UserSettings {
     @Default(SpeedUnit.kmh) SpeedUnit speedUnit,
     @Default(ThemeMode.system) ThemeMode themeMode,
 
+    // Diagnostics (T043) — the opt-in audit log
+    //
+    // Replaces the former `debugLoggingEnabled`, which nothing ever read. Not
+    // gated on `kDebugMode`: the whole point is that a tester running a release
+    // build can turn it on, ride, and export what the pipeline actually did.
+    @Default(false) bool auditLogEnabled,
+    @Default(AuditLogLevel.normal) AuditLogLevel auditLogLevel,
+
     // Developer Settings (debug mode only)
-    @Default(false) bool debugLoggingEnabled,
     @Default(false) bool showSensorOverlay,
 
     // Metadata

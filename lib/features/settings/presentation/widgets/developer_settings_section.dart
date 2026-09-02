@@ -25,21 +25,6 @@ class DeveloperSettingsSection extends ConsumerWidget {
       subtitle: 'Debug tools (only in debug builds)',
       children: [
         SettingTile(
-          title: 'Debug logging',
-          subtitle: 'Enable verbose logging',
-          trailing: Switch(
-            value: settings.debugLoggingEnabled,
-            onChanged: (value) {
-              ref
-                  .read(settingsServiceProvider.notifier)
-                  .updatePartial((s) => s.copyWith(debugLoggingEnabled: value));
-            },
-          ),
-        ),
-
-        const Divider(height: 1),
-
-        SettingTile(
           title: 'Sensor overlay',
           subtitle: 'Show real-time sensor data on screen',
           trailing: Switch(
