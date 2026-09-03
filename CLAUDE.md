@@ -48,6 +48,7 @@ flutter run --release            # Test on physical device (sensors/GPS)
 | **Battery Optimization** | `lib/features/trip_detection/data/services/battery_optimizer.dart` |
 | **Platform Info Service** | `lib/core/platform/services/platform_info_service.dart` |
 | **Audit Log (emit API)** | `lib/core/audit/audit_log.dart` (vocabulary: `audit_event.dart`) |
+| **Training Capture (T034)** | `lib/features/diagnostics/data/services/capture_controller.dart` |
 | **Reading an Audit Log** | `.claude/skills/autoride-audit-log/SKILL.md` |
 | **Android Permissions** | `android/app/src/main/AndroidManifest.xml` |
 | **iOS Permissions** | `ios/Runner/Info.plist` |
@@ -114,6 +115,8 @@ commit in the repository's history uses it.
 lib/
 ├── core/
 │   ├── audit/            # AuditLog port + event vocabulary + level (opt-in log)
+│   │                     # Two axes: AuditLogLevel (off/normal/verbose) and an
+│   │                     # independent capture flag — see audit_log.dart
 │   ├── constants/        # AppConstants - all thresholds
 │   ├── extensions/
 │   ├── permissions/      # Permission models, rationales, handler service, widgets

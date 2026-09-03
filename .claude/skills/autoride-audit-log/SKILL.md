@@ -20,8 +20,14 @@ decision an older build took with the current constants is how you conclude the
 opposite of what happened.
 
 Also in that first line: `lvl` (normal or verbose — several verdicts below
-depend on which), `app`, `os`, `dev`, `tz` (offset to apply to every `t`),
-`tzn`, `n`, `from`/`to` and `exp` (when the file was written).
+depend on which), `cap` (whether this file is the **training capture** rather
+than the journal — see §2b), `app`, `os`, `dev`, `tz` (offset to apply to every
+`t`), `tzn`, `n`, `from`/`to` and `exp` (when the file was written).
+
+A file with `lvl: "off"` and `cap: true` is a capture exported while the
+diagnostic log was off. It is not an empty file, and it is not a bug: capture
+and the journal are two independent axes (T034), and the export writes one or
+the other, never both.
 
 There are **two kinds of `hdr` line** and they carry different fields:
 
@@ -61,6 +67,8 @@ short; the table below is the whole vocabulary.
 | `cool` | Start cooldown | `a` = arm (`d` s, `why` = falseStart) / expire (`d` s). Armed only by a recording discarded for being **too short** — a long one discarded for want of route points is a GPS failure, not a false start (L-081) |
 | `win` | Stationary window (**verbose**) | `n` `sd` m/s² `gy` rad/s `sta` `src` = gps/gps+vib/sensors `spk` km/h. Throttled to 1 Hz; every change of `sta` or `src` is kept (L-085) |
 | `sens` | 1 Hz sensor aggregate (**verbose**) | `am` `gm` `ms` (MotionState) |
+| `raw` | One second of raw motion (**capture**, T034) | `sess` the capture session, `hz` requested rate, `n` samples kept, `ax`/`ay`/`az` m·s⁻², `gx`/`gy`/`gz` rad·s⁻¹ — six arrays of length `n`, in sample order. `t` is the **end** of the window |
+| `lbl` | Capture ground truth (**capture**, T034) | `a` = start/stop, `act` = bike/car/walk/still/other, `sess` the session id (its start, in epoch ms) |
 | `stop` | Stop decision | `d` = continueTrip/pauseTrip/stopTrip, `sta` `cs` `cm` `so` s. Throttled to `k.evalMs`; every decision and counter change is kept (L-085). While the trip is *paused* only the decisions appear here — the once-a-second `continue` is `res`'s job |
 | `res` | Resume evaluation | `go` `cm` `mv` ms of continuous movement (what the decision is made on, against `k.resume`) `so`. Throttled like `stop`, keyed on `mv` restarting |
 | `trip` | Trip lifecycle | `a` = start/pause/resume/stop/discard, `id`; start: `conf` `act` `pre` (or `man` on a manual start); pause: `dist`; resume: `pau`; stop/discard: `dist` m `dur` s `pau` s `avg` `max` `n` `pts`. `n` is every route point the ride kept, and it is what the discard decision turns on against `k.minTripPts` (L-081); `pts` is present **only** when the final flush failed, and counts the points still stuck in the buffer |
@@ -76,6 +84,47 @@ short; the table below is the whole vocabulary.
 | `noti` | Notification | `a` = show/cancel/action; `k` = fg/start/stop on a show or cancel, the action id (pause/resume/stop) on an action. Never the text. `show k:"fg"` is **verbose** |
 | `log` | Bridged from `Logger` | `lv` = d/i/w/e, `tag` `m` |
 | `err` | Error | `tag` `m` `ex` `st` (top 3 frames) |
+
+### 2b. Capture files (T034)
+
+A capture export holds only `hdr`, `raw` and `lbl`. Its unit is the **session**:
+one `lbl a:"start"` opens it, one `lbl a:"stop"` closes it, and every `raw` line
+between them belongs to the `sess` both labels name. A session with no closing
+`lbl` was interrupted (a kill, a crash, a "delete training data" while it ran) —
+its data is still labelled, and still usable.
+
+`n` is what the second actually held, and is **not** `hz`. The OS rounds the
+requested sampling period and the T045 rate hold drops the surplus, so a healthy
+file has `n` a little under `hz`; a run of lines with a much smaller `n` is the
+device throttling the sensors, not the rider standing still. Use `n`, never the
+array index, to reconstruct a timeline.
+
+Turning a session into fixed windows, from the shell:
+
+```bash
+# Sessions in the file, with their labels and how long each recorded.
+zcat autoride-capture-*.ndjson.gz \
+  | jq -rc 'select(.e=="lbl") | [.sess, .a, .act, .t] | @tsv'
+
+# Every accelerometer sample of one session, flattened to one row per sample
+# (t is interpolated inside the window: the line's t is its END).
+zcat autoride-capture-*.ndjson.gz \
+  | jq -rc --argjson s 1756900000000 '
+      select(.e=="raw" and .sess==$s)
+      | . as $l
+      | range(0; $l.n) as $i
+      | [$l.t - 1000 + ($i * 1000 / $l.n) | floor,
+         $l.ax[$i], $l.ay[$i], $l.az[$i],
+         $l.gx[$i], $l.gy[$i], $l.gz[$i]] | @csv'
+
+# Sanity check before training on it: the rate each line really carried.
+zcat autoride-capture-*.ndjson.gz \
+  | jq -rc 'select(.e=="raw") | .n' | sort -n | uniq -c
+```
+
+Every capture line carries `sess`, so a session can be selected without
+reasoning about what the `lbl` lines bracket. The database keeps the same id in
+a column of its own, which is what retention deletes on.
 
 Speeds: `fix.sp` and `fix.dsp` are **m/s**; `win.spk`, `start.spk`, `rp.spk` are
 **km/h**.

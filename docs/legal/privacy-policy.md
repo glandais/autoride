@@ -6,7 +6,7 @@ description: What AutoRide stores on your device, what leaves it, and how to del
 # AutoRide — Privacy Policy
 
 **Effective date:** 2026-07-25
-**Last updated:** 2026-09-02
+**Last updated:** 2026-09-03
 **Applies to:** AutoRide for iOS and Android (`io.github.glandais.autoride`)
 **Contact:** gabriel.landais@gmail.com
 
@@ -86,7 +86,10 @@ start riding, which is the app's main battery-saving mechanism.
 Sensor readings are processed in memory and discarded. They are not written to the trip database
 and not transmitted. If you turn the diagnostic log on (§2.5) and set it to "Verbose", one
 *summary* per second — an average and a variability figure — is written to that log; the raw
-readings, which arrive fifty times a second, are never recorded at any setting.
+readings, which arrive fifty times a second, are not recorded at any setting of that log.
+
+The one case where the raw readings *are* recorded is a training-data session that you start
+yourself — see §2.6.
 
 ### 2.5 Diagnostic log (off by default)
 
@@ -105,6 +108,35 @@ identifier. It does hold your device model, OS version and app version.
 The log lives in its own database on your device, separate from your trips. It expires
 automatically (§6), you can erase it at any time (§7.1), and it goes nowhere unless you export and
 send it yourself (§3.3).
+
+### 2.6 Training data (off by default, recorded only while you start it)
+
+**Settings → Training data** lets you record raw motion-sensor data from this device, labelled
+with what you were actually doing — cycling, car, walking, still, or other — so that automatic
+detection can be improved by training against real journeys instead of guesses.
+
+It takes **two deliberate steps**, and neither is on by default:
+
+1. Turn on **Settings → Data & Privacy → Record training data**. This grants permission and
+   records nothing on its own.
+2. Pick a label in **Settings → Training data** and press Record. Only then is anything written,
+   and it stops when you press Stop.
+
+A session holds the raw accelerometer and gyroscope readings for as long as it runs — about 3 MB
+per hour after compression — and the label you chose. It does **not** hold positions; if the
+diagnostic log (§2.5) happens to be on at the same time, that log records your positions as it
+always does, in the same database but as separate entries, and the two are exported as separate
+files.
+
+Recorded sessions live on your device. They expire after 30 days, or sooner if they exceed
+256 MB in total, in which case whole sessions are removed — the ones you have already exported
+first. **Settings → Training data → Delete training data** erases them all at once, and leaves
+the diagnostic log alone.
+
+While a session is recording, the app keeps its sensors at full rate and shows the same ongoing
+notification automatic detection uses, so this costs more battery than normal use. Nothing is
+sent anywhere: as with everything else in this app, a file only leaves your device if you export
+it yourself (§3.3).
 
 ## 3. What leaves your device
 
@@ -143,8 +175,8 @@ on request.
 
 ### 3.3 Files you export yourself
 
-Two features write a file and hand it to your device's own share sheet. Nothing is sent anywhere
-until you pick a destination there, and AutoRide never learns what you picked.
+Three features write a file and hand it to your device's own share sheet. Nothing is sent
+anywhere until you pick a destination there, and AutoRide never learns what you picked.
 
 - **Export as FIT** (on a trip) writes that ride — its route, timings and speeds — as a standard
   `.fit` activity file, so you can put it into Strava, Garmin Connect, Files, or anything else
@@ -152,8 +184,11 @@ until you pick a destination there, and AutoRide never learns what you picked.
 - **Export log** (Settings → Diagnostic log) writes the diagnostic log (§2.5) as a compressed
   `.ndjson.gz` file. **It contains your precise GPS positions.** The app shows you exactly what
   the file holds and asks you to confirm before the share sheet opens.
+- **Export training data** (Settings → Training data) writes the recorded sessions of §2.6 as a
+  compressed `.ndjson.gz` file: raw motion readings and their labels, with your device model and
+  versions. It does not contain your positions. The same confirmation is shown first.
 
-Both are entirely your decision, one file at a time. Share them only with someone you trust.
+All three are entirely your decision, one file at a time. Share them only with someone you trust.
 
 ## 4. Permissions, and why each is needed
 
@@ -191,6 +226,11 @@ own: entries are removed once they are older than 7 days, and the log is capped 
 size limit is normally what bites, so a full log reaches back some hours of riding rather than
 seven days. The Settings screen shows the period actually covered.
 
+Recorded training sessions (§2.6) expire on their own too, on their own limits: 30 days, or a
+total of about 256 MB, whichever is reached first. When the size limit is what bites, complete
+sessions are removed rather than parts of them, and sessions you have already exported go before
+sessions you have not.
+
 ## 7. Your control over your data
 
 ### 7.1 Delete everything
@@ -203,6 +243,10 @@ point from the database. This cannot be undone.
 **Settings → Diagnostic log → Clear log** permanently deletes every recorded diagnostic event.
 Note that turning the log *off* does not erase what it already recorded — deliberately, so you can
 stop recording and still export the ride you just did. Use "Clear log" to erase it.
+
+**Settings → Training data → Delete training data** permanently deletes every recorded sample and
+label of §2.6, and leaves the diagnostic log intact. Turning off "Record training data" stops any
+further recording but, for the same reason as above, does not erase what is already there.
 
 ### 7.2 Uninstall
 

@@ -1,12 +1,15 @@
 import 'dart:async';
 
 import 'package:battery_plus/battery_plus.dart';
+// For `ProviderListenableSelect` — `riverpod_annotation` does not re-export it.
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:geolocator/geolocator.dart';
 
 import '../../../../core/audit/audit_event.dart';
 import '../../../../core/audit/audit_log.dart';
 import '../../../../core/constants/app_constants.dart';
+import '../../../diagnostics/data/services/capture_controller.dart';
 import '../../../settings/data/services/settings_service.dart';
 import '../../../settings/domain/models/user_settings.dart';
 
@@ -279,10 +282,22 @@ class BatteryOptimizer extends _$BatteryOptimizer {
 }
 
 /// Provider for current power mode configuration
+///
+/// A training capture (T034) pins this to [PowerModeConfig.normal] for as long
+/// as it records. The sampling rate is the corpus's own units: a model trained
+/// on windows that silently drop from 50 Hz to 20 Hz as the battery falls
+/// learns the battery, not the activity. The cost is that a capture session
+/// draws `normal`-mode power whatever the battery says — which is why item 4
+/// of `tasks/T041-device-validation.md` has to be measured with capture off.
 @riverpod
 class CurrentPowerMode extends _$CurrentPowerMode {
   @override
   PowerModeConfig build() {
+    final capturing = ref.watch(
+      captureControllerProvider.select((session) => session != null),
+    );
+    if (capturing) return PowerModeConfig.normal;
+
     final batteryOptimizer = ref.watch(batteryOptimizerProvider);
     return batteryOptimizer.when(
       data: (config) => config,

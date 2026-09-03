@@ -10,6 +10,7 @@ import 'package:geolocator/geolocator.dart' show LocationSettings;
 import 'package:riverpod_annotation/riverpod_annotation.dart' show Override;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:autoride/core/audit/audit_level.dart';
 import 'package:autoride/core/audit/audit_log.dart';
 import 'package:autoride/core/audit/audit_sink.dart';
 import 'package:autoride/core/constants/app_constants.dart';
@@ -2008,7 +2009,7 @@ void main() {
 
     setUp(() {
       sink = _RecordingAuditSink();
-      AuditLog.install(sink, verbose: true);
+      AuditLog.install(sink, level: AuditLogLevel.verbose);
       addTearDown(AuditLog.uninstall);
     });
 
@@ -2517,7 +2518,7 @@ void main() {
             coordinator.tick();
           }
 
-          AuditLog.install(sink, verbose: true);
+          AuditLog.install(sink, level: AuditLogLevel.verbose);
 
           // 31 ticks: the first one re-arms the baseline, so the interval that
           // closes covers the 30 s after it.
@@ -2570,6 +2571,7 @@ class _RecordingAuditSink implements AuditSink {
     required String type,
     required int lvl,
     required bool critical,
+    int? session,
   }) => lines.add(line);
 
   @override

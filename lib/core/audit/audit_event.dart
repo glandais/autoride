@@ -123,6 +123,30 @@ abstract final class AuditEvent {
   /// since the stationary onset — see [stopEval]).
   static const String resumeEval = 'res';
 
+  // --- Training capture (T034) -------------------------------------------
+  /// One second of raw motion samples, at capture level (`lvl` 2).
+  ///
+  /// The axes the diagnostic [sensors] aggregate throws away, batched into
+  /// parallel arrays so a 50 Hz stream costs one row a second instead of
+  /// fifty: `hz` the rate asked for, `n` the samples actually kept, then
+  /// `ax`/`ay`/`az` (m·s⁻²) and `gx`/`gy`/`gz` (rad·s⁻¹), each of length `n`
+  /// and in sample order.
+  ///
+  /// `n` is not always `hz`: the OS rounds the requested sampling period and
+  /// the T045 rate hold drops the surplus, so the count travels with the line
+  /// rather than being assumed from it. `t` is the instant the line was
+  /// flushed — the end of its window, not the start.
+  static const String rawMotion = 'raw';
+
+  /// Ground truth for the capture that follows or precedes it (`lvl` 2).
+  ///
+  /// `a` = start|stop, `act` = bike|car|walk|still|other, `sess` the capture
+  /// session id (the session's start, in epoch ms). Emitted `critical` so the
+  /// label reaches the disk before the window it opens: a corpus whose label
+  /// was lost to a kill is worse than no corpus, because it is silently
+  /// mislabelled by the session before it.
+  static const String label = 'lbl';
+
   // --- Trip lifecycle ----------------------------------------------------
   /// `a` = start|pause|resume|stop|discard, plus the finalized metrics.
   static const String trip = 'trip';
@@ -193,6 +217,8 @@ abstract final class AuditEvent {
     cooldown,
     window,
     sensors,
+    rawMotion,
+    label,
     stopEval,
     resumeEval,
     trip,

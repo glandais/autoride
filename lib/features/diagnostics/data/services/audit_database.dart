@@ -8,7 +8,9 @@ import 'package:autoride/core/constants/app_constants.dart';
 ///
 /// `line` is the complete NDJSON line, already serialized. `t` and `type` are
 /// duplicated out of it so retention and counting never have to parse JSON,
-/// and `lvl` so an export can drop verbose rows. The duplication costs ~19 %
+/// `lvl` so an export can drop verbose rows and retention can budget the
+/// journal separately from the T034 training capture, and `sess` so a capture
+/// session can be deleted or exported whole. The duplication costs ~19 %
 /// before compression and ~2 % after — gzip barely notices a repeated key —
 /// and it buys two things worth far more: exporting is a concatenation with no
 /// re-encoding of 200 000 objects, and the field schema can change without a
@@ -20,9 +22,38 @@ const String _createAuditEventsTable = '''
         t INTEGER NOT NULL,
         type TEXT NOT NULL,
         lvl INTEGER NOT NULL,
-        line TEXT NOT NULL
+        line TEXT NOT NULL,
+        sess INTEGER
       )
     ''';
+
+/// One training-capture session (T034): a labelled recording, from the moment
+/// the user picked an activity to the moment they stopped.
+///
+/// `id` is the session's start in epoch ms, allocated by the caller rather than
+/// by the database: [AuditSink.write] is synchronous and on the recording path,
+/// so it cannot await an AUTOINCREMENT id to stamp its rows with.
+///
+/// `exported_at` is what makes retention bearable. A session already exported
+/// has served its purpose and is deleted first; one that has not is deleted
+/// only when the byte budget leaves no choice, and says so in an `aud` line.
+const String _createCaptureSessionsTable = '''
+      CREATE TABLE capture_sessions (
+        id INTEGER PRIMARY KEY,
+        activity TEXT NOT NULL,
+        started_at INTEGER NOT NULL,
+        ended_at INTEGER,
+        exported_at INTEGER
+      )
+    ''';
+
+/// Index on `sess`, for the capture purge and the capture export.
+///
+/// Partial, on `lvl = 2` alone: every journal row has a null `sess`, and
+/// indexing 200 000 nulls would cost write throughput on the hot path for
+/// rows the index can never be used to find.
+const String _createAuditSessionIndex =
+    'CREATE INDEX idx_audit_sess ON audit_events(sess) WHERE lvl = 2';
 
 /// Index on `t`, kept despite `id` being almost the same order.
 ///
@@ -109,14 +140,26 @@ class AuditDatabase {
   Future<void> onCreate(Database db, int version) async {
     await db.execute(_createAuditEventsTable);
     await db.execute(_createAuditTimeIndex);
+    await db.execute(_createCaptureSessionsTable);
+    await db.execute(_createAuditSessionIndex);
   }
 
   /// Migrate the schema. Public so tests drive the production path (L-014).
   ///
-  /// Nothing to do at v1. Kept, with the same cascading-`if` shape as
-  /// [DatabaseService.onUpgrade], so the first real migration has an obvious
-  /// place to go.
-  Future<void> onUpgrade(Database db, int oldVersion, int newVersion) async {}
+  /// Same cascading-`if` shape as [DatabaseService.onUpgrade].
+  ///
+  /// v2 (T034): `audit_events.sess` and the `capture_sessions` table. The
+  /// journal rows an older build wrote keep a null `sess`, which is exactly
+  /// what they are: not capture. Nothing is rewritten and nothing is dropped —
+  /// a migration that erased a journal the user was about to export would be a
+  /// worse bug than the one it fixes.
+  Future<void> onUpgrade(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      await db.execute('ALTER TABLE audit_events ADD COLUMN sess INTEGER');
+      await db.execute(_createCaptureSessionsTable);
+      await db.execute(_createAuditSessionIndex);
+    }
+  }
 
   /// Close the connection if one is open.
   Future<void> close() async {

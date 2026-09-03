@@ -11,6 +11,7 @@ import '../widgets/display_settings_section.dart';
 import '../widgets/data_management_section.dart';
 import '../widgets/developer_settings_section.dart';
 import '../../../diagnostics/presentation/widgets/audit_log_section.dart';
+import '../../../diagnostics/presentation/widgets/capture_section.dart';
 import '../../../../shared/widgets/error_view.dart';
 import '../../../../shared/widgets/loading_view.dart';
 import '../../../../core/theme/app_spacing.dart';
@@ -70,7 +71,7 @@ class SettingsScreen extends ConsumerWidget {
               const SizedBox(height: AppSpacing.md),
 
               // Privacy Settings
-              const PrivacySettingsSection(),
+              PrivacySettingsSection(settings: settings),
               const SizedBox(height: AppSpacing.md),
 
               // Display Settings
@@ -85,6 +86,11 @@ class SettingsScreen extends ConsumerWidget {
               // developer section below: a tester on a TestFlight or Play
               // build is exactly who needs to turn it on.
               AuditLogSection(settings: settings),
+
+              // Training-data capture (T034). Below the diagnostic log because
+              // it is the rarer task and the more expensive one — hundreds of
+              // megabytes, where the log is a couple.
+              CaptureSection(settings: settings),
 
               // Developer Settings (only in debug builds)
               DeveloperSettingsSection(settings: settings),

@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+// For `ProviderListenableSelect` — `riverpod_annotation` does not re-export it.
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../../../../core/audit/audit_event.dart';
@@ -9,6 +11,7 @@ import '../../../../core/constants/app_constants.dart';
 import '../../../../core/permissions/models/background_location_state.dart';
 import '../../../../core/permissions/providers/background_location_status.dart';
 import '../../../../core/utils/logger.dart';
+import '../../../diagnostics/data/services/capture_controller.dart';
 import '../../../onboarding/data/services/onboarding_service.dart';
 import '../../../settings/data/services/settings_service.dart';
 import '../../data/services/location_permission_service.dart';
@@ -83,9 +86,17 @@ class AutoDetectionController extends _$AutoDetectionController {
   bool _startInFlight = false;
 
   /// True while the foreground service has been asked to run. It is the
-  /// disjunction of "detection is listening" and "a trip is recording", so
-  /// neither phase can pull the service out from under the other.
+  /// disjunction of "detection is listening", "a trip is recording" and "a
+  /// training capture is running", so no one phase can pull the service out
+  /// from under another.
   bool _foregroundServiceRunning = false;
+
+  /// Mirrors the T034 capture controller. A capture session needs the process
+  /// alive for exactly the same reason detection does: without a foreground
+  /// service Doze suspends it as soon as the screen goes off and `sensors_plus`
+  /// stops delivering — and a corpus recorded with the screen on is a corpus of
+  /// a phone in a hand, not a phone in a pocket.
+  bool _capturing = false;
   String? _lastNotificationContent;
   DateTime? _lastNotificationAt;
 
@@ -125,6 +136,18 @@ class AutoDetectionController extends _$AutoDetectionController {
     final settings = ref.watch(settingsServiceProvider);
     final permission = ref.watch(locationPermissionServiceProvider);
     final onboarding = ref.watch(onboardingServiceProvider);
+
+    final capturing = ref.watch(
+      captureControllerProvider.select((session) => session != null),
+    );
+    if (capturing != _capturing) {
+      _capturing = capturing;
+      // Off the build, like `_applyAutomatic`: starting the service touches
+      // another provider.
+      scheduleMicrotask(() {
+        if (ref.mounted) _syncForegroundService();
+      });
+    }
 
     final next = AutoDetectionState(
       // Settings default to "on", but only once they are actually loaded:
@@ -358,7 +381,7 @@ class AutoDetectionController extends _$AutoDetectionController {
   /// that a trip starting or ending inside a live detection session neither
   /// restarts nor stops the service — only its notification changes phase.
   void _syncForegroundService() {
-    final shouldRun = _appliedShouldListen || _recording;
+    final shouldRun = _appliedShouldListen || _recording || _capturing;
 
     if (shouldRun == _foregroundServiceRunning) {
       // Already in the right place; only the phase may have changed.

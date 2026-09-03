@@ -47,11 +47,13 @@ class AuditExportService {
 
   static const Logger _logger = Logger('AuditExportService');
 
-  /// Export the log and open the system share sheet.
+  /// Export the diagnostic journal and open the system share sheet.
   ///
   /// [sharePosition] is the source rect iPads need to anchor the popover.
   /// [since] limits the export to events at or after that instant; the whole
   /// log is exported when it is null.
+  ///
+  /// Capture rows are **not** included — see [writeLogFile].
   Future<File> shareLog({Rect? sharePosition, DateTime? since}) async {
     final file = await writeLogFile(since: since);
 
@@ -67,7 +69,35 @@ class AuditExportService {
     return file;
   }
 
-  /// Write the log to a gzipped NDJSON file in the cache directory.
+  /// Export the captured training corpus and open the share sheet (T034).
+  ///
+  /// Separate from [shareLog] because the two files have separate audiences and
+  /// wildly different sizes: a maintainer reading a ride wants the ~2 MB
+  /// journal, and shipping them 200 MB of raw sensor arrays to get it would be
+  /// a defect. The sessions it covers are marked exported, which is what lets
+  /// capture retention drop them before it touches one that exists nowhere
+  /// else.
+  Future<File> shareCapture({Rect? sharePosition}) async {
+    final file = await writeCaptureFile();
+
+    await SharePlus.instance.share(
+      ShareParams(
+        files: [XFile(file.path, mimeType: 'application/gzip')],
+        fileNameOverrides: [p.basename(file.path)],
+        subject: p.basename(file.path),
+        sharePositionOrigin: sharePosition,
+      ),
+    );
+
+    await _controller.markCaptureExported();
+    return file;
+  }
+
+  /// Write the journal to a gzipped NDJSON file in the cache directory.
+  ///
+  /// `lvl < 2` only: the T034 capture shares this database and is two orders of
+  /// magnitude larger, so including it would turn every diagnostic export into
+  /// a hundred-megabyte transfer of data nobody asked for.
   Future<File> writeLogFile({DateTime? since}) async {
     // Without this the last seconds — the ones the user just provoked and is
     // exporting the log to show — would still be sitting in the buffer.
@@ -90,10 +120,39 @@ class AuditExportService {
     await _lines(
       database,
       since,
+      capture: false,
     ).transform(utf8.encoder).transform(gzip.encoder).pipe(file.openWrite());
 
     _logger.info(
       'Exported the audit log to ${file.path} (${await file.length()} bytes)',
+    );
+
+    return file;
+  }
+
+  /// Write the captured corpus (`lvl` 2) to a gzipped NDJSON file.
+  Future<File> writeCaptureFile() async {
+    await _controller.flush();
+
+    final directory = await getTemporaryDirectory();
+    final exports = Directory(p.join(directory.path, 'audit_exports'));
+    await exports.create(recursive: true);
+
+    final file = File(p.join(exports.path, captureFileNameFor(DateTime.now())));
+
+    final database = await _controller.databaseForExport();
+    if (database == null) {
+      throw StateError('No training data has been captured to export');
+    }
+
+    await _lines(
+      database,
+      null,
+      capture: true,
+    ).transform(utf8.encoder).transform(gzip.encoder).pipe(file.openWrite());
+
+    _logger.info(
+      'Exported the capture to ${file.path} (${await file.length()} bytes)',
     );
 
     return file;
@@ -109,11 +168,28 @@ class AuditExportService {
     return 'autoride-audit-$stamp.ndjson.gz';
   }
 
-  /// The header line followed by every stored line, oldest first.
-  Stream<String> _lines(Database db, DateTime? since) async* {
-    yield '${await _header(db, since)}\n';
+  /// `autoride-capture-YYYYMMDD-HHMM.ndjson.gz`. A different stem from the
+  /// journal's on purpose: the two files have the same extension and very
+  /// different contents, and a maintainer with both in a downloads folder must
+  /// not have to open one to find out which it is.
+  static String captureFileNameFor(DateTime at) {
+    String two(int value) => value.toString().padLeft(2, '0');
+    final stamp =
+        '${at.year}${two(at.month)}${two(at.day)}-'
+        '${two(at.hour)}${two(at.minute)}';
+    return 'autoride-capture-$stamp.ndjson.gz';
+  }
+
+  /// The header line followed by every stored line of one class, oldest first.
+  Stream<String> _lines(
+    Database db,
+    DateTime? since, {
+    required bool capture,
+  }) async* {
+    yield '${await _header(db, since, capture: capture)}\n';
 
     final from = since?.millisecondsSinceEpoch ?? 0;
+    final levelClause = capture ? 'lvl = 2' : 'lvl < 2';
     var lastId = 0;
 
     while (true) {
@@ -122,7 +198,7 @@ class AuditExportService {
       final rows = await db.query(
         'audit_events',
         columns: <String>['id', 'line'],
-        where: 't >= ? AND id > ?',
+        where: 't >= ? AND id > ? AND $levelClause',
         whereArgs: <Object?>[from, lastId],
         orderBy: 'id',
         limit: AppConstants.auditExportPageSize,
@@ -144,11 +220,15 @@ class AuditExportService {
   /// interpretable weeks later — reading today's `AppConstants` to explain a
   /// decision an older build took is how you conclude the opposite of what
   /// happened.
-  Future<String> _header(Database db, DateTime? since) async {
+  Future<String> _header(
+    Database db,
+    DateTime? since, {
+    required bool capture,
+  }) async {
     final from = since?.millisecondsSinceEpoch ?? 0;
     final summary = await db.rawQuery(
       'SELECT COUNT(*) AS n, MIN(t) AS lo, MAX(t) AS hi FROM audit_events '
-      'WHERE t >= ?',
+      'WHERE t >= ? AND ${capture ? 'lvl = 2' : 'lvl < 2'}',
       <Object?>[from],
     );
     final row = summary.first;
@@ -165,6 +245,10 @@ class AuditExportService {
       // normal-level run — and the per-launch header is not guaranteed to be
       // inside a `since`-filtered slice.
       'lvl': _installedLevel.label,
+      // Which of the two axes this file holds. A capture file exported while
+      // the journal was off would otherwise carry `lvl: off` and read as a
+      // file that recorded nothing at all.
+      'cap': capture,
       'app': '${package.version}+${package.buildNumber}',
       'os': device.os,
       'dev': device.model,
@@ -183,11 +267,7 @@ class AuditExportService {
   /// The level the sink is actually installed at, read from the port rather
   /// than from the controller's `state`: `state` is protected outside the
   /// notifier, and the port is the thing that decided which lines exist.
-  AuditLogLevel get _installedLevel => AuditLog.verbose
-      ? AuditLogLevel.verbose
-      : AuditLog.enabled
-      ? AuditLogLevel.normal
-      : AuditLogLevel.off;
+  AuditLogLevel get _installedLevel => AuditLog.level;
 
   Future<({String os, String model})> _deviceDescription() async {
     final plugin = DeviceInfoPlugin();

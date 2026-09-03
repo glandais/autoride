@@ -32,15 +32,32 @@ about whether you misrepresented your app.
 | Preferences (detection, battery, notifications, units, theme) | `SharedPreferences` key `user_settings` (JSON) | `settings_repository.dart:11` |
 | Theme selection | `SharedPreferences` key `theme_mode` | `theme_provider.dart:10` |
 | Onboarding completion flag | `SharedPreferences` key `onboarding_complete` | `app_constants.dart:178` |
+| **Training capture (opt-in, off by default, T034)**: raw 3-axis accelerometer and gyroscope samples batched to one row per second, plus the activity label the user chose (bike/car/walk/still/other) | SQLite `audit_events` rows at `lvl = 2` in the same `autoride_audit.db`, grouped by `capture_sessions` | `capture_controller.dart`, `sqlite_audit_sink.dart` |
 | **Diagnostic log (opt-in, off by default)**: trip state changes, detector decisions and scores, GPS fixes (lat/lon/accuracy/speed/altitude/heading), battery level and power mode, permission status, which notification was shown/cancelled/tapped (never its text), app lifecycle, errors — and, at "Verbose", one-per-second sensor *summaries* and rejected fixes | SQLite `audit_events` table in a **separate** `autoride_audit.db` | `audit_database.dart`, `sqlite_audit_sink.dart` |
 
-Database names and versions: `autoride.db` v3 and `autoride_audit.db` v1
-(`app_constants.dart`, `databaseVersion` / `auditDatabaseVersion`).
+Database names and versions: `autoride.db` v3 and `autoride_audit.db` v2
+(`app_constants.dart`, `databaseVersion` / `auditDatabaseVersion`). v2 added the `sess` column
+and the `capture_sessions` table for T034.
 
 **The diagnostic log is off unless the user turns it on** (`UserSettings.auditLogEnabled`,
 default `false`); until then no audit database file is created at all. It self-expires after 7
 days / 200 000 entries / ~20 MB, whichever comes first, and Settings → Diagnostic log → Clear log
 deletes the file. It never leaves the device on its own — see §3.4.
+
+**The training capture is a second, independent opt-in.** It requires
+`UserSettings.dataCollectionConsent` (default `false`) **and** an explicit start from Settings →
+Training data, where the user picks the activity label first; nothing is recorded between
+sessions, and the two axes are independent — capture can run with the diagnostic log off, and
+vice versa. Captured rows expire after 30 days or 256 MB, whole labelled sessions at a time and
+already-exported ones first, and Settings → Training data → Delete training data removes them
+while leaving the diagnostic journal intact. Like the journal, it never leaves the device on its
+own; the export is a separate file behind the same blocking dialog (§3.3).
+
+**It is not anonymised, and this is deliberate for the first pass.** The capture itself holds no
+coordinates; a capture recorded while the diagnostic log is also on sits in the same database as
+that log's precise positions, and an export of the two together would be a precisely-located
+movement history. Anonymisation (coordinate truncation, start/end clipping, session
+pseudonymisation) is a prerequisite of any future *upload* path, and there is none — see §7.1.
 
 **Android backup posture:** `allowBackup="false"` and `fullBackupContent="false"`
 (`AndroidManifest.xml`, with rationale in the comment above the `<application>` tag). The route
@@ -53,7 +70,7 @@ local device backups. This is a **known inconsistency** with the Android posture
 
 | Data | Why it is not "collected" |
 |---|---|
-| Accelerometer and gyroscope readings | Read continuously for pedalling detection, processed in memory, never written to the trip database (there is no sensor table) or transmitted. `sensor_service.dart`, `motion_detection_service.dart`, `cycling_pattern_detector.dart`. **Caveat since T043:** with the opt-in diagnostic log at "Verbose", one aggregate per second (mean, std-dev, motion state) is written to `autoride_audit.db`. The raw 50 Hz stream is never recorded at any level. |
+| Accelerometer and gyroscope readings | Read continuously for pedalling detection, processed in memory, never written to the trip database (there is no sensor table) or transmitted. `sensor_service.dart`, `motion_detection_service.dart`, `cycling_pattern_detector.dart`. **Caveat since T043:** with the opt-in diagnostic log at "Verbose", one aggregate per second (mean, std-dev, motion state) is written to `autoride_audit.db`. **Caveat since T034:** during a training-capture session the raw stream *is* recorded, batched to one row per second — but only for the duration of a session the user started by hand, having granted `dataCollectionConsent`. Outside a capture session the raw stream is still never recorded at any level. |
 | OS version, API level, `isPhysicalDevice` | Read at runtime for per-version permission branching. Not persisted, not transmitted. `platform_info_service.dart:23-36` |
 
 **No device identifier is read anywhere.** `PlatformInfoService` uses `device_info_plus` for OS
@@ -95,7 +112,8 @@ the app hands `share_plus` a path and learns nothing about where it goes.
 | Feature | File | Contents | Code |
 |---|---|---|---|
 | Export as FIT | `.fit` activity | One trip: route, timings, speeds | `trip_export_service.dart` |
-| Export log | `.ndjson.gz` | The diagnostic log of §1, **including precise coordinates** | `audit_export_service.dart` |
+| Export log | `.ndjson.gz` | The diagnostic log of §1, **including precise coordinates**. Capture rows are excluded | `audit_export_service.dart` |
+| Export training data | `.ndjson.gz` | The captured raw sensor samples and their labels (T034). No coordinates — those live on the journal side | `audit_export_service.dart` |
 
 **Why this is not "sharing" under either store's definition, and the condition attached.**
 Google's and Apple's definitions both exclude a transfer the *user* initiates through system UI,
@@ -103,7 +121,9 @@ Google's and Apple's definitions both exclude a transfer the *user* initiates th
 self-evident (it is the ride the user asked to export). For the diagnostic log it is not, so the
 app shows a blocking dialog naming what the file holds — precise GPS positions, routes, departure
 points, device model, OS and app version — and what it does not (name, email, advertising ID),
-before the share sheet opens.
+before the share sheet opens. The training-data export shows the same dialog, worded for what
+*that* file holds: raw motion readings, the chosen labels, the device model and versions, and its
+size (~3 MB per hour recorded).
 
 That dialog is therefore **a condition of the declarations in §5 and §4 being accurate, not a
 nicety**. `AuditPrivacyDialog` (`audit_privacy_dialog.dart`) implements it and
@@ -241,7 +261,7 @@ Adding any of these means updating all five artefacts in §0 **in the same commi
 
 | Change | New declaration required |
 |---|---|
-| **7.1 T034 — Data Collection Service** (contribute sensor data for ML) | This is the first feature that would transmit user data to the developer. Requires: iOS manifest addition, ASC App Privacy update, Play "Collected" + purpose "Analytics"/"App functionality", privacy policy §3 and §10 rewritten, explicit opt-in consent flow, and a data-retention statement. Treat as a major privacy change, not an increment. |
+| **7.1 T034 — Data Collection Service** (**shipped as on-device capture only**) | Landed without a re-declaration, on the §3.3 reasoning that already covers the diagnostic log: opt-in twice over (`dataCollectionConsent` **and** an explicit per-session start), stored locally in the existing audit database, self-expiring, and exported only by an informed user through the system share sheet. §1 and §2 were updated because what is *stored* changed — the raw stream is now recordable during a session. **What would re-open it:** any upload path, any automatic transmission, or any third-party SDK receiving the corpus. That version is the "major privacy change" this row used to describe, and it additionally needs the anonymisation §1 says is absent. |
 | **7.2 T035 — Training Data Export** (CSV/JSON export) | Depends on destination. Export to a user-chosen local file is not "collection". Export that uploads anywhere is. Also touches the iOS `FileTimestamp` reasons. |
 | **7.2b T043 — Diagnostic log** (shipped 2026-09-02) | Handled without a re-declaration, on the §3.3 reasoning: opt-in, stored locally, self-expiring, and exported only by an informed user through the system share sheet. What would re-open it: uploading a log automatically, sending one anywhere without the confirmation dialog, or recording raw sensor streams. |
 | **7.3 Any analytics or crash-reporting SDK** (Firebase, Sentry, …) | Play "App info and performance → Crash logs / Diagnostics", ASC "Diagnostics", iOS manifest additions plus the SDK's own privacy manifest, and possibly `NSPrivacyTrackingDomains`. |
@@ -267,6 +287,12 @@ grep -rn "CREATE TABLE" lib/features/diagnostics/data/services/audit_database.da
 #     dialog. Expect `@Default(false) bool auditLogEnabled` and a call to
 #     AuditPrivacyDialog.show before any shareLog().
 grep -n "auditLogEnabled" lib/features/settings/domain/models/user_settings.dart
+
+# 2c. The training capture (T034) must stay off by default and needs consent
+#     *and* an explicit session. Expect `@Default(false) bool
+#     dataCollectionConsent`, and the consent test inside CaptureController.start.
+grep -n "dataCollectionConsent" lib/features/settings/domain/models/user_settings.dart
+grep -n "dataCollectionConsent" lib/features/diagnostics/data/services/capture_controller.dart
 grep -n "AuditPrivacyDialog.show" -A3 lib/features/diagnostics/presentation/widgets/audit_log_section.dart
 
 # 3. Preferences keys. Expect user_settings, theme_mode, onboarding_complete.

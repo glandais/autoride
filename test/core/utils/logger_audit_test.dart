@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:autoride/core/audit/audit_level.dart';
 import 'package:autoride/core/audit/audit_log.dart';
 import 'package:autoride/core/audit/audit_sink.dart';
 import 'package:autoride/core/utils/logger.dart';
@@ -17,7 +18,7 @@ void main() {
 
   test('mirrors a warning as a log event with its tag and level', () {
     final sink = _RecordingSink();
-    AuditLog.install(sink, verbose: false);
+    AuditLog.install(sink, level: AuditLogLevel.normal);
 
     // The exact line item 10 of the device checklist tells the maintainer to
     // look for — invisible in a release build until this bridge existed.
@@ -34,7 +35,7 @@ void main() {
 
   test('an error is critical and carries the exception and top frames', () {
     final sink = _RecordingSink();
-    AuditLog.install(sink, verbose: false);
+    AuditLog.install(sink, level: AuditLogLevel.normal);
 
     const Logger('Rec').error(
       'Failed to start trip recording',
@@ -61,6 +62,7 @@ class _RecordingSink implements AuditSink {
     required String type,
     required int lvl,
     required bool critical,
+    int? session,
   }) {
     lines.add(line);
     criticals.add(critical);

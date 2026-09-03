@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:autoride/core/audit/audit_level.dart';
 import 'package:autoride/core/audit/audit_event.dart';
 import 'package:autoride/core/audit/audit_log.dart';
 import 'package:autoride/core/audit/audit_sink.dart';
@@ -44,7 +45,7 @@ void main() {
 
     setUp(() {
       sink = _RecordingSink();
-      AuditLog.install(sink, verbose: false);
+      AuditLog.install(sink, level: AuditLogLevel.normal);
     });
 
     test('writes t and e first so the line stays greppable', () {
@@ -69,7 +70,7 @@ void main() {
     });
 
     test('emitVerbose is recorded at verbose level, tagged lvl 1', () {
-      AuditLog.install(sink, verbose: true);
+      AuditLog.install(sink, level: AuditLogLevel.verbose);
 
       AuditLog.emitVerbose(AuditEvent.window, () => {'sd': 0.4});
 
@@ -108,7 +109,7 @@ void main() {
 
     test('install replaces the previous sink instead of failing', () {
       final replacement = _RecordingSink();
-      AuditLog.install(replacement, verbose: true);
+      AuditLog.install(replacement, level: AuditLogLevel.verbose);
 
       AuditLog.emit(AuditEvent.fix, () => {'lat': 1.0});
 
@@ -143,6 +144,7 @@ class _RecordingSink implements AuditSink {
     required String type,
     required int lvl,
     required bool critical,
+    int? session,
   }) {
     lines.add(line);
     timestamps.add(t);

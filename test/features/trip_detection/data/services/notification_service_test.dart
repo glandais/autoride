@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:autoride/core/audit/audit_level.dart';
 import 'package:autoride/core/audit/audit_log.dart';
 import 'package:autoride/core/audit/audit_sink.dart';
 import 'package:autoride/core/navigation/app_navigator.dart';
@@ -53,7 +54,7 @@ void main() {
     );
 
     sink = _RecordingAuditSink();
-    AuditLog.install(sink, verbose: true);
+    AuditLog.install(sink, level: AuditLogLevel.verbose);
     addTearDown(AuditLog.uninstall);
 
     navigator = _RecordingNavigator();
@@ -105,7 +106,7 @@ void main() {
     });
 
     test('the ongoing notification is verbose only', () async {
-      AuditLog.setVerbose(verbose: false);
+      AuditLog.setLevel(AuditLogLevel.normal);
 
       await (await service()).showForegroundNotification(
         distance: 100,
@@ -116,7 +117,7 @@ void main() {
       // One line per metrics update would swamp a normal-level log.
       expect(notifications().where((n) => n['k'] == 'fg'), isEmpty);
 
-      AuditLog.setVerbose(verbose: true);
+      AuditLog.setLevel(AuditLogLevel.verbose);
       await (await service()).showForegroundNotification(
         distance: 100,
         duration: const Duration(minutes: 1),
@@ -284,6 +285,7 @@ class _RecordingAuditSink implements AuditSink {
     required String type,
     required int lvl,
     required bool critical,
+    int? session,
   }) => lines.add(line);
 
   @override

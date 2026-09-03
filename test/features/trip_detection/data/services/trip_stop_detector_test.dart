@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:autoride/core/audit/audit_level.dart';
 import 'package:autoride/features/trip_detection/data/services/trip_stop_detector.dart';
 import 'package:autoride/features/trip_detection/domain/models/motion_data.dart';
 import 'package:autoride/features/trip_detection/domain/models/location_data.dart';
@@ -916,7 +917,7 @@ void main() {
 
       setUp(() {
         sink = _RecordingAuditSink();
-        AuditLog.install(sink, verbose: true);
+        AuditLog.install(sink, level: AuditLogLevel.verbose);
         addTearDown(AuditLog.uninstall);
       });
 
@@ -984,7 +985,7 @@ void main() {
 
       setUp(() {
         sink = _RecordingAuditSink();
-        AuditLog.install(sink, verbose: true);
+        AuditLog.install(sink, level: AuditLogLevel.verbose);
         addTearDown(AuditLog.uninstall);
       });
 
@@ -1072,6 +1073,7 @@ class _RecordingAuditSink implements AuditSink {
     required String type,
     required int lvl,
     required bool critical,
+    int? session,
   }) => lines.add(line);
 
   @override

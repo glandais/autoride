@@ -429,7 +429,7 @@ class AppConstants {
   // every audit batch would bias the very battery-drain measurement of
   // `tasks/T041-device-validation.md` item 4. The observer has to stay neutral.
   static const String auditDatabaseName = 'autoride_audit.db';
-  static const int auditDatabaseVersion = 1;
+  static const int auditDatabaseVersion = 2;
 
   // Retention: whichever bound is reached first. The byte bound is not
   // redundant with the row bound — at ~130 bytes per line, 200 000 rows is
@@ -478,6 +478,40 @@ class AppConstants {
 
   // Rows read per page when exporting. Keyset pagination, never OFFSET.
   static const int auditExportPageSize = 5000;
+
+  // Training capture (T034) — the second axis of the same log
+  //
+  // Capture rows (`lvl` 2) share the audit database with the journal and are
+  // budgeted separately, because their rate is an order of magnitude higher:
+  // ~8 MB/h against the journal's ~2 at verbose. One shared bound would mean
+  // an hour of capture purging a whole day of journal, or the reverse.
+  //
+  // 256 MB is ~30 h of labelled sessions at the rate below. It is a projection
+  // from `captureBatchDuration` and the line shape, not a device measurement —
+  // `tasks/T034-data-collection.md` §8 asks for the measured MB/h.
+  static const int captureMaxBytes = 256 * 1024 * 1024;
+
+  // Longer than the journal's 7 days: the journal is a rolling record of what
+  // just happened, a corpus is worked on over weeks.
+  static const Duration captureRetention = Duration(days: 30);
+
+  // The array window. One row per second holds a second of samples, which is
+  // 3 600 rows/h — under 2 % of `auditMaxEvents` — where one row per sample at
+  // 50 Hz would be 180 000 and exhaust both journal bounds in about an hour.
+  static const Duration captureBatchDuration = Duration(seconds: 1);
+
+  // Backstop on the array length, for an OS that over-delivers against the
+  // requested period: a Pixel 6a measured 83 Hz foregrounded for a configured
+  // 50 (L-086). Past this the surplus samples of the window are dropped and
+  // the line's `n` says how many were kept.
+  static const int captureMaxSamplesPerLine = 128;
+
+  // Capture pins the sampling rate rather than following the power mode: a
+  // windowed classifier trained on a corpus whose rate silently drops from 50
+  // to 20 Hz with the battery learns the battery, not the activity. The cost
+  // is that a capture session is a `normal`-mode session, which is why item 4
+  // of the T041 checklist must be measured with capture OFF.
+  static const int captureSamplingRate = sensorSamplingRateNormal;
 
   // Onboarding Configuration (T021)
   static const String onboardingCompleteKey = 'onboarding_complete';

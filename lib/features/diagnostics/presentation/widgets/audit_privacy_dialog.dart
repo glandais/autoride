@@ -12,13 +12,18 @@ import 'package:flutter/material.dart';
 /// the user initiates through the system share sheet *provided they are told
 /// what they are sending*. This dialog is that condition, not decoration.
 class AuditPrivacyDialog extends StatelessWidget {
-  const AuditPrivacyDialog({super.key});
+  const AuditPrivacyDialog({this.capture = false, super.key});
+
+  /// Whether the file about to be shared is the T034 training capture rather
+  /// than the diagnostic journal. The two carry different things, and a dialog
+  /// that described the wrong one would be worse than none.
+  final bool capture;
 
   /// Show the dialog and return whether the user chose to share.
-  static Future<bool> show(BuildContext context) async {
+  static Future<bool> show(BuildContext context, {bool capture = false}) async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => const AuditPrivacyDialog(),
+      builder: (context) => AuditPrivacyDialog(capture: capture),
     );
     return confirmed ?? false;
   }
@@ -28,15 +33,20 @@ class AuditPrivacyDialog extends StatelessWidget {
     final theme = Theme.of(context);
 
     return AlertDialog(
-      title: const Text('Share diagnostic log?'),
+      title: Text(capture ? 'Share training data?' : 'Share diagnostic log?'),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'This file contains your precise GPS positions — the routes you '
-            'rode and the places you set off from — plus your device model, '
-            'OS version and app version.',
+            capture
+                ? 'This file contains raw motion-sensor readings from your '
+                      'rides, the activity labels you chose, and your device '
+                      'model, OS version and app version. It is large — '
+                      'roughly 3 MB per hour recorded.'
+                : 'This file contains your precise GPS positions — the routes '
+                      'you rode and the places you set off from — plus your '
+                      'device model, OS version and app version.',
             style: theme.textTheme.bodyMedium,
           ),
           const SizedBox(height: 12),

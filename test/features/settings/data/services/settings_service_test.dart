@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:autoride/core/audit/audit_level.dart';
 import 'package:autoride/core/audit/audit_log.dart';
 import 'package:autoride/core/audit/audit_sink.dart';
 import 'package:autoride/features/settings/data/services/settings_service.dart';
@@ -17,7 +18,7 @@ void main() {
   setUp(() async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
     sink = _RecordingAuditSink();
-    AuditLog.install(sink, verbose: false);
+    AuditLog.install(sink, level: AuditLogLevel.normal);
     addTearDown(AuditLog.uninstall);
 
     container = ProviderContainer();
@@ -91,6 +92,7 @@ class _RecordingAuditSink implements AuditSink {
     required String type,
     required int lvl,
     required bool critical,
+    int? session,
   }) => lines.add(line);
 
   @override

@@ -286,11 +286,13 @@
 ## Phase 9: Data Collection & ML Improvement
 
 ### 9.1 Training Data Pipeline
-- ☐ **T034**: Data Collection Service
-  - *Detail*: `tasks/T034-data-collection.md` (create on request)
-  - *Scope*: Anonymized sensor data collection, user consent
-  - *Dependencies*: T015, T017
-  - *Estimate*: 3-4 hours
+- ⏳ **T034**: Data Collection Service — code complete, awaiting the device run
+  - *Detail*: `tasks/T034-data-collection.md` (plan + decisions, 2026-09-03)
+  - *Scope*: On-device raw sensor capture (3-axis accel + gyro) batched to one `raw` row per second at `lvl = 2`, `lbl` ground-truth labels, capture retention separate from the journal's, consent toggle re-added, separate capture export. **Not anonymized** — data stays local, see the detail file §5
+  - *Shipped*: `capture_controller.dart`, `capture_session.dart`, `capture_section.dart`, audit schema v2 (`sess` column + `capture_sessions`), `AuditLog` level/capture split
+  - *Remaining*: the device run of the detail file §8 — measured MB/h against the ~8 MB/h projection, battery note, and a labelled bike + non-bike session read back through the audit-log skill
+  - *Dependencies*: T015, T017 (and the audit subsystem from T043/T047)
+  - *Estimate*: 3-4 hours — revised to 6-8 h by the plan
 
 - ☐ **T035**: Training Data Export
   - *Detail*: `tasks/T035-data-export.md` (create on request)
@@ -472,12 +474,12 @@ described from the other side — diagnoses in ledger §7 (L-087…L-089).
 
 **Total Tasks**: 48
 **Completed**: 26
-**In Progress**: 10 (T006, T013, T030, T037, T038, T039, T041, T042, T043, T048)
-**Pending**: 12
+**In Progress**: 11 (T006, T013, T030, T034, T037, T038, T039, T041, T042, T043, T048)
+**Pending**: 11
 **Blocked**: 0
 
 **Current Phase**: Phase 10 - Release Preparation, alongside the Phase 11 audit backlog and the Phase 12 export work
-**Last Completed**: T047 - audit log cost and honesty (2026-09-02); T044's L-080 and L-081 halves and T045's sampling-rate half the same day. **T048 opened 2026-09-03** (diagnosis only) from the first ride run — ledger §7.
+**Last Completed**: T047 - audit log cost and honesty (2026-09-02); **T034 code-complete 2026-09-03** — on-device training capture on a second axis of the audit log (`raw` at `lvl 2`, `lbl` ground truth, its own retention and export), device run outstanding. T044's L-080 and L-081 halves and T045's sampling-rate half the same day. **T048 opened 2026-09-03** (diagnosis only) from the first ride run — ledger §7.
 **Current Task**: **T048** (Phase 11.3), then T044–T046 (Phase 11.2). The 2026-09-03 ride run turned the cluster around: the confidence cap ledger §6 read as *damping false starts* is a **veto on real ones** — the Pixel peaked at 0.586 against a 0.7 threshold for 25 minutes of genuine pedalling and recorded nothing, the iPhone started three minutes and 1.3 km late. T048 holds the three fixes (derived speed, an unusable fix treated as no fix, the 10 s freshness rule on the start path) and now runs **ahead** of L-079 rather than behind it, inheriting its risk — its acceptance test is both the shopping run and the ride. Behind it: **L-079**, the single-sample fit, then L-083 and the safety-net half of L-081, then T046. Then T039/T041 — iOS release is 2 blockers from submittable (build attach + screenshots); T041 device validation under way (items 1, 8, 9 and the pause logic settled on the iPhone by the 2026-09-03 log; item 11 blocked on T048). T038 open on manual Play Console setup; T037 open (§5.6/§5.7).
 **Next Task**: T039 - iOS Release Configuration (T038 now owns the version scheme and `publish_beta.sh`, so T039 can extend both)
 **Audit backlog**: `tasks/AUDIT-FINDINGS.md` (2026-06-17) and `tasks/LEDGER.md` (2026-08-31) record open defects that are not otherwise tracked here; the blocked core-pipeline cluster is T041.

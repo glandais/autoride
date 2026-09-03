@@ -7,6 +7,7 @@ import 'package:geolocator/geolocator.dart' show LocationAccuracyStatus;
 // `Override` is not re-exported by flutter_riverpod.
 import 'package:riverpod_annotation/riverpod_annotation.dart' show Override;
 
+import 'package:autoride/core/audit/audit_level.dart';
 import 'package:autoride/core/audit/audit_log.dart';
 import 'package:autoride/core/audit/audit_sink.dart';
 import 'package:autoride/core/constants/app_constants.dart';
@@ -497,7 +498,7 @@ void main() {
     test('a second tap during the first one\'s database write starts no '
         'second trip (L-080)', () async {
       final sink = _RecordingAuditSink();
-      AuditLog.install(sink, verbose: false);
+      AuditLog.install(sink, level: AuditLogLevel.normal);
       addTearDown(AuditLog.uninstall);
 
       final controller = await startController(overridesFor());
@@ -720,7 +721,7 @@ void main() {
 
     setUp(() {
       sink = _RecordingAuditSink();
-      AuditLog.install(sink, verbose: false);
+      AuditLog.install(sink, level: AuditLogLevel.normal);
     });
 
     tearDown(AuditLog.uninstall);
@@ -843,6 +844,7 @@ class _RecordingAuditSink implements AuditSink {
     required String type,
     required int lvl,
     required bool critical,
+    int? session,
   }) => lines.add(line);
 
   @override

@@ -238,6 +238,12 @@ class _SpyExportService implements AuditExportService {
 
   @override
   Future<File> writeLogFile({DateTime? since}) async => File('unused');
+
+  @override
+  Future<File> shareCapture({Rect? sharePosition}) async => File('unused');
+
+  @override
+  Future<File> writeCaptureFile() async => File('unused');
 }
 
 /// Controller double: no sink, no database, just a call counter.
