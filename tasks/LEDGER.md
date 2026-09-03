@@ -1017,6 +1017,7 @@ the motion-only path that §8 shows firing on gestures. → **T049**
 | ID | Dim | Where | Finding | Status | Evidence |
 |---|---|---|---|---|---|
 | L-095 | pipeline · gates | `trip.dart:172` `isRideWorthKeeping` | The last line of defence tests duration and point count, and never asks whether the ride went anywhere | **Fixed** (T049) — pending the device runs | `duration >= 60 && routePointCount >= 2`, nothing else — no speed arm, no net-displacement arm, though `cyclingSpeedMinKmh` (8) exists. Pixel trip 2 clears it at 930 s / 9 points with **avg 0.708 m/s = 2.5 km/h**; trip 3 at 617 s / 4 points with **0.4 m/s = 1.4 km/h**. Both are written as `act: "cycling"`. A 183 m trip whose endpoints are 20 m apart is kept because it lasted a quarter of an hour. On this run it was the only defence that could still have fired after L-093 and L-094; it did not. Note the asymmetry with the cooldown, which *did* work — two `cool {a:"arm", why:"falseStart"}` on the iPhone's 31–32 s trips — because it is armed by the duration floor and so never sees a 930 s false trip. → **T049 §3.3** |
+| L-097 | pipeline · arch | coordinator `_finalizeAndStopTrip` / recorder `stopRecording` | One ride ended **twice**: the stop path is re-entrant for as long as the recorder is finalizing | **Fixed** (T049) — pending the device runs | Pixel trip 4, 21:31:03 — outside the window §8's first export covers, and read from the 22:24 export of the same session. Three `stop d:"pauseTrip"` lines 17 ms apart, then **two** `stop d:"stopTrip"` at `.265` and `.281`, each of which ran the whole teardown: two identical `trip {a:"discard", id:4, dur:124, n:1}` lines, two `Discarding trip 4` logs, and then `err {tag:"TripRecorderService", m:"Failed to delete discarded trip 4", ex:"TripRepositoryException: Trip not found: 4"}` — the second pass deleting a row the first had already deleted. The cause is L-096's other half: the paused branch runs `analyzeForTripStop` on **every motion sample**, the state machine stays `paused` until the recorder has finished, and `stopRecording`'s only guard is `_activeTrip == null` — cleared at the *end* of `_stopRecording`, after the final flush, the audit line and the delete. This is **L-080 exactly, on the other end of the ride**, and T049 §3.4 did not touch it: throttling the audit line leaves the evaluation at 50 Hz. Benign on this trip (the row was already gone and the exception is caught) but not in general — on a *kept* ride the second pass writes `updateTrip` twice, emits a second `trip stop`, and calls `TripStateMachine.stopTrip` again, i.e. a second "trip recorded" notification. → **T049 §3.5** |
 | L-096 | audit | `trip_detection_coordinator.dart:1119` | The `stop` throttle exempts every decision that is not `continueTrip`, so a **paused** trip re-emits `pauseTrip` at the sample rate | **Fixed** (T049) — pending the device runs | **32.3 `stop` lines per second** against `evalMs` 1000: Pixel 88 208 lines (83 % of the file), iPhone 77 401 (83 %), every one of them `pauseTrip`. Decision counts — Pixel 1 693 `continueTrip` / 88 208 `pauseTrip` / 1 `stopTrip`; iPhone 881 / 77 401 / 4. The docstring's reasoning ("a decision other than `continue` is what the reader is looking for") holds for an *active* trip, where a non-continue decision is a transition; once the trip is paused the repeated decision is `pauseTrip`, never `continueTrip`, and the exemption lets every motion sample through for the length of the pause. **L-085 closed this class for the active case and left the paused one** — same defect, same file, one build later. Fix is to key the exemption on the previous decision rather than a hardcoded one. → **T049 §3.4** |
 
 ### Confirmed, not new
@@ -1098,8 +1099,47 @@ Four fixes, on the one build that also carries T048 (decision paragraph in §6).
    seen is still never dropped. `_emitResumeEval` was checked and does **not** have the hole: its
    repeated decision is `shouldResume: false`, which its throttle already keys on.
 
+5. **One decision, one ending (L-097).** Added after the fact, from a log exported an hour later
+   on the same session. `_finalizeAndStopTrip` claims the ending synchronously before its first
+   `await`, the way `_startInFlight` claims a departure, and `stopRecording` does the same with a
+   `_stopInFlight` flag — because `_activeTrip` cannot answer the question: it is cleared at the
+   *end* of the teardown, so every caller arriving during the final write passed the null check.
+   Both claims are needed: the coordinator's keeps the ending a single decision (one detector
+   reset, one session restart), the recorder's covers the Stop button and the notification action,
+   which do not go through the coordinator at all. `startListening` clears both, so a claim cannot
+   outlive its session.
+
 **What the tests cannot settle.** The same limit as §7, inverted. The unit tests pin the
 arithmetic — a broken streak does not start a trip, drift does not become distance, a 22 m
 "ride" is discarded as `still` — but whether three *consecutive* seconds of cycling-shaped motion
 are produced by a pocket on a bike is a device question, and it is exactly the question run 2
 asks. Run 1 answers the kitchen; neither run is evidence without the other.
+
+### The 2026-09-03 22:24 export — the same session, read again on 1.0.0+11
+
+Two logs exported at 22:24 (Pixel, 125 682 lines) and 22:27 (iPhone, 108 576 lines), both spanning
+**19:38→22:27** — so they re-contain the kitchen run above and extend it. The T049 build launched
+at **22:14:10** / **22:14:18** (identified by `k.minTripNet` and `k.rpRatio` appearing in the
+launch header's thresholds), which leaves **10.4 min** and **13.1 min** on the fixed build.
+
+| | Pixel 6a | iPhone 14,3 |
+|---|---|---|
+| Slice on 1.0.0+11 | 10.4 min | 13.1 min |
+| Trips started | **0** | **0** |
+| `start` evaluations | 612 | 783 |
+| `c` max | 0.718 | 0.332 |
+| Crossings ≥ `k.conf` | 1 | 0 |
+| Streak `n` reached | **1** (611 lines at 0) | 0 |
+
+The Pixel crossed the threshold once, entered `detecting`, and the streak died on the next second:
+`n` never leaves 1. That is L-093 working — the same isolated spike held the streak for six seconds
+before. Every gate close in the slice is an `inactivityTimeout`.
+
+**It is not run 1 of T049 §5 and must not be quoted as one.** Ten minutes with the phone in hand
+during the export is not an hour of ordinary indoor activity, and the slice contains no trip at
+all, so L-096's throttle has no `stop` line to be measured on (0 in the slice, against 88 208 in
+the file's 1.0.0+10 portion) and L-094's `drift` reason never fired. What the slice does settle is
+that the build runs, journals, and does not start a ride on gestures for as long as it was watched.
+
+L-097 is the one *new* finding, and it comes from the 1.0.0+10 tail these exports added
+(21:24→21:31), not from the fixed build.
