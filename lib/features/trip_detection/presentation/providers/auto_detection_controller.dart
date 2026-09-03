@@ -15,6 +15,7 @@ import '../../../diagnostics/data/services/capture_controller.dart';
 import '../../../onboarding/data/services/onboarding_service.dart';
 import '../../../settings/data/services/settings_service.dart';
 import '../../data/services/location_permission_service.dart';
+import '../../data/services/ios_background_session.dart';
 import '../../data/services/trip_detection_coordinator.dart';
 import '../../data/services/trip_recorder_service.dart';
 import '../../data/services/trip_state_machine.dart';
@@ -267,6 +268,15 @@ class AutoDetectionController extends _$AutoDetectionController {
     // The sensors are only delivered while the process is alive, which off a
     // foreground service means "while the screen is on".
     _syncForegroundService();
+
+    // iOS has no foreground service; its equivalent is significant-change and
+    // visit monitoring, which are also the only two APIs that bring a
+    // terminated app back after a kill or a reboot (T046). They are armed for
+    // as long as detection is enabled and disarmed with it — disarming is what
+    // makes iOS stop relaunching us once the user turns the feature off.
+    // No-op off iOS.
+    final iosSession = ref.read(iosBackgroundSessionProvider.notifier);
+    unawaited(shouldListen ? iosSession.arm() : iosSession.disarm());
   }
 
   /// Start a trip right now, whatever the "Automatic detection" setting says.

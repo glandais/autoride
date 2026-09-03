@@ -87,15 +87,25 @@
 
 		<!--
 		User Defaults APIs:
-		Used for app settings (SharedPreferences)
-		Reason: 1C8F.1 - Accessing user defaults in app group
+		Used for app settings (shared_preferences) and, since T046, for the
+		`autoride.detectionArmed` flag AutoRideBackgroundSession reads at launch
+		to decide whether to re-arm significant-change monitoring.
+
+		Reason: CA92.1 - "read and write information that is only accessible to
+		the app itself". That is exactly what both uses do.
+
+		It was 1C8F.1 until 2026-09-03, and that was wrong: 1C8F.1 is the App
+		Group case ("accessible to the apps, app extensions, and App Clips that
+		are members of the same App Group"), and AutoRide has no App Group — the
+		project carries no .entitlements file at all. Declaring an App Group
+		reason for defaults nothing shares is a false statement in the manifest.
 		-->
 		<dict>
 			<key>NSPrivacyAccessedAPIType</key>
 			<string>NSPrivacyAccessedAPICategoryUserDefaults</string>
 			<key>NSPrivacyAccessedAPITypeReasons</key>
 			<array>
-				<string>1C8F.1</string>
+				<string>CA92.1</string>
 			</array>
 		</dict>
 	</array>

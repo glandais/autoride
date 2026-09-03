@@ -192,6 +192,29 @@ abstract final class AuditEvent {
   /// a show or cancel and the action id for an action. Never the message text.
   static const String notification = 'noti';
 
+  /// iOS background session (T046). `a` names what happened:
+  ///
+  ///   * `bootstrap` — the native side ran at launch, with `lr` = location|
+  ///     normal. A `bootstrap {lr:"location"}` **is** the proof that iOS
+  ///     relaunched a terminated process for a significant-change or visit
+  ///     event; nothing else in the log can say it.
+  ///   * `arm` / `disarm` — significant-change + visit monitoring, the only two
+  ///     APIs that bring a killed app back. Armed exactly while automatic
+  ///     detection is on, so `disarm` is what stops iOS relaunching us.
+  ///   * `keepAlive` with `on` — the coarse (3 km) session that runs while the
+  ///     Dart GPS gate is closed. Without it, closing the gate removed the only
+  ///     CoreLocation session in the process and iOS suspended it 40 s later
+  ///     (L-084); the sensors that should have re-opened the gate then stopped
+  ///     arriving, which made the state absorbing.
+  ///   * `coarse` (`n`, `ac`) / `visit` (`arr`, `dep`) / `err` (`ex`) —
+  ///     deliveries from the native manager. These are **never** positions: a
+  ///     3 km fix must not reach `_lastLocation`, the pre-trip buffer or
+  ///     `GpsSpeedEstimator`. They are journalled only, as evidence that the
+  ///     process is alive rather than suspended.
+  ///
+  /// Android emits none of these.
+  static const String iosBackground = 'ios';
+
   // --- Diagnostics -------------------------------------------------------
   /// Bridged from [Logger]. `lv` = d|i|w|e, `tag`, `m`.
   static const String log = 'log';
@@ -232,6 +255,7 @@ abstract final class AuditEvent {
     battery,
     foregroundService,
     notification,
+    iosBackground,
     log,
     error,
   ];

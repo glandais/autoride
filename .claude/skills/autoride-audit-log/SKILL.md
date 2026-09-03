@@ -81,6 +81,7 @@ short; the table below is the whole vocabulary.
 | `pwr` | Power mode | `m` `b` % `hz` `df` `ui` `la` |
 | `bat` | Battery sample (5 min, and on every OS battery-state change) | `b` % `ch`. A reading identical to the previous one inside the same 5-minute tick is not written (L-086) |
 | `fgs` | Foreground service | `a` = start/stop/fail, `plat` = android/ios (L-078), `ex` on a fail |
+| `ios` | iOS process survival (T046), **iOS only** | `a` = bootstrap (`lr` = location/normal — the launch reason; `location` means iOS relaunched a *terminated* process for a significant-change or visit event) / arm / disarm (significant-change + visit monitoring, the only APIs that bring a killed app back) / keepAlive (`on` — the coarse 3 km session that runs while the GPS gate is closed, L-084) / coarse (`n` `ac`) / visit (`arr` `dep`) / err (`ex`) / fail (`m` the method, `ex`). A `coarse` line is **never a position**: it is evidence the process is alive, and a 3 km fix is deliberately kept out of the detection pipeline |
 | `noti` | Notification | `a` = show/cancel/action; `k` = fg/start/stop on a show or cancel, the action id (pause/resume/stop) on an action. Never the text. `show k:"fg"` is **verbose** |
 | `log` | Bridged from `Logger` | `lv` = d/i/w/e, `tag` `m` |
 | `err` | Error | `tag` `m` `ex` `st` (top 3 frames) |
@@ -177,7 +178,7 @@ gzcat log.ndjson.gz | jq -r 'select(.e=="gate")|[.t,.a,.why]|@tsv'
 
 # Session health, first thing on any "it did not work" report: what the OS
 # granted, whether the foreground service started, and every error.
-gzcat log.ndjson.gz | jq -c 'select(.e|IN("sess","perm","fgs","err"))'
+gzcat log.ndjson.gz | jq -c 'select(.e|IN("sess","perm","fgs","ios","err"))'
 
 # Where a heartbeat series stops, and what came back. A large dt on the line
 # AFTER a gap means a suspension; a gap with no hb after it at all means the
@@ -239,6 +240,9 @@ number.
 **Item 8 — detection with the screen off.** Expect `app {st:"paused"}`, then a
 continuous `hb` series with `mn > 0` and **no** `app {st:"resumed"}`, then
 `start`, `st idle→detecting`, `trip {a:"start"}`. Conclusive because of `hb`.
+On iOS this item is run as run 2 of `tasks/T046-ios-background-survival.md` §5,
+which also covers the kill, the reboot and the disarm — read that protocol
+rather than judging item 8 alone from a log that was not produced for it.
 
 **The two platforms fail this item for different reasons, and the log says
 which.** Check the prerequisites *before* reading the heartbeats:
@@ -247,6 +251,14 @@ which.** Check the prerequisites *before* reading the heartbeats:
   exception in `ex`; before L-078 the failure was swallowed and left **no `fgs`
   line at all**, so an old log with no `fgs` is a failed start, not an absent
   call.
+- **On iOS, read `ios` where you would read `fgs` on Android.** `ios {a:"arm"}`
+  is the iOS counterpart of a foreground service starting, and
+  `ios {a:"keepAlive", on:true}` right after a `gate close` is what stops the
+  process being suspended (L-084). A `gate close` with no `keepAlive` after it,
+  followed by a heartbeat with a large `dt`, is that suspension happening.
+  `ios {a:"bootstrap", lr:"location"}` with a launch header above it and no
+  `app detached` before it is the signature of a **background relaunch** — the
+  only positive evidence that a kill or a reboot was survived.
 - **`plat` decides what an `fgs start` is worth.** The foreground service is
   Android's mechanism. On iOS `flutter_background_service` starts a second
   FlutterEngine and holds no notification, so `fgs {a:"start",plat:"ios"}`
@@ -263,7 +275,8 @@ and look identical if you only read the gap.** After the `hb` series stops:
 | What comes back | Reading |
 |---|---|
 | An `hb` with a large `dt` (and `n` far below `dt/1000`) | The OS **suspended** the process and let it resume. The 1 Hz timer was frozen; the process is the same one. |
-| Nothing, then a fresh **launch `hdr`** and a `sess {a:"start"}` | The OS **terminated** the process. The next lines are a cold start, not a resume. |
+| Nothing, then a fresh **launch `hdr`** and a `sess {a:"start"}`, with no `ios {a:"bootstrap", lr:"location"}` | The OS **terminated** the process and it stayed dead until the user opened the app. The next lines are a cold start, not a resume. |
+| Nothing, then a fresh **launch `hdr`** carrying `ios {a:"bootstrap", lr:"location"}` | The OS terminated the process **and the app brought itself back** on a significant-change or visit event (T046). Since T046 this is a *pass*, not a failure — it is the only positive evidence that a kill or a reboot was survived. Read the gap as lost coverage, not as a defect. |
 | `hb` intact (`n` ≈ 30) with `mn == 0` | The process ran and `sensors_plus` delivered nothing — a different failure again, and the one item 3 is about. |
 
 Worked example (2026-09-02, iPhone 14,3, build 1.0.0+8): seven clean heartbeats

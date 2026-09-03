@@ -15,6 +15,7 @@ import '../../domain/models/trip_stop_state.dart';
 import 'battery_optimizer.dart';
 import 'motion_state_window.dart';
 import 'gps_speed_estimator.dart';
+import 'ios_background_session.dart';
 import 'pre_trip_location_buffer.dart';
 import 'sensor_service.dart';
 import 'location_service.dart';
@@ -53,6 +54,9 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
   // active; they must therefore be closed by hand (see `_cleanup` /
   // `_closeSession`, both wired to `ref.onDispose`).
   void Function()? _closeMotionSubscription;
+
+  /// The iOS process-survival session, on iOS only. See [_setIosKeepAlive].
+  IosBackgroundSession? _iosSession;
 
   /// Non-null exactly while the GPS gate is OPEN (audit #3). Location is never
   /// subscribed to unconditionally: see [_updateGpsGate].
@@ -195,6 +199,15 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
 
   @override
   Future<TripState> build() async {
+    // Resolved once, and held: [_setIosKeepAlive] runs from `onDispose`, where
+    // reading a provider throws if the whole container is going down with us.
+    // The notifier itself stays usable — it only forwards to a platform
+    // channel. Off iOS nothing is resolved at all, so no test container ever
+    // instantiates it.
+    if (IosBackgroundSession.supported) {
+      _iosSession = ref.read(iosBackgroundSessionProvider.notifier);
+    }
+
     // Initialize with idle state
     ref.onDispose(() {
       _disposed = true;
@@ -248,6 +261,13 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
     // needs speed for auto-pause/stop, so evaluate the gate once now — it opens
     // immediately in that case.
     _updateGpsGate(MotionState.unknown);
+
+    // The gate normally hands the process over on its transitions, but a
+    // session *starting* with it closed makes no transition at all — and that
+    // is the whole idle window iOS used to suspend (L-084). Stated from the
+    // gate's own state so a trip already in progress, which pinned it open
+    // just above, is not contradicted.
+    _setIosKeepAlive(on: _closeLocationSubscription == null);
 
     // A trip already in progress when the session starts (automatic detection
     // switched on mid-ride, a trip recovered at launch) sees no state
@@ -431,9 +451,28 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
     }
   }
 
+  /// Hand the iOS process-survival session the complement of the gate (T046).
+  ///
+  /// While the gate is closed there is no CoreLocation session in the process
+  /// and iOS suspends it within a minute, taking the sensors that were supposed
+  /// to re-open the gate with it (L-084). The native side therefore runs a
+  /// coarse 3 km session for exactly that interval, and stops it the moment
+  /// geolocator's fine one takes over — so a 3 km fix can never reach
+  /// [_onLocationData]. No-op off iOS.
+  ///
+  /// Resolved in [build] and held in [_iosSession] rather than read here: this
+  /// runs from [_cleanup] too, which runs from `onDispose`, where reading a
+  /// provider throws once the container is going down (the L-078 failure mode).
+  void _setIosKeepAlive({required bool on}) {
+    unawaited(_iosSession?.setKeepAlive(on: on));
+  }
+
   /// Subscribe to the location stream if the gate is not already open.
   void _openGpsGate() {
     if (_closeLocationSubscription != null) return;
+
+    // Before the subscription, so the two sessions never overlap.
+    _setIosKeepAlive(on: false);
 
     AuditLog.emit(
       AuditEvent.gate,
@@ -481,6 +520,9 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
     _cancelGpsInactivityTimer();
     _closeLocationSubscription?.call();
     _closeLocationSubscription = null;
+    // After the subscription is gone, and unconditionally: a gate that was
+    // already closed at session start still needs the process held up.
+    _setIosKeepAlive(on: true);
     _lastLocation = null;
     _gpsSpeedEstimator.reset();
     // The gate closing means the rider stood still long enough for the buffered
@@ -1281,5 +1323,11 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
     // own location subscription while a trip runs, so nothing is lost. Closing
     // the gate clears the pre-trip buffer too.
     _closeGpsGate(gateWhy);
+
+    // …but after it, not through it: closing the gate asks iOS to hold the
+    // process up, and a session that is stopping has nothing left to hold up.
+    // `AutoDetectionController` disarms the relaunch monitoring separately —
+    // that outlives the session on purpose.
+    _setIosKeepAlive(on: false);
   }
 }

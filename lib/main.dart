@@ -76,26 +76,33 @@ class _AutoRideAppState extends ConsumerState<AutoRideApp>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
 
+    // Deliberately NOT inside `addPostFrameCallback`: iOS relaunches AutoRide
+    // in the background for a significant-change or visit event (T046), and a
+    // process that never becomes visible is not guaranteed to produce a frame.
+    // Hanging the whole pipeline off one would make a relaunch that succeeded
+    // natively do nothing at all in Dart. Only the navigation listener below,
+    // which is a genuine UI concern, waits for a frame.
+
+    // The audit log comes first, before anything it is meant to observe:
+    // instantiated after the coordinator, it would miss the session start of
+    // the very launch being diagnosed.
+    ref.listenManual(auditLogControllerProvider, (_, _) {});
+
+    // Close any trip a process death left mid-recording (L-068), before
+    // automatic detection below can start a new one. Fire-and-forget: the
+    // provider logs its own outcome and a failure must not block launch —
+    // the rows stay `active` and are retried next time.
+    ref.listenManual(tripRecoveryProvider, (_, _) {});
+
+    // Lifecycle owner for automatic detection (audit #11): instantiating it
+    // here — above every screen — is what makes detection run at all. The
+    // listener is what keeps it reactive: a keepAlive provider with no
+    // listener would not recompute when the setting or the permission
+    // changes, it would merely be invalidated.
+    ref.listenManual(autoDetectionControllerProvider, (_, _) {});
+
     // Listen for trip state changes and auto-navigate to tracking screen
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      // The audit log comes first, before anything it is meant to observe:
-      // instantiated after the coordinator, it would miss the session start of
-      // the very launch being diagnosed.
-      ref.listenManual(auditLogControllerProvider, (_, _) {});
-
-      // Close any trip a process death left mid-recording (L-068), before
-      // automatic detection below can start a new one. Fire-and-forget: the
-      // provider logs its own outcome and a failure must not block launch —
-      // the rows stay `active` and are retried next time.
-      ref.listenManual(tripRecoveryProvider, (_, _) {});
-
-      // Lifecycle owner for automatic detection (audit #11): instantiating it
-      // here — above every screen — is what makes detection run at all. The
-      // listener is what keeps it reactive: a keepAlive provider with no
-      // listener would not recompute when the setting or the permission
-      // changes, it would merely be invalidated.
-      ref.listenManual(autoDetectionControllerProvider, (_, _) {});
-
       ref.listenManual(tripStateMachineProvider, (previous, next) {
         // Auto-navigate when trip becomes Active (from Idle or Detecting)
         final wasNotActive =

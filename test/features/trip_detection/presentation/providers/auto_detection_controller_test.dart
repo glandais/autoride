@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart' show LocationAccuracyStatus;
@@ -19,6 +20,7 @@ import 'package:autoride/features/onboarding/data/services/onboarding_service.da
 import 'package:autoride/features/settings/data/services/settings_service.dart';
 import 'package:autoride/features/settings/domain/models/detection_settings.dart';
 import 'package:autoride/features/settings/domain/models/user_settings.dart';
+import 'package:autoride/features/trip_detection/data/services/ios_background_session.dart';
 import 'package:autoride/features/trip_detection/data/services/location_permission_service.dart';
 import 'package:autoride/features/trip_detection/data/services/trip_detection_coordinator.dart';
 import 'package:autoride/features/trip_detection/data/services/trip_recorder_service.dart';
@@ -285,6 +287,8 @@ class _FastNotificationController extends AutoDetectionController {
 }
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   late _CoordinatorLog coordinator;
   late _RecorderLog recorder;
   late _BackgroundServiceLog backgroundService;
@@ -830,6 +834,69 @@ void main() {
       await pumpEventQueue();
 
       expect(background(), hasLength(before));
+    });
+  });
+
+  // =========================================================================
+  // T046. iOS has no foreground service; its equivalent is significant-change
+  // and visit monitoring, which are also the only two APIs that bring a
+  // terminated app back after a kill or a reboot. They follow the same
+  // condition the Android service does — with one asymmetry that matters: they
+  // must be *disarmed* when the user turns detection off, or iOS goes on
+  // relaunching an app that has been told to stop.
+  // =========================================================================
+  group('AutoDetectionController - iOS relaunch monitoring (T046)', () {
+    late List<String> nativeCalls;
+
+    setUp(() {
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      nativeCalls = <String>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(IosBackgroundSession.channel, (call) async {
+            nativeCalls.add(call.method);
+            return call.method == 'consumeLaunchReason' ? 'normal' : null;
+          });
+    });
+
+    tearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(IosBackgroundSession.channel, null);
+      debugDefaultTargetPlatformOverride = null;
+    });
+
+    test('detection starting arms the relaunch monitoring', () async {
+      await startController(overridesFor());
+      await pumpEventQueue();
+
+      expect(nativeCalls, contains('arm'));
+      expect(nativeCalls, isNot(contains('disarm')));
+    });
+
+    test('detection that never starts arms nothing', () async {
+      await startController(overridesFor(enabled: false));
+      await pumpEventQueue();
+
+      expect(nativeCalls, isNot(contains('arm')));
+    });
+
+    test('turning detection off disarms it', () async {
+      final settings = _FakeSettingsService(enabled: true);
+      await startController(overridesFor(settings: settings));
+      await pumpEventQueue();
+
+      settings.setEnabled(false);
+      await pumpEventQueue();
+
+      expect(nativeCalls, contains('disarm'));
+    });
+
+    test('nothing crosses the channel on Android', () async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+
+      await startController(overridesFor());
+      await pumpEventQueue();
+
+      expect(nativeCalls, isEmpty);
     });
   });
 }

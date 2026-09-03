@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 // `LocationSettings` only: geolocator also exports an `ActivityType` that
@@ -16,6 +18,7 @@ import 'package:autoride/core/audit/audit_sink.dart';
 import 'package:autoride/core/constants/app_constants.dart';
 import 'package:autoride/features/trip_detection/data/services/adaptive_location_settings.dart';
 import 'package:autoride/features/trip_detection/data/services/battery_optimizer.dart';
+import 'package:autoride/features/trip_detection/data/services/ios_background_session.dart';
 import 'package:autoride/features/trip_detection/data/services/location_service.dart';
 import 'package:autoride/features/trip_detection/data/services/sensor_service.dart';
 import 'package:autoride/features/trip_detection/data/services/trip_detection_coordinator.dart';
@@ -2556,6 +2559,139 @@ void main() {
 
         expect(sink.fieldsOf('sess'), isEmpty);
       });
+    });
+  });
+
+  // =========================================================================
+  // T046 — iOS process survival.
+  //
+  // On iOS the location session is what keeps the process scheduled, so
+  // closing the motion gate removed the only reason for the app to stay alive
+  // and the OS suspended it 40 s later, taking the sensors that were supposed
+  // to re-open the gate with it (L-084). The coordinator therefore hands the
+  // native session the *complement* of the gate. These tests pin that
+  // complement, and that it is iOS-only.
+  // =========================================================================
+  group('TripDetectionCoordinator - iOS process survival (T046)', () {
+    late List<MethodCall> nativeCalls;
+
+    /// The `on` argument of every `setKeepAlive` that crossed the channel, in
+    /// order. Redundant calls are filtered on the Dart side, so this is also
+    /// the assertion that the gate does not chatter at the OS.
+    List<bool> keepAliveCalls() => nativeCalls
+        .where((call) => call.method == 'setKeepAlive')
+        .map((call) => (call.arguments as Map)['on'] as bool)
+        .toList();
+
+    void mockChannel() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(IosBackgroundSession.channel, (call) async {
+            nativeCalls.add(call);
+            return call.method == 'consumeLaunchReason' ? 'normal' : null;
+          });
+    }
+
+    /// Rebuilds the container with the platform override already in place: the
+    /// coordinator resolves the native session once, in `build()`.
+    void rebuild({required TargetPlatform platform}) {
+      debugDefaultTargetPlatformOverride = platform;
+      container.dispose();
+      container = ProviderContainer(
+        overrides: baseOverrides(
+          extra: [
+            tripDetectionCoordinatorProvider.overrideWith(
+              _ManualGateCoordinator.new,
+            ),
+          ],
+        ),
+      );
+      coordinatorSubscription = container.listen(
+        tripDetectionCoordinatorProvider,
+        (_, _) {},
+      );
+    }
+
+    setUp(() {
+      nativeCalls = <MethodCall>[];
+      mockChannel();
+      rebuild(platform: TargetPlatform.iOS);
+    });
+
+    tearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(IosBackgroundSession.channel, null);
+      debugDefaultTargetPlatformOverride = null;
+    });
+
+    _ManualTimer? armedInactivityTimer() {
+      return (container.read(
+        tripDetectionCoordinatorProvider.notifier,
+      ) as _ManualGateCoordinator).inactivityTimer;
+    }
+
+    test('a session starts with the process held up', () async {
+      await startedCoordinator();
+
+      // The gate starts closed — `startListening` subscribes motion, not
+      // location — so this is the whole idle window, which is exactly the one
+      // iOS used to suspend.
+      expect(keepAliveCalls(), <bool>[true]);
+    });
+
+    test('opening the gate hands the process back to geolocator', () async {
+      await startedCoordinator();
+      await pushMotion(1);
+
+      expect(gpsSubscribed, isTrue);
+      // False *after* the initial true: the coarse native session and the fine
+      // geolocator one must never overlap, or a 3 km fix reaches the pipeline.
+      expect(keepAliveCalls(), <bool>[true, false]);
+    });
+
+    test('closing the gate takes the process back', () async {
+      await startedCoordinator();
+      await pushMotion(1);
+      await pushStationary(2);
+      armedInactivityTimer()?.fire();
+      await pumpEventQueue();
+
+      expect(gpsSubscribed, isFalse);
+      expect(keepAliveCalls(), <bool>[true, false, true]);
+    });
+
+    test('sustained movement does not chatter at the OS', () async {
+      await startedCoordinator();
+      await pushMotion(1);
+      await pushMotion(2);
+      await pushMotion(3);
+
+      expect(keepAliveCalls(), <bool>[true, false]);
+    });
+
+    test('stopping the session releases the process', () async {
+      final coordinator = await startedCoordinator();
+      coordinator.stopListening();
+      await pumpEventQueue();
+
+      // A session that is stopping has nothing left to keep alive. Arming and
+      // disarming the *relaunch* monitoring is a separate decision, and it
+      // belongs to AutoDetectionController — it outlives the session.
+      expect(keepAliveCalls().last, isFalse);
+    });
+
+    test('nothing crosses the channel on Android', () async {
+      rebuild(platform: TargetPlatform.android);
+      // The iOS container disposed by `rebuild` released the process on its
+      // way out; what is under test is what the Android one does next.
+      nativeCalls.clear();
+
+      await startedCoordinator();
+      await pushMotion(1);
+      await pushStationary(2);
+      armedInactivityTimer()?.fire();
+      await pumpEventQueue();
+
+      expect(nativeCalls, isEmpty);
     });
   });
 }

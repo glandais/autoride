@@ -160,7 +160,21 @@ Currently declared:
 | Category | Reason | For |
 |---|---|---|
 | `NSPrivacyAccessedAPICategoryFileTimestamp` | `0A2A.1` | SQLite database files in the app container |
-| `NSPrivacyAccessedAPICategoryUserDefaults` | `1C8F.1` | Settings storage |
+| `NSPrivacyAccessedAPICategoryUserDefaults` | `CA92.1` | Settings storage (`shared_preferences`), plus the `autoride.detectionArmed` flag T046's native session reads at launch |
+
+**Corrected 2026-09-03**: the User Defaults reason was `1C8F.1`, which is the **App Group** case
+("only accessible to the apps, app extensions, and App Clips that are members of the same App
+Group as the app itself"). AutoRide has no App Group — there is no `.entitlements` file in the
+project — so the declaration asserted something untrue. `CA92.1` ("only accessible to the app
+itself") is the one that matches both uses.
+
+**Nothing was added for T046.** CoreLocation is not a required-reason API: the five categories are
+`FileTimestamp`, `SystemBootTime`, `DiskSpace`, `ActiveKeyboards` and `UserDefaults`, and
+`startMonitoringSignificantLocationChanges`, `startMonitoringVisits` and
+`CLBackgroundActivitySession` are in none of them. Location is covered by
+`NSPrivacyCollectedDataTypes` (already declared) and the `NSLocation*UsageDescription` keys
+(already present). No entitlement or capability is required either — `allowsBackgroundLocationUpdates`
+needs only `UIBackgroundModes` containing `location` in `Info.plist`, which is already there.
 
 **Expected additions** — `NSPrivacyAccessedAPICategoryDiskSpace` (`E174.1`) and
 `NSPrivacyAccessedAPICategorySystemBootTime` (`35F9.1`), likely triggered by `sqflite`,
