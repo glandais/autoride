@@ -90,11 +90,19 @@ class TripRecoveryService {
         // returned null for anything under two points — but this site applies
         // the whole rule on purpose, so recovery and the live stop path cannot
         // drift apart if `minTripRoutePoints` ever moves.
-        if (recovered == null || !recovered.isRideWorthKeeping(points.length)) {
+        //
+        // The net displacement is measured off the points themselves, ordered
+        // by `rebuild`: first to last, straight line (L-095).
+        final reason = recovered?.discardReason(
+          points.length,
+          netDisplacementMeters: _netDisplacementMeters(points),
+        );
+        if (recovered == null || reason != null) {
           await _repository.deleteTrip(tripId);
           deleted.add(tripId);
           _logger.info(
-            'Deleted interrupted trip $tripId: '
+            'Deleted interrupted trip $tripId '
+            '(${reason ?? 'unrebuildable'}): '
             '${points.length} point(s), '
             '${recovered?.duration ?? 0}s — below the minimum',
           );
@@ -129,6 +137,18 @@ class TripRecoveryService {
   /// Returns null when there is nothing to rebuild from (fewer than two
   /// points cannot describe a ride), which the caller treats as "delete".
   /// Exposed for testing: this is the whole arithmetic of recovery.
+  /// Straight-line distance between the earliest and the latest of [points],
+  /// in meters — 0 for fewer than two. Ordered here rather than trusting the
+  /// query, for the same reason [rebuildFromRoutePoints] sorts.
+  static double _netDisplacementMeters(List<RoutePoint> points) {
+    if (points.length < 2) return 0.0;
+    final ordered = [...points]
+      ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
+    return ordered.first.toLocationData().distanceTo(
+      ordered.last.toLocationData(),
+    );
+  }
+
   static Trip? rebuildFromRoutePoints(Trip trip, List<RoutePoint> points) {
     if (points.length < 2) return null;
 

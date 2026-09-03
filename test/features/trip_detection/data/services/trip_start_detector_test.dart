@@ -610,5 +610,176 @@ void main() {
 
       container.dispose();
     });
+
+    // L-093. The streak used to slide: `lastDetectionTime` was refreshed on
+    // every positive detection and the window comparison truncated to whole
+    // seconds, so "3 consecutive detections" meant three spikes each within
+    // 5.99 s of the previous one — up to 18 s of wall clock, with any number of
+    // near-zero samples in between. All ten false starts of the 2026-09-03
+    // kitchen run are that signature.
+    group('the streak counts consecutive intervals (L-093)', () {
+      /// Cycling motion at each of [seconds], walking motion at every other
+      /// whole second up to the last, all measured from [start].
+      Future<bool> replay(
+        TripStartDetector detector,
+        DateTime start,
+        List<double> seconds,
+      ) async {
+        var started = false;
+        final positives = seconds.map((s) => (s * 1000).round()).toSet();
+        final lastMs = positives.reduce((a, b) => a > b ? a : b);
+        for (var ms = 0; ms <= lastMs; ms += 1000) {
+          final at = start.add(Duration(milliseconds: ms));
+          if (positives.contains(ms)) continue;
+          started =
+              await detector.analyzeForTripStart(
+                createWalkingMotion(),
+                null,
+                now: at,
+              ) ||
+              started;
+        }
+        for (final ms in positives.toList()..sort()) {
+          started =
+              await detector.analyzeForTripStart(
+                createCyclingMotion(),
+                null,
+                now: start.add(Duration(milliseconds: ms)),
+              ) ||
+              started;
+        }
+        return started;
+      }
+
+      test('Pixel trip 3 replayed: five flat seconds break the streak', () async {
+        final container = createContainer();
+        final detector = container.read(tripStartDetectorProvider.notifier);
+        final start = DateTime(2026, 9, 3, 21, 33, 22);
+
+        // `c=0.834 n=2` at 21:33:22, then 0.203 / 0 / 0 / 0.273 / 0.156 across
+        // five consecutive seconds with `n` unchanged at 2, then `c=0.803 n=3
+        // go` 5.35 s later. Two firm gestures, a meal cooked in between, and a
+        // ride in the database.
+        var started = await detector.analyzeForTripStart(
+          createCyclingMotion(),
+          null,
+          now: start,
+        );
+        for (var s = 1; s <= 5; s++) {
+          started =
+              await detector.analyzeForTripStart(
+                createWalkingMotion(),
+                null,
+                now: start.add(Duration(seconds: s)),
+              ) ||
+              started;
+        }
+        started =
+            await detector.analyzeForTripStart(
+              createCyclingMotion(),
+              null,
+              now: start.add(const Duration(milliseconds: 5350)),
+            ) ||
+            started;
+
+        expect(started, isFalse);
+        // Back to the first detection of a new streak, not the third of an old
+        // one.
+        expect(
+          container.read(tripStartDetectorProvider).consecutiveDetections,
+          1,
+        );
+
+        container.dispose();
+      });
+
+      test('three consecutive seconds of cycling still start a trip', () async {
+        final container = createContainer();
+        final detector = container.read(tripStartDetectorProvider.notifier);
+        final start = DateTime(2026, 9, 3, 21, 33, 22);
+
+        expect(await replay(detector, start, [0, 1, 2]), isTrue);
+
+        container.dispose();
+      });
+
+      test('a sub-threshold sample inside the current interval does not '
+          'break it', () async {
+        // At 50 Hz an instantaneous single-sample fit dips below the threshold
+        // constantly; one positive sample per second is what the streak counts,
+        // and the rule must not be so strict that real pedalling cannot meet
+        // it.
+        final container = createContainer();
+        final detector = container.read(tripStartDetectorProvider.notifier);
+        final start = DateTime(2026, 9, 3, 21, 33, 22);
+
+        var started = false;
+        for (var s = 0; s < 3; s++) {
+          final second = start.add(Duration(seconds: s));
+          started =
+              await detector.analyzeForTripStart(
+                createCyclingMotion(),
+                null,
+                now: second,
+              ) ||
+              started;
+          for (final ms in [200, 400, 600, 800]) {
+            started =
+                await detector.analyzeForTripStart(
+                  createWalkingMotion(),
+                  null,
+                  now: second.add(Duration(milliseconds: ms)),
+                ) ||
+                started;
+          }
+        }
+
+        expect(started, isTrue);
+
+        container.dispose();
+      });
+
+      test(
+        'a gap in which nothing was evaluated starts a new streak',
+        () async {
+          // The staleness bound is all `tripStartDetectionWindowSeconds` still
+          // does: a suspended process must not come back and finish a streak it
+          // began before the gap. 5.5 s also pins the truncation fix — the old
+          // `.inSeconds <= 5` comparison read this as within a 5 s window.
+          final container = createContainer();
+          final detector = container.read(tripStartDetectorProvider.notifier);
+          final start = DateTime(2026, 9, 3, 21, 33, 22);
+
+          await detector.analyzeForTripStart(
+            createCyclingMotion(),
+            null,
+            now: start,
+          );
+          await detector.analyzeForTripStart(
+            createCyclingMotion(),
+            null,
+            now: start.add(const Duration(seconds: 1)),
+          );
+          expect(
+            container.read(tripStartDetectorProvider).consecutiveDetections,
+            2,
+          );
+
+          final started = await detector.analyzeForTripStart(
+            createCyclingMotion(),
+            null,
+            now: start.add(const Duration(milliseconds: 6500)),
+          );
+
+          expect(started, isFalse);
+          expect(
+            container.read(tripStartDetectorProvider).consecutiveDetections,
+            1,
+          );
+
+          container.dispose();
+        },
+      );
+    });
   });
 }

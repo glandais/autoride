@@ -124,6 +124,12 @@ class TripRecorderService extends _$TripRecorderService {
   void Function()? _closeLocationSubscription;
   void Function()? _closeStateMachineSubscription;
   LocationData? _lastLocation;
+
+  /// First route point kept by this recording, against which the last one is
+  /// measured to give the net displacement the discard rule needs (L-095).
+  /// Kept as a fix rather than recomputed from the database so the rule is
+  /// answerable without a read on the stop path.
+  LocationData? _firstKeptLocation;
   Timer? _flushTimer;
   Timer? _metricsTimer;
 
@@ -320,6 +326,7 @@ class TripRecorderService extends _$TripRecorderService {
     _totalPauseDuration = Duration.zero;
     _routePointsRecorded = 0;
     _lastLocation = null;
+    _firstKeptLocation = null;
 
     // Do NOT clear the buffer: it may still hold points from a previous trip
     // whose final flush failed. Each RoutePoint carries its own trip id, so
@@ -476,7 +483,12 @@ class TripRecorderService extends _$TripRecorderService {
     // app has no record of — L-081) is deleted rather than kept as a
     // `discarded` row: `route_points` cascades on the trip's primary key, so
     // one delete removes the whole thing and leaves no debris behind.
-    final discarded = !candidate.isRideWorthKeeping(_routePointsRecorded);
+    final netDisplacement = _netDisplacementMeters();
+    final discardReason = candidate.discardReason(
+      _routePointsRecorded,
+      netDisplacementMeters: netDisplacement,
+    );
+    final discarded = discardReason != null;
     final finalTrip = candidate.copyWith(
       status: discarded ? TripStatus.discarded : TripStatus.completed,
     );
@@ -496,6 +508,11 @@ class TripRecorderService extends _$TripRecorderService {
         // `n` 0 is L-081's case, one with points is a rider who really did go
         // nowhere.
         'n': _routePointsRecorded,
+        // Which arm of `Trip.discardReason` fired — dur|pts|still — and the
+        // net displacement it was answered with. A `still` discard is the only
+        // one `dist`, `dur` and `n` cannot be read off (L-095).
+        'why': discardReason,
+        'net': netDisplacement,
         'pts': flushed ? null : _routePointBuffer.length,
       },
       critical: true,
@@ -503,10 +520,14 @@ class TripRecorderService extends _$TripRecorderService {
 
     if (discarded) {
       _logger.info(
-        'Discarding trip ${candidate.id}: ${candidate.duration}s / '
-        '$_routePointsRecorded point(s), against a '
-        '${AppConstants.minTripDurationSeconds}s and '
-        '${AppConstants.minTripRoutePoints}-point minimum',
+        'Discarding trip ${candidate.id} ($discardReason): '
+        '${candidate.duration}s / $_routePointsRecorded point(s) / '
+        '${netDisplacement.toStringAsFixed(0)} m net at '
+        '${candidate.avgSpeed?.toStringAsFixed(1) ?? '-'} km/h, against a '
+        '${AppConstants.minTripDurationSeconds}s, '
+        '${AppConstants.minTripRoutePoints}-point and '
+        '${AppConstants.minTripNetDisplacementMeters.toStringAsFixed(0)} m / '
+        '${AppConstants.minTripAvgSpeedKmh} km/h minimum',
       );
       try {
         await _repository!.deleteTrip(candidate.id!);
@@ -533,6 +554,7 @@ class TripRecorderService extends _$TripRecorderService {
       _routePointBuffer.clear();
     }
     _lastLocation = null;
+    _firstKeptLocation = null;
     _totalDistanceMeters = 0.0;
     _maxSpeedKmh = 0.0;
     _totalPauseDuration = Duration.zero;
@@ -724,6 +746,20 @@ class TripRecorderService extends _$TripRecorderService {
         return false;
       }
 
+      // Skip a displacement that does not beat the uncertainty of the fix
+      // producing it (L-094). `minRoutePointDistanceMeters` (15 m) and
+      // `maxLocationAccuracyMeters` (50 m) are independent bounds, and a fix
+      // accurate to +/-30 m clears the first mechanically: the 2026-09-03
+      // kitchen run recorded 183 m from nine points that never left a ~40 m
+      // square. The two reasons are journalled apart on purpose — `dist` is a
+      // stationary rider, `drift` a coarse one, and the next log has to be able
+      // to tell them apart.
+      if (distance <=
+          location.accuracy * AppConstants.routePointAccuracyRatio) {
+        _auditDroppedPoint(location, 'drift', distance: distance);
+        return false;
+      }
+
       // Update total distance
       _totalDistanceMeters += distance;
     }
@@ -739,6 +775,7 @@ class TripRecorderService extends _$TripRecorderService {
     // Add to buffer
     _routePointBuffer.add(routePoint);
     _routePointsRecorded++;
+    _firstKeptLocation ??= location;
     _lastLocation = location;
 
     // Update UI metrics
@@ -770,6 +807,19 @@ class TripRecorderService extends _$TripRecorderService {
   /// distance filter, so at normal level this would be the single largest
   /// contributor to the file for very little insight. It earns its place when
   /// the question is why a route has a hole in it.
+  /// Straight-line distance between the first and the last route point this
+  /// recording kept, in meters — 0 when it kept fewer than two.
+  ///
+  /// Net, not travelled: `_totalDistanceMeters` sums every hop and therefore
+  /// sums drift as well, which is what let a stationary phone report 183 m
+  /// (L-094). The discard rule needs the displacement, not the sum.
+  double _netDisplacementMeters() {
+    final first = _firstKeptLocation;
+    final last = _lastLocation;
+    if (first == null || last == null || identical(first, last)) return 0.0;
+    return first.distanceTo(last);
+  }
+
   void _auditDroppedPoint(
     LocationData location,
     String reason, {

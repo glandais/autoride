@@ -148,30 +148,65 @@ extension TripExtensions on Trip {
   /// counters rather than the timestamps.
   Duration get totalDuration => movingDuration + pausedDuration;
 
-  /// Whether this recording is a ride worth keeping, given how many route
-  /// points it actually produced.
+  /// Why this recording is not a ride worth keeping, or `null` if it is.
   ///
   /// Applied by the recorder when a recording stops and by the startup recovery
-  /// of interrupted trips, so one rule answers both. Two arms, and they reject
-  /// different things:
+  /// of interrupted trips, so one rule answers both. The reason is what the
+  /// audit's `trip {a:"discard", why}` carries: a discard the log cannot
+  /// explain is a bug report nobody can answer.
   ///
-  /// * shorter than [AppConstants.minTripDurationSeconds] — a false start (a
-  ///   bump, a mis-tap on the manual start button);
-  /// * fewer than [AppConstants.minTripRoutePoints] route points — a recording
-  ///   with no evidence that anything happened. The 2026-09-02 control run
-  ///   saved two of those as rides: trip 4 ran 627 s on a single fix the
-  ///   accuracy filter rejected, trip 6 ran 134 s without a fix at all, both
-  ///   0 m (L-081). Recovery already deleted such a trip after a process kill —
-  ///   `rebuildFromRoutePoints` cannot describe a ride from fewer than two
-  ///   points — so the same recording used to survive or not depending on how
-  ///   it ended.
+  /// Three arms, and they reject different things:
   ///
-  /// Still no minimum-*distance* rule: a slow or short ride is a ride, and the
-  /// question here is whether the app has any record of one, not how far it
-  /// went.
-  bool isRideWorthKeeping(int routePointCount) =>
-      duration >= AppConstants.minTripDurationSeconds &&
-      routePointCount >= AppConstants.minTripRoutePoints;
+  /// * `dur` — shorter than [AppConstants.minTripDurationSeconds]: a false
+  ///   start (a bump, a mis-tap on the manual start button);
+  /// * `pts` — fewer than [AppConstants.minTripRoutePoints] route points: a
+  ///   recording with no evidence that anything happened. The 2026-09-02
+  ///   control run saved two of those as rides: trip 4 ran 627 s on a single
+  ///   fix the accuracy filter rejected, trip 6 ran 134 s without a fix at all,
+  ///   both 0 m (L-081). Recovery already deleted such a trip after a process
+  ///   kill — `rebuildFromRoutePoints` cannot describe a ride from fewer than
+  ///   two points — so the same recording used to survive or not depending on
+  ///   how it ended.
+  /// * `still` — it lasted, it has points, and it never went anywhere (L-095).
+  ///   Duration and point count were the whole rule until the 2026-09-03
+  ///   kitchen run wrote 183 m over 930 s at 2.5 km/h from nine points inside a
+  ///   ~40 m square, and 68 m over 617 s at 1.4 km/h. Both cleared the first two
+  ///   arms comfortably; nothing asked whether the ride had moved.
+  ///
+  /// The third arm is an **OR** of net displacement and average speed, and it
+  /// needs to be: a loop ride comes home with a net displacement of zero, and a
+  /// ride recorded through a tunnel or a long red light averages low. A false
+  /// start fails both — that is exactly what makes it one. Total distance is
+  /// deliberately not consulted, because drift accumulates into it and that is
+  /// how the 183 m was reached in the first place.
+  ///
+  /// [netDisplacementMeters] is the straight-line distance from the first kept
+  /// route point to the last, and is required rather than optional so a new
+  /// call site cannot silently skip the arm.
+  String? discardReason(
+    int routePointCount, {
+    required double netDisplacementMeters,
+  }) {
+    if (duration < AppConstants.minTripDurationSeconds) return 'dur';
+    if (routePointCount < AppConstants.minTripRoutePoints) return 'pts';
+    if (netDisplacementMeters >= AppConstants.minTripNetDisplacementMeters) {
+      return null;
+    }
+    if ((avgSpeed ?? 0) >= AppConstants.minTripAvgSpeedKmh) return null;
+    return 'still';
+  }
+
+  /// Whether this recording is a ride worth keeping — see [discardReason],
+  /// which says why when it is not.
+  bool isRideWorthKeeping(
+    int routePointCount, {
+    required double netDisplacementMeters,
+  }) =>
+      discardReason(
+        routePointCount,
+        netDisplacementMeters: netDisplacementMeters,
+      ) ==
+      null;
 
   /// Format duration as HH:MM:SS
   String get formattedDuration {

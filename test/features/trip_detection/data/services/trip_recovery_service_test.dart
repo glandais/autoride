@@ -308,7 +308,26 @@ void main() {
 
       expect(rebuilt.duration, 600);
       expect(rebuilt.pauseDuration, 0);
-      expect(rebuilt.isRideWorthKeeping(2), isTrue);
+      // Ten minutes of ride time, and the two points are 22 m apart at
+      // 0.13 km/h: it counts as ride time, and it is still not a ride worth
+      // keeping (L-095). The gap rule and the discard rule answer different
+      // questions.
+      expect(
+        rebuilt.isRideWorthKeeping(2, netDisplacementMeters: 22.2),
+        isFalse,
+      );
+      expect(
+        rebuilt.discardReason(2, netDisplacementMeters: 22.2),
+        equals('still'),
+      );
+      // The same recording, had it actually gone somewhere, is kept.
+      expect(
+        rebuilt.isRideWorthKeeping(
+          2,
+          netDisplacementMeters: AppConstants.minTripNetDisplacementMeters + 1,
+        ),
+        isTrue,
+      );
     });
 
     test('subtracts the snapshotted pause total (L-073)', () {
@@ -353,7 +372,10 @@ void main() {
 
       expect(rebuilt.duration, equals(0));
       expect(rebuilt.pauseDuration, equals(20));
-      expect(rebuilt.isRideWorthKeeping(2), isFalse);
+      expect(
+        rebuilt.isRideWorthKeeping(2, netDisplacementMeters: 22.2),
+        isFalse,
+      );
     });
 
     test('keeps the trip identity and marks it completed', () {

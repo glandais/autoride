@@ -304,8 +304,22 @@ class AppConstants {
   // single bump could start a trip.
   static const int tripStartMinConsecutiveDetections = 3;
 
-  // Time window for consecutive detection counting (seconds).
-  // Maximum gap between two counted detections before the streak resets.
+  // Staleness bound on the consecutive-detection streak (seconds).
+  //
+  // NOT a sliding window any more (L-093). The streak is now truly
+  // consecutive: it dies on the first evaluation interval that scores below
+  // `tripStartConfidenceThreshold`, so a positive detection is required in
+  // every second of it. This constant only answers the case where no sample
+  // arrives at all — a suspended process, a sensor stream that stalled — where
+  // there is no interval to score and an hour-old streak must not be resumed
+  // as if it were current.
+  //
+  // What it used to mean, and why that was the defect: `lastDetectionTime` was
+  // refreshed on every positive detection and the comparison truncated to whole
+  // seconds, so "3 detections" meant three spikes each within 5.99 s of the
+  // previous one — up to 18 s of wall clock with any number of near-zero
+  // samples in between. All ten false starts of the 2026-09-03 kitchen run are
+  // that signature.
   static const int tripStartDetectionWindowSeconds = 5;
 
   // Detection evaluation cadence (shared by trip start and trip stop).
@@ -369,6 +383,21 @@ class AppConstants {
   // Reuses cycling distance filter value for consistency
   static const double minRoutePointDistanceMeters = 15.0;
 
+  // Minimum ratio between a displacement and the uncertainty of the fix that
+  // produced it, for that fix to become a route point (L-094).
+  //
+  // `minRoutePointDistanceMeters` (15 m) and `maxLocationAccuracyMeters` (50 m)
+  // are independent, and one is three times the other in the wrong direction: a
+  // fix accurate to +/-30 m clears a 15 m displacement gate on noise alone. The
+  // 2026-09-03 kitchen run recorded 183 m from nine points that all sat inside
+  // a ~40 m square around the house (`rp keep d=18.2 ac=33.5`). Requiring the
+  // displacement to beat the accuracy makes drift stop counting as distance,
+  // without moving either bound.
+  //
+  // 1.0 — the displacement must simply exceed the fix's own error bar. Higher
+  // would also reject the slow start of a real ride under a poor sky.
+  static const double routePointAccuracyRatio = 1.0;
+
   // Route point buffer size before batch database save
   // 100 points ≈ 2KB memory, saves every ~1.5km at 15m intervals
   static const int routePointBufferSize = 100;
@@ -409,6 +438,29 @@ class AppConstants {
   // History — 627 s on a single rejected fix, and 134 s with no fix at all
   // (L-081). Consumed by `Trip.isRideWorthKeeping`.
   static const int minTripRoutePoints = 2;
+
+  // Minimum net displacement (start to end, in meters) for a recording to be
+  // kept as a real trip, when its average speed does not vouch for it (L-095).
+  //
+  // Twice `maxLocationAccuracyMeters`: a recording whose endpoints are inside
+  // the error bar of the fixes that produced them has no evidence of having
+  // gone anywhere. The 2026-09-03 kitchen run wrote 183 m over 930 s whose
+  // start and end are ~20 m apart.
+  //
+  // Net displacement and not total distance, because drift accumulates and a
+  // loop does not — which is also why this arm is an OR with the speed one
+  // below: a ride that comes home is displacement 0 and speed 20 km/h.
+  static const double minTripNetDisplacementMeters =
+      2 * maxLocationAccuracyMeters;
+
+  // Minimum average speed (km/h) for a recording to be kept as a real trip,
+  // when its net displacement does not vouch for it (L-095).
+  //
+  // Half of `cyclingSpeedMin` (8 km/h), because `avgSpeed` is measured over the
+  // MOVING time only and a legitimate ride can still average low — a walk
+  // alongside the bike, a climb, a rider who is simply slow. The two false
+  // trips of the 2026-09-03 run averaged 2.5 and 1.4 km/h.
+  static const double minTripAvgSpeedKmh = cyclingSpeedMin / 2;
 
   // Database
   static const String databaseName = 'autoride.db';
