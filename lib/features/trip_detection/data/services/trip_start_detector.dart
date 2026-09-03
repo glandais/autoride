@@ -71,7 +71,7 @@ class TripStartDetector extends _$TripStartDetector {
     }
 
     // Calculate confidence score
-    final confidence = _calculateStartConfidence(motion, location);
+    final confidence = _calculateStartConfidence(motion, location, now);
 
     // Check if detection is within time window
     final withinWindow = state.isWithinDetectionWindow(
@@ -148,12 +148,23 @@ class TripStartDetector extends _$TripStartDetector {
   ///
   /// Combines motion pattern score with GPS speed validation.
   /// If GPS unavailable, uses motion-only detection.
-  double _calculateStartConfidence(MotionData motion, LocationData? location) {
+  ///
+  /// "Unavailable" means *no usable speed*, not *no object*: a fix too coarse
+  /// or too old for its speed to be believed takes the motion-only path as
+  /// well (T048). The alternative is the arithmetic of L-087 — such a fix
+  /// scores `speedScore` 0, caps the total at `tripStartMotionWeight` (0.60)
+  /// below the 0.7 threshold, and no fix at all ends up scoring higher than a
+  /// bad one.
+  double _calculateStartConfidence(
+    MotionData motion,
+    LocationData? location,
+    DateTime now,
+  ) {
     // Get motion pattern score from cycling detector
     final motionScore = _getMotionScore(motion);
 
-    // If no GPS data, use motion-only
-    if (location == null) {
+    // If no usable GPS speed, use motion-only
+    if (location == null || !location.speedIsTrustworthyAt(now)) {
       return motionScore;
     }
 

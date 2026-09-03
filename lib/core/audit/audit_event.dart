@@ -60,6 +60,12 @@ abstract final class AuditEvent {
 
   /// A location fix. `lat`, `lon`, `ac` (m), `sp` (m/s), `al`, `hd`, and `gt`
   /// — the provider's own timestamp, which is what a Strava FIT aligns to.
+  ///
+  /// `sp` is always the number the OS reported, including the zeroes iOS
+  /// delivers mid-ride. `dsp` (m/s) is present only on the fixes where T048
+  /// derived a speed from the displacement since the previous fix and the
+  /// pipeline used *that* instead — so `count(dsp) / count(fix)` is how much of
+  /// a run's speed evidence the provider failed to supply.
   static const String fix = 'fix';
 
   /// Liveness proof. `n` ticks, `mn` motion samples, `dr` samples dropped by
@@ -79,7 +85,14 @@ abstract final class AuditEvent {
   static const String heartbeat = 'hb';
 
   // --- Detectors ---------------------------------------------------------
-  /// Trip-start evaluation. `c` confidence, `n` consecutive, `go`, `spk` km/h.
+  /// Trip-start evaluation. `c` confidence, `n` consecutive, `go`, `spk` km/h,
+  /// `vt`.
+  ///
+  /// `vt` is T048's verdict on the fix `spk` came from: false means the fix was
+  /// too coarse (`k.spAcc`) or too old (`k.spAge`) for its speed to be believed,
+  /// so `c` is a motion-only score and `spk` did not enter it (L-088, L-089).
+  /// Absent when there was no fix at all. Reading `c` against `k.wMot`/`k.wSpd`
+  /// without it gives the wrong reconstruction of the arithmetic.
   static const String startEval = 'start';
 
   /// Detection window timed out. `el` seconds spent in `Detecting`.

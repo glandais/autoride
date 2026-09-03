@@ -1882,6 +1882,49 @@ void main() {
       expect(buffered(), isEmpty);
     });
 
+    test('a buffer of zero-speed fixes still yields a riding tail (T048)', () async {
+      // The 2026-09-03 iPhone: every fix of the departure reported `sp` 0, so
+      // the riding-tail cut found nothing at cycling speed and the trip was
+      // back-dated by 3 s instead of the 1.3 km already ridden. The speed is
+      // derived at ingestion now, so the tail is found from the same fixes.
+      await startedCoordinator();
+      await pushMotion(1);
+
+      // 0.0002° of latitude ≈ 22 m; 22 m every 3 s ≈ 27 km/h.
+      for (var index = 1; index <= 5; index++) {
+        locationController.add(
+          LocationData(
+            latitude: 48.8566 + index * 0.0002,
+            longitude: 2.3522,
+            accuracy: 5.0,
+            altitude: 35.0,
+            speed: 0.0,
+            heading: 90.0,
+            timestamp: DateTime(
+              2026,
+              9,
+              3,
+              17,
+              19,
+            ).add(Duration(seconds: index * 3)),
+          ),
+        );
+        await pumpEventQueue();
+      }
+
+      expect(
+        buffered().map((fix) => fix.speedKmh > AppConstants.cyclingSpeedMin),
+        // The first fix has nothing to be measured against and keeps its zero;
+        // every one after it is anchored on its predecessor.
+        [false, true, true, true, true],
+      );
+
+      startDetector.verdict = true;
+      await pushMotion(2);
+
+      expect(recorder.startedWithPriorLocations.single, hasLength(4));
+    });
+
     test('the walk to the bike is skimmed off the front', () async {
       await startedCoordinator();
       await pushMotion(1);

@@ -419,6 +419,172 @@ void main() {
       },
     );
 
+    /// A fix that is present and says nothing usable about speed — the case
+    /// L-087 is about. [accuracy] and [ageSeconds] are the two arms of the
+    /// trust predicate; the defaults are a good fix reporting a bogus 0.
+    LocationData createZeroSpeedLocation({
+      required DateTime now,
+      double accuracy = 10.0,
+      int ageSeconds = 0,
+    }) {
+      return LocationData(
+        latitude: 48.8566,
+        longitude: 2.3522,
+        accuracy: accuracy,
+        altitude: 35.0,
+        speed: 0.0,
+        heading: 90.0,
+        timestamp: now.subtract(Duration(seconds: ageSeconds)),
+      );
+    }
+
+    /// Run [count] evaluations one interval apart and report the last verdict.
+    Future<bool> analyzeRepeatedly(
+      TripStartDetector detector,
+      MotionData motion,
+      LocationData? Function(DateTime now) locationAt, {
+      required DateTime from,
+      int count = 3,
+    }) async {
+      var started = false;
+      for (int i = 0; i < count; i++) {
+        final at = from.add(AppConstants.detectionEvaluationInterval * i);
+        started = await detector.analyzeForTripStart(
+          motion,
+          locationAt(at),
+          now: at,
+        );
+      }
+      return started;
+    }
+
+    group('a fix only vetoes a departure when its speed can be believed', () {
+      // T048. The arithmetic being defended against: with a fix present,
+      // confidence is motion*0.6 + speed*0.4, so `speedScore` 0 caps it at 0.60
+      // under a 0.7 threshold — and no fix at all would have scored higher.
+      test('a good fix genuinely reporting 0 km/h still suppresses the '
+          'start', () async {
+        final container = createContainer();
+        final detector = container.read(tripStartDetectorProvider.notifier);
+        final start = DateTime(2026, 9, 3, 17, 19);
+
+        final started = await analyzeRepeatedly(
+          detector,
+          createCyclingMotion(),
+          (now) => createZeroSpeedLocation(now: now),
+          from: start,
+        );
+
+        expect(started, isFalse, reason: 'the damping of L-079 is intact');
+        expect(
+          container.read(tripStartDetectorProvider).confidence,
+          lessThan(AppConstants.tripStartConfidenceThreshold),
+        );
+
+        container.dispose();
+      });
+
+      test('a fix too coarse for its speed does not (L-088)', () async {
+        // The Pixel: 40 fixes, 30 of them above 50 m, every one reading 0 km/h,
+        // and a ride that was arithmetically undetectable for 25 minutes.
+        final container = createContainer();
+        final detector = container.read(tripStartDetectorProvider.notifier);
+        final start = DateTime(2026, 9, 3, 17, 19);
+
+        final started = await analyzeRepeatedly(
+          detector,
+          createCyclingMotion(),
+          (now) => createZeroSpeedLocation(now: now, accuracy: 300.0),
+          from: start,
+        );
+
+        expect(started, isTrue);
+        expect(
+          container.read(tripStartDetectorProvider).confidence,
+          greaterThanOrEqualTo(AppConstants.tripStartConfidenceThreshold),
+        );
+
+        container.dispose();
+      });
+
+      test('a fix older than the freshness bound does not (L-089)', () async {
+        // 80 % of the Pixel's evaluations were scored against a fix whose mean
+        // age was 33.6 s, against a 10 s bound the stop detector already had.
+        final container = createContainer();
+        final detector = container.read(tripStartDetectorProvider.notifier);
+        final start = DateTime(2026, 9, 3, 17, 19);
+
+        final started = await analyzeRepeatedly(
+          detector,
+          createCyclingMotion(),
+          (now) => createZeroSpeedLocation(
+            now: now,
+            ageSeconds: AppConstants.speedTrustMaxAge.inSeconds + 1,
+          ),
+          from: start,
+        );
+
+        expect(started, isTrue);
+
+        container.dispose();
+      });
+
+      test('an untrusted fix does not raise a walk to a departure', () async {
+        // The other half of the trade-off, and the reason acceptance needs both
+        // device runs: dropping the veto must not turn the motion-only path
+        // into a licence to start on anything.
+        final container = createContainer();
+        final detector = container.read(tripStartDetectorProvider.notifier);
+        final start = DateTime(2026, 9, 3, 17, 19);
+
+        final started = await analyzeRepeatedly(
+          detector,
+          createWalkingMotion(),
+          (now) => createZeroSpeedLocation(now: now, accuracy: 300.0),
+          from: start,
+        );
+
+        expect(started, isFalse);
+
+        container.dispose();
+      });
+
+      test('a trusted fix at cycling speed still scores highest', () async {
+        final container = createContainer();
+        final detector = container.read(tripStartDetectorProvider.notifier);
+        final start = DateTime(2026, 9, 3, 17, 19);
+
+        await analyzeRepeatedly(
+          detector,
+          createCyclingMotion(),
+          // Same fix as `createCyclingLocation`, timestamped against the
+          // injected clock: a fix stamped `DateTime.now()` would be minutes
+          // stale by this test's reckoning and score motion-only itself.
+          (now) => createCyclingLocation().copyWith(timestamp: now),
+          from: start,
+        );
+        final withSpeed = container.read(tripStartDetectorProvider).confidence;
+
+        final other = createContainer();
+        await analyzeRepeatedly(
+          other.read(tripStartDetectorProvider.notifier),
+          createCyclingMotion(),
+          (now) => createZeroSpeedLocation(now: now, accuracy: 300.0),
+          from: start,
+        );
+        final motionOnly = other.read(tripStartDetectorProvider).confidence;
+
+        expect(
+          withSpeed,
+          greaterThan(motionOnly),
+          reason: 'corroborated evidence must beat absent evidence',
+        );
+
+        container.dispose();
+        other.dispose();
+      });
+    });
+
     test('should reset state correctly', () async {
       final container = createContainer();
 

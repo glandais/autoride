@@ -14,6 +14,7 @@ import '../../domain/models/trip_state.dart';
 import '../../domain/models/trip_stop_state.dart';
 import 'battery_optimizer.dart';
 import 'motion_state_window.dart';
+import 'gps_speed_estimator.dart';
 import 'pre_trip_location_buffer.dart';
 import 'sensor_service.dart';
 import 'location_service.dart';
@@ -86,6 +87,14 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
   /// mind (L-076). Cleared whenever the history stops being trustworthy: the
   /// gate closing, the session being suspended, a trip starting or ending.
   final PreTripLocationBuffer _preTripLocations = PreTripLocationBuffer();
+
+  /// Supplies the speed the provider omitted, before any consumer sees the fix
+  /// (T048, L-087). Placed at ingestion on purpose: the start confidence and
+  /// the pre-trip buffer's riding-tail cut are two consumers of one number, and
+  /// a correction applied to only one of them is how the 2026-09-03 iPhone
+  /// managed to detect its departure and still back-date it by 3 s instead of
+  /// 1.3 km.
+  final GpsSpeedEstimator _gpsSpeedEstimator = GpsSpeedEstimator();
 
   /// The pre-trip fixes currently buffered, oldest first.
   @visibleForTesting
@@ -449,6 +458,7 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
                 critical: true,
               );
               _lastLocation = null;
+              _gpsSpeedEstimator.reset();
               _clearPreTripBuffer('gpsError');
             },
             loading: () {},
@@ -472,6 +482,7 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
     _closeLocationSubscription?.call();
     _closeLocationSubscription = null;
     _lastLocation = null;
+    _gpsSpeedEstimator.reset();
     // The gate closing means the rider stood still long enough for the buffered
     // approach to have stopped describing a departure.
     _clearPreTripBuffer(why);
@@ -747,12 +758,26 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
         'mag': motion.accelerometer.magnitude,
         'gyr': motion.gyroscope.magnitude,
         'spk': fix?.speedKmh,
+        // Whether that speed was allowed to enter `c`, or whether the fix was
+        // ruled unfit and the score is motion-only (T048).
+        if (fix != null) 'vt': fix.speedIsTrustworthyAt(at),
       },
     );
   }
 
   /// Handle incoming location data
-  void _onLocationData(LocationData location) {
+  void _onLocationData(LocationData rawLocation) {
+    // Everything below — the last fix the detectors score against, the buffer,
+    // the log — sees the refined fix, so there is exactly one answer in the
+    // process to "how fast is this rider going".
+    //
+    // The gap bound is read from the power mode in force rather than fixed,
+    // because it has to sit above the update interval that mode requests; a
+    // fixed 30 s against a 30 s interval derived nothing on Android at all.
+    final location = _gpsSpeedEstimator.refine(
+      rawLocation,
+      maxGap: ref.read(currentPowerModeProvider).derivedSpeedMaxGap,
+    );
     _lastLocation = location;
 
     if (AuditLog.enabled) {
@@ -767,7 +792,11 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
           'lat': location.latitude,
           'lon': location.longitude,
           'ac': location.accuracy,
-          'sp': location.speed,
+          // `sp` stays the provider's own number, so a log still says what the
+          // OS said. `dsp` appears only when T048 replaced it, which makes the
+          // substitution countable rather than invisible.
+          'sp': rawLocation.speed,
+          if (!identical(location, rawLocation)) 'dsp': location.speed,
           'al': location.altitude,
           'hd': location.heading,
           'gt': location.timestamp.millisecondsSinceEpoch,
@@ -844,7 +873,10 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
     // Call trip start detector
     final shouldStart = await ref
         .read(tripStartDetectorProvider.notifier)
-        .analyzeForTripStart(motion, _lastLocation);
+        // The injected clock, not `DateTime.now()`: T048's freshness arm is
+        // part of the confidence now, so the detector needs the coordinator's
+        // notion of time for a test to be able to age a fix (L-089).
+        .analyzeForTripStart(motion, _lastLocation, now: now());
 
     // Enter `Detecting` only once the detector has counted at least one
     // positive detection (L-075). It used to be entered on the *first motion

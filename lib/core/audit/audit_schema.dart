@@ -42,6 +42,13 @@ abstract final class AuditSchema {
     'cool': AppConstants.tripStartCooldownPeriodSeconds,
     'wMot': AppConstants.tripStartMotionWeight,
     'wSpd': AppConstants.tripStartSpeedWeight,
+    // Speed trust and derived speed (T048)
+    'spAcc': AppConstants.speedTrustMaxAccuracyMeters,
+    'spAge': AppConstants.speedTrustMaxAge.inSeconds,
+    'dspMin': AppConstants.derivedSpeedMinGap.inSeconds,
+    // A factor, not a duration: the effective bound is `pwr.ui × dspFac`,
+    // because a fixed one below the mode's own update interval never fires.
+    'dspFac': AppConstants.derivedSpeedMaxGapFactor,
     // Stationary window (L-070)
     'winMs': AppConstants.stationaryWindowDuration.inMilliseconds,
     'winMax': AppConstants.stationaryWindowMaxSamples,

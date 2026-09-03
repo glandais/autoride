@@ -191,6 +191,69 @@ class AppConstants {
   /// and a stale "0 km/h" must not be read as a standstill.
   static const Duration stationaryGpsMaxAge = Duration(seconds: 10);
 
+  // Speed trust (T048 — L-087, L-088, L-089)
+  //
+  // The problem these three answer: a fix that is *present* and reports a bogus
+  // 0 km/h scores `speedScore` 0 and caps the start confidence at
+  // `tripStartMotionWeight` (0.60), below the 0.7 threshold — so **no fix at
+  // all scores higher than a bad fix**, and a genuine 19 km/h ride cannot be
+  // detected while its phone reports zeroes (2026-09-03, both devices).
+
+  /// Accuracy beyond which a fix's *speed* carries no information worth voting
+  /// on, so the start path treats it as no fix rather than as zero speed.
+  ///
+  /// Deliberately its own constant and not `maxLocationAccuracyMeters`, which
+  /// answers a different question ("is this point fit to be drawn on a route?").
+  /// They happen to share a value today; the reasons to move them are not the
+  /// same, so they move separately. On the 2026-09-03 Pixel run 30 of the 40
+  /// fixes of the ride sat above this, 29 of them on the round
+  /// 100/200/300/500/600/700/800 m of the fused provider's cell/wifi ladder.
+  static const double speedTrustMaxAccuracyMeters = 50.0;
+
+  /// How old a fix may be before its speed is ignored by *start* detection.
+  ///
+  /// The same bound the stop detector has always applied
+  /// ([stationaryGpsMaxAge]); the start path simply never applied it, and with
+  /// fixes 30.7 s apart the Pixel scored 80 % of its evaluations against a fix
+  /// older than this, mean age 33.6 s.
+  static const Duration speedTrustMaxAge = stationaryGpsMaxAge;
+
+  // Derived speed (T048 — L-087)
+  //
+  // When the provider reports no speed at all, it is computed from the
+  // displacement since the previous fix. iOS delivered `sp` 0 on 88 % of the
+  // fixes of a 19 km/h ride, and the pre-trip buffer's riding-tail cut — which
+  // looks for the first fix at `cyclingSpeedMin` — read all 14 of its fixes as
+  // stationary, which is why that ride's back-date recovered 3 s instead of the
+  // 1.3 km it had already covered.
+
+  /// Shortest gap between two fixes worth deriving a speed from. Below this the
+  /// position noise dominates the displacement and the quotient explodes.
+  static const Duration derivedSpeedMinGap = Duration(seconds: 1);
+
+  /// Longest gap worth deriving a speed from, as a multiple of the interval the
+  /// current power mode actually asks for
+  /// (`PowerModeConfig.derivedSpeedMaxGap`). Beyond it the average says little
+  /// about the instant being scored, and a gap that long usually means the
+  /// stream stalled rather than that the rider crossed the distance smoothly.
+  ///
+  /// **A fixed bound cannot work here, and the first version of T048 shipped
+  /// one.** It was 30 s, against a [locationUpdateNormal] of exactly 30 s — and
+  /// since `intervalDuration` is a request the OS serves with jitter, every
+  /// Android gap lands just above it. Replaying the estimator over the
+  /// 2026-09-03 Pixel logs derives a speed **0 times on both rides**: 14 pairs
+  /// of the morning ride, accurate to 14–43 m and sitting a median 11 m from
+  /// the Strava track, were refused for 30.7 s against a 30 s bound. The other
+  /// modes are worse — 40, 60 and 90 s are all above it — so §3.1 of the task
+  /// was, as shipped, an iOS-only fix by accident: iOS ignores
+  /// `intervalDuration` and delivers on the distance filter, 6–15 s apart.
+  ///
+  /// Tying the bound to the interval is what makes it a bound rather than a
+  /// coincidence. The guards that do the real filtering are unchanged: both
+  /// fixes accurate, displacement above the noise it is measured through, and
+  /// the quotient below [maxCyclingSpeedKmh].
+  static const double derivedSpeedMaxGapFactor = 1.5;
+
   // Pedaling frequency (Hz)
   static const double pedalingFrequencyMin = 0.5; // 30 RPM minimum
   static const double pedalingFrequencyMax = 2.0; // 120 RPM maximum

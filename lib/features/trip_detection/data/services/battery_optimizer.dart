@@ -40,6 +40,15 @@ class PowerModeConfig {
   final Duration locationUpdateInterval;
   final int distanceFilter; // meters
 
+  /// Longest gap between two fixes this mode may derive a speed from (T048).
+  ///
+  /// Scaled from [locationUpdateInterval] rather than fixed, because a bound at
+  /// or below the interval the mode itself asks for can never fire — which is
+  /// exactly how the first version of T048 derived nothing at all on Android.
+  /// See [AppConstants.derivedSpeedMaxGapFactor].
+  Duration get derivedSpeedMaxGap =>
+      locationUpdateInterval * AppConstants.derivedSpeedMaxGapFactor;
+
   /// Normal power mode (battery >50%)
   static const normal = PowerModeConfig(
     name: 'normal',

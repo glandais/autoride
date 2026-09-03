@@ -775,3 +775,129 @@ measurement. Fixing it in isolation would raise the motion-only share exactly as
 does, so it waits on L-079 too.
 
 **Recommended order** (as executed): T047, then T044's L-080 half, then its L-081 half, then T045's rate hold. What remains is one cluster, not four tasks: **L-079** (the single-sample fit), and behind it L-083, the `_lastLocation` freshness gap and the safety-net half of L-081 — all of them wait on the detector. Then the T046 decision, which is a trade-off against the battery target and deserves its own decision paragraph here before any code.
+
+---
+
+## 7. Field findings — 2026-09-03 first ride with the log on (build 1.0.0+9)
+
+**Source**: two verbose audit logs exported the same evening, both phones in a pocket on the same
+7.4 km ride, 17:19→17:47 CEST — iPhone 14,3 / iOS 26.6.1
+(`autoride-audit-20260903-1756.ndjson.gz`, 164 031 lines) and Pixel 6a / Android 17
+(`autoride-audit-20260903-1759.ndjson.gz`, 166 955 lines). Both on 1.0.0+9, i.e. **before** the
+T044/T045/T047 remediations — the `win`/`stop` flood of L-085 is present as expected and is not a
+new finding.
+
+This is the mirror image of the 2026-09-02 control run: a real ride, where the only correct outcome
+is one trip on each phone. The iPhone recorded one, **three minutes and ~1.3 km late**. The Pixel
+recorded **none at all**. Both failures come from the same arithmetic §6 already described from the
+other side.
+
+### High
+
+| ID | Dim | Where | Finding | Status | Evidence |
+|---|---|---|---|---|---|
+| L-087 | pipeline | `trip_start_detector.dart:151-169` | A fix that reports a bogus 0 km/h is strictly worse than no fix at all — the same cap that fails to reject walking also vetoes a real ride | **Fixed** (T048) — pending the device runs | `_calculateStartConfidence` returns `motionScore` alone when `location == null` (up to 1.0), but `motion × 0.6 + speed × 0.4` when a fix is present — so a fix scoring `speedScore` 0 caps the confidence at **0.60**, below the 0.7 threshold, whatever the sensors say. §6's L-079 correction derived this cap from a walking run, where suppressing a start was the *desired* outcome and it read as damping. On a real ride it is a veto. **Pixel**: 1 942 of 2 092 evaluations during the ride carried a fix, every one reading 0 km/h; the highest confidence of the whole outing is **0.586** — 98 % of the 0.6 motion weight, i.e. the sensors had recognised the pedalling perfectly — and the trip could not start, arithmetically. **iPhone**: 192 of 219 fixes read `sp` 0 during a 19 km/h ride; the departure fired only on a single isolated fix reporting 23.1 km/h at 17:22:03, the fix after it reading 0 again. The asymmetry is visible in the log itself: at 17:52:55, vélo à l'arrêt, one jolt (`mag` 17.3, `gyr` 1.8) with `_lastLocation` null produced `c` **0.754** and a `detecting` window — the only threshold crossing of the Pixel's day was a false positive at a standstill, on the motion-only path. → **T048** |
+| L-088 | platform · pipeline | `location_data.dart` ← geolocator Android | **`Position.speed` is 0 on every fix this Pixel produces**, whatever the fix is worth — and nothing can tell that from a rider standing still | **Handled** (T048); reframed 2026-09-03 | **The first wording was too narrow and is corrected here.** It read "the Pixel never obtained a GNSS fix — only network fixes", inferred from the 17:13 ride where 30 of 40 fixes exceeded 50 m accuracy on the round 100/200/300/500/600/700/800 m of the fused provider's cell ladder. The **morning** log of the same day refutes that cause while confirming the effect: on the 08:27→08:46 commute the receiver was excellent — 19 fixes at 14–43 m, a **median 11 m from the Strava track**, clocks agreeing to **+1.5 s** — and `sp` was still exactly 0 on all 23 of them, where Strava measured 12.7–34 km/h at those very points. Across four Pixel logs over two days: **159 fixes, not one with `sp > 0`**. `hd` says it from the other side — 0 on 100 % of Pixel fixes (Android's unset default) against `-1` on 207 of the iPhone's 237 (iOS's explicit invalid marker), and the 30 iPhone fixes carrying a real heading are exactly the 30 carrying a real speed. The defect is therefore neither the receiver nor the provider tier: `Location.hasSpeed()` is never consulted, the app is handed 0 for both "stationary" and "unknown", and through L-087 that zero vetoes the ride. → **T048** |
+
+### Medium
+
+| ID | Dim | Where | Finding | Status | Evidence |
+|---|---|---|---|---|---|
+| L-089 | pipeline | coordinator `trip_detection_coordinator.dart:847` | The start path reads `_lastLocation` at any age; the 10 s freshness rule exists but only the stop detector applies it | **Fixed** (T048) — pending the device runs | The finding §6 recorded in prose from the walking run ("no freshness check before `analyzeForTripStart`, though `stationaryGpsMaxAge` (10 s) exists and `TripStopDetector._freshSpeedKmh` applies it", `trip_stop_detector.dart:279`) now has a ride's numbers. On the Pixel, with fixes 30.7 s apart, **80 % of the 1 942 evaluations that carried a fix were scored against one older than the 10 s bound**, mean age 33.6 s. On the iPhone the fixes were fresh (mean 4.1 s, 7 % stale), which is what makes the two arms separable — see the note below. → **T048** |
+| L-090 | pipeline · platform | `gps_speed_estimator.dart` / `app_constants.dart` | T048's own derived-speed bound was fixed at 30 s against a 30 s Android update interval, so it could never fire on that platform | **Fixed** (same day) | Found by replaying the shipped estimator over the two Pixel logs. 0 derivations across both rides; 14 pairs of the morning commute, accurate to 14–43 m, refused for 30.7 s against a 30 s bound. `locationUpdateNormal` is exactly 30 s and `intervalDuration` is served with jitter; the other modes (40/60/90 s) are further above it still. §3.1 of T048 was an iOS-only fix by accident. Bound now scaled from the mode's own interval (`derivedSpeedMaxGapFactor` 1.5); after the fix the morning ride derives 14 speeds, 14/14 in the cycling band. Full account and the before/after decision replay in the remediation prose below. |
+
+### Low
+
+| ID | Dim | Where | Finding | Status | Evidence |
+|---|---|---|---|---|---|
+| L-091 | gates | recorder stop path audit emit | `trip stop` and `trip discard` are each written twice | Confirmed (device) | Pixel 2026-09-03: `trip {a:"stop", id:7}` at 08:59:55.976 and .991, identical payloads 15 ms apart; `trip {a:"discard", id:8}` at 11:13:28.072 and .091, 19 ms apart. Same class as the duplicate `perm`/`bat` lines L-086 raised, on a site T047's de-duplication did not cover — and worse to read, because a reader counting trips in a log counts two. → open, unassigned |
+| L-092 | pipeline | location stream / GPS gate | A 7 min 48 s hole in the fix stream with the gate open, covering the end of a ride | Confirmed (device) | Pixel 2026-09-03: `gate open motion` 08:26:45 → `close inactivityTimeout` 08:48:56, so the gate was open throughout; fixes stop at 08:40:42 and resume at 08:48:30, swallowing the last six minutes of a commute that ended 08:46:42. No `gps resub`, no `err`. Harmless on this run because no trip was active — but at 468 s it is within 2 minutes of `k.gpsLoss` (600), so the same hole during a ride would have come close to ending it through the L-074 watchdog. → open, unassigned |
+
+**Confirmed healthy on the same run**: iPhone background survival with the screen off (the trip started at 17:22 with the app `paused` since 17:15:08; heartbeats `n` 31, `mn` ≈ 1 542 = 49.7 Hz measured against 50 configured, no gap); the L-074 watchdog armed on `lastFix` at the start and disarmed at the stop; the three pauses of the iPhone trip are legitimate (`sd` 0.05–0.13 against `sdMax` 0.8, `src` `gps+vib`) and total 82 s, so 7 372 m over 1 385 s of movement = 19.2 km/h, consistent with `avg` 18.1; the FIT export wrote 164 points; no `aud overflow` on either phone.
+
+**Note — the three fixes of T048 compose; they are not one per device.**
+This note first said the opposite ("neither device is saved by the other's fix"), reasoning from
+the evening logs alone: the iPhone's lost fixes were accurate and fresh, so only a derived speed
+could save it, and the Pixel's evening positions walk backwards, so only the accuracy and age arms
+could save that one. The morning log supports the sharper statement. **Replayed over the 08:27
+commute, 16 consecutive pairs of accurate fixes out of 16 yield a derived speed in the cycling
+band** — 15.2 to 31.8 km/h, against Strava's own 12.7 to 34 at the same points. What matters is the
+order. Derivation alone would still have been vetoed, because the network fixes interleaved among
+the good ones give 93.5, 121.3 and 124.2 km/h, above `cycMax` and therefore `speedScore` 0 again;
+the accuracy arm alone puts every evaluation on the motion-only path L-079 describes as broken.
+Accuracy first, derivation on what survives: 16 of 16.
+
+**Consequence for §6's ordering decision.** §6 sequenced L-083 and the freshness gap *behind* L-079
+on the grounds that both would push 100 % of evaluations onto the motion-only path, which L-079
+describes as broken. That argument is unchanged for L-083 (the gate). It no longer holds as stated
+for the freshness gap: the 2026-09-03 run shows the same cap suppressing a **genuine** ride, so
+"leave the stale fix in place, it damps false starts" is now known to cost real departures as well.
+The trade-off is two-sided, not one-sided. T048 therefore ships ahead of L-079 rather than behind
+it — but it inherits L-079's risk in full, and its acceptance test must be *both* runs: the
+2026-09-02 shopping run (expect zero trips) and this ride (expect one trip, starting within a
+minute of 17:19). Fixing the veto without replacing the single-sample fit trades a missed ride for
+a false one, and only the pair of runs can show which way it went.
+
+**Fixed 2026-09-03, same day.** All three landed together, as §7 said they had to: one predicate
+(`LocationData.speedIsTrustworthyAt`) for L-088's accuracy arm and L-089's age arm, and one
+`GpsSpeedEstimator` applied at *ingestion* — before `_lastLocation` and before the pre-trip buffer —
+for L-087's derived speed, so the confidence and the riding-tail cut cannot disagree about how fast
+the rider is going. The accuracy threshold became its own constant (`speedTrustMaxAccuracyMeters`)
+rather than the `rpAcc` §7 proposed borrowing: same 50 m today, different question, free to move
+apart when a run says so. Two new log fields make the next pair of runs judgeable on the arithmetic
+instead of the outcome — `fix.dsp` (a speed was derived here) and `start.vt` (the fix was allowed to
+vote, so `c` is weighted rather than motion-only).
+
+**L-088's cause is untouched**, though the reframed row above narrows what that cause can be: the
+morning commute proves the receiver works, so what survives this task is not "why does the GNSS
+never engage" but why `speed` is never populated on Android — `Location.hasSpeed()`, and the
+accuracy actually requested in `normal` mode (`adaptive_location_settings.dart`). T048 only stops
+such a fix from casting the deciding vote.
+
+**L-090 — a fixed gap bound could never fire on Android, and the first build of T048 shipped one.**
+Found the same evening by replaying the shipped estimator over the two Pixel logs rather than by
+reading it: `derivedSpeedMaxGap` was a constant 30 s, against an `AppConstants.locationUpdateNormal`
+of exactly 30 s. `intervalDuration` is a request the OS serves with jitter, so every Android gap
+lands just above it — 30.7 and 30.8 s in these files — and the estimator derived a speed **0 times
+across both rides**. Fourteen pairs of the morning ride, accurate to 14–43 m and a median 11 m from
+the Strava track, were refused for **0.7 seconds**. The other modes are worse: 40, 60 and 90 s are
+all above a 30 s bound. §3.1 of T048 was therefore, as shipped, an **iOS-only fix by accident** —
+iOS ignores `intervalDuration` and delivers on the distance filter, 6 to 15 s apart, which is why
+the same replay derives 7 speeds in the iPhone's three lost minutes and 97 during its trip. The
+unit test pinning `maxGap + 1` passed throughout: it encoded the bound faithfully, and the bound was
+the defect. Fixed by scaling it from the mode's own interval
+(`PowerModeConfig.derivedSpeedMaxGap` = `locationUpdateInterval × derivedSpeedMaxGapFactor`, 1.5),
+which is what makes it a bound rather than a coincidence; the header carries `k.dspFac` and the
+effective value is `pwr.ui × k.dspFac`. Re-replayed after the fix: the Pixel morning ride derives
+**14 speeds, 14 of 14 in the cycling band**, the evening ride still derives essentially nothing
+(1 — the accuracy arm keeps the cell ladder out, as intended), and the iPhone is unchanged at 7 and
+97. Tests 701 → 702.
+
+**What the replay settles in advance, and what it cannot.** Replaying the whole start decision —
+motion score recomputed from each `start` line's `mag`/`gyr`, threshold 0.7, one detection per
+second, three inside five — over the Pixel's morning commute:
+
+| | departure |
+|---|---|
+| before T048 (every present fix votes) | **none**, 0 of 1 302 evaluations reach 0.7 |
+| T048 as first shipped (fixed 30 s bound) | 08:31:48, 68 crossings — the derived speed contributing nothing |
+| T048 with the scaled bound | **08:31:05**, 95 crossings |
+
+So T048 turns "never detected" into "detected", which is the point, and the corrected bound buys 43
+seconds and 27 more crossings on this ride — a smaller gain than the headline, because the freshness
+arm alone already carries Android. It matters more than 43 seconds suggests: without a derived
+speed no buffered Android fix ever reaches `cycMin`, so the riding-tail cut has nothing to find and
+the back-date stays at 0 on that platform for ever.
+
+**The 4-minute lateness is L-079's, not T048's.** Mean `mag` over the commute is 10.49 m/s² against
+a cycling band centred on 15 (`cyclingAccelerationMin`/`Max` = 10/20), giving `accelScore` ≈ 0.10: a
+phone in a pocket on a bike lives near 1 g, and the band was calibrated for something else. The
+threshold is crossed only on outlying samples. And the replay confirms the phantom survives — the
+walk after arrival still fires at **08:52:52** — which is the same finding from the other side and
+exactly what §6 keeps for L-079.
+
+**Nothing here is closed until the two runs of T048 §5.** The risk §7 inherited from L-079 is
+unchanged: every one of the three fixes moves evaluations onto the motion-only path, and the unit
+tests can only pin the arithmetic (a walk carrying an untrusted fix still does not start a trip).
+Whether a pocket on a bus produces three seconds of cycling-shaped motion is a question for the
+2026-09-02 shopping run repeated, not for a test.

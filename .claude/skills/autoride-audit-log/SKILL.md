@@ -54,9 +54,9 @@ short; the table below is the whole vocabulary.
 | `sess` | Coordinator session | `a` = start/stop/suspend; `trip` (active trip) on a start, `why` = deferredUntilTripEnds on a deferred stop |
 | `st` | Trip state transition | `f` (from) `to` |
 | `gate` | Motion-gated GPS | `a` = open/sched/close; `why` = trip/motion (open), stationary (sched), inactivityTimeout/stop/session/dispose (close); `in` (s) on a sched |
-| `fix` | GPS fix | `lat` `lon` `ac` m `sp` **m/s** `al` `hd` `gt` (provider time) |
+| `fix` | GPS fix | `lat` `lon` `ac` m `sp` **m/s** `al` `hd` `gt` (provider time). `sp` is always what the OS said; `dsp` **m/s** appears only where T048 derived a speed from the displacement since the previous fix and the pipeline used *that* — so `dsp` present means `sp` was 0 or invalid |
 | `hb` | Heartbeat, every 30 s | `n` ticks, `mn` motion samples the pipeline processed, `dr` samples the rate hold dropped, `fn` fixes, `dt` ms, `hz` configured sampling rate. `mn / (dt / 1000)` is what the pipeline ran at; `(mn + dr) / (dt / 1000)` is what the OS delivered, and that is the figure to compare with `hz` (L-086, T045) |
-| `start` | Trip-start evaluation | `c` confidence, `n` streak, `go`, `mag` `gyr` `spk` |
+| `start` | Trip-start evaluation | `c` confidence, `n` streak, `go`, `mag` `gyr` `spk`, `vt`. `vt` false means the fix was too coarse (`k.spAcc`) or too old (`k.spAge`) for its speed to be believed, so `c` is motion-only and `spk` did **not** enter it (T048); absent when there was no fix at all |
 | `dto` | Detection window timed out | `el` s, `n` streak at timeout |
 | `cool` | Start cooldown | `a` = arm (`d` s, `why` = falseStart) / expire (`d` s). Armed only by a recording discarded for being **too short** — a long one discarded for want of route points is a GPS failure, not a false start (L-081) |
 | `win` | Stationary window (**verbose**) | `n` `sd` m/s² `gy` rad/s `sta` `src` = gps/gps+vib/sensors `spk` km/h. Throttled to 1 Hz; every change of `sta` or `src` is kept (L-085) |
@@ -77,7 +77,14 @@ short; the table below is the whole vocabulary.
 | `log` | Bridged from `Logger` | `lv` = d/i/w/e, `tag` `m` |
 | `err` | Error | `tag` `m` `ex` `st` (top 3 frames) |
 
-Speeds: `fix.sp` is **m/s**; `win.spk`, `start.spk`, `rp.spk` are **km/h**.
+Speeds: `fix.sp` and `fix.dsp` are **m/s**; `win.spk`, `start.spk`, `rp.spk` are
+**km/h**.
+
+**Reconstructing `start.c`.** `c` is `mag`/`gyr` scored alone when `vt` is false
+or absent, and `mot × k.wMot + speed × k.wSpd` only when `vt` is true. Reading
+every line the second way — as was natural before T048 put `vt` in the file —
+attributes a motion-only score to a speed that never voted, and is how a fix
+that vetoed a whole ride (L-087) can be made to look like corroboration.
 
 **Two clocks, one pause.** `stop.so` / `res.so` count from the *stationary
 onset*; `trip.pau` counts from the state machine's *pause transition*, which
@@ -233,7 +240,8 @@ says what the countdown runs from — a slow first fix must not end a ride), the
 
 **Item 11 — the trip starts where the riding started.** Take `bdate` and the
 `fix` lines before it. The prefix should open at the first fix with
-`sp*3.6 ≥ k.cycMin`; check `ts` matches it and that the walk to the bike (fixes
+`(dsp ?? sp)*3.6 ≥ k.cycMin` — on a build before T048, or a provider that
+reports its own speed, that is just `sp`; check `ts` matches it and that the walk to the bike (fixes
 below that speed) is *before* `ts`. After a long stop, expect `gate close` then
 a `trip start` with no `bdate` (or `k:0`). This is the item where the Strava
 cross-reference is worth the most.
@@ -268,3 +276,12 @@ cross-reference is worth the most.
   on a *change*, and its comparison against an uninitialised provider state
   threw on the first build of a cold start — precisely the launches worth
   explaining.
+- **`dsp` absent across a whole run is a finding, not a formatting detail.** The
+  derived speed only fires between two fixes that are accurate (`k.spAcc`),
+  displaced further than their own accuracy, and **between `k.dspMin` and
+  `pwr.ui × k.dspFac` apart**. That last bound is a multiple of the update
+  interval the power mode requests, and not a fixed duration, because T048's
+  first build used a fixed 30 s against an Android `locationUpdateNormal` of
+  exactly 30 s: fixes arriving 30.7 s apart were all refused, and two Pixel
+  rides derived nothing at all. So on a run with no `dsp`, check `pwr.ui`
+  against the real fix cadence before concluding the provider was healthy.

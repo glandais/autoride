@@ -412,6 +412,26 @@ acceptance test. **Diagnosis only at this stage — no solution has been chosen 
   - *Estimate*: half a session
 
 - *Recommended order* (as executed): T047 → T044 (L-080) → T044 (L-081) → T045 (rate hold) → **L-079** → L-083 and the rest, which all wait on it → T046 (decision first). Ledger §6 says why, and holds the T045 decision paragraph.
+  **Superseded for the freshness gap by T048** — see §11.3 and ledger §7.
+
+### 11.3 Field findings — first ride with the log on (2026-09-03)
+
+The mirror image of the control run above: a real 7.4 km ride, both phones in a pocket, both on
+1.0.0+9, verbose. Expected: one trip each. Observed: the iPhone recorded one **three minutes and
+~1.3 km late**, the Pixel recorded **none**. Both failures are the same arithmetic §11.2 already
+described from the other side — diagnoses in ledger §7 (L-087…L-089).
+
+- ⏳ **T048**: Trusting a GPS Fix — a bad speed must not veto a real ride
+  - *Status*: the three fixes are **implemented and green** (`./check.sh`, 701 tests); the task stays open on its acceptance, which is two device runs and nothing less. See `tasks/T048-gps-speed-trust.md` §8 for what landed and the two design decisions §3 had left open (the accuracy threshold is its own constant, not `rpAcc`; the derived speed is applied at ingestion so the confidence and the riding-tail cut cannot disagree).
+  - *Detail*: `tasks/T048-gps-speed-trust.md`; ledger L-087, L-088, L-089
+  - *Scope*: three fixes around one defect. A fix present and reporting < `cycMin` caps the start confidence at `motion × 0.6 = 0.60`, below the 0.7 threshold, whatever the sensors say — so **no fix scores higher than a bad fix** (L-087). (1) derive the speed from consecutive positions when `LocationData.speed` is 0 or invalid, for the confidence *and* for the pre-trip buffer's riding-tail cut, which is why the back-date recovered 3 s instead of 1.3 km; (2) treat a fix less accurate than the speed can justify as `location == null` rather than as zero speed (L-088); (3) apply `stationaryGpsMaxAge` on the start path, where only `TripStopDetector` applies it today (L-089). (2) and (3) are the accuracy arm and the age arm of one predicate and should land as one.
+  - *Evidence*: Pixel — highest confidence of the entire ride **0.586** against a 0.7 threshold, i.e. 98 % of the available motion weight and a departure that was arithmetically impossible for 25 minutes; 30 of its 40 fixes above 50 m accuracy, 29 of them on the round 100/200/300/500/800 m of the fused provider's cell ladder; 80 % of its evaluations scored against a fix older than 10 s. iPhone — 192 of 219 fixes reading `sp` 0 on a 19 km/h ride, the departure firing on one isolated fix at 23.1 km/h. **Checked**: the three fixes are not redundant — the iPhone's lost fixes were accurate and fresh (only (1) saves it), the Pixel's positions are too noisy to derive a speed from (only (2)/(3) save it).
+  - *Dependencies*: T041, T043
+  - *Ordering*: **ahead of L-079, and it inherits L-079's risk in full.** Ledger §6 sequenced the freshness gap behind L-079 because removing a stale fix pushes every evaluation onto the motion-only path; that assumed the cap only ever suppressed *false* starts, and this run shows it suppressing a genuine ride. The trade-off is two-sided — but every one of the three fixes still moves evaluations onto the path that scored a jolt at a standstill 0.754.
+  - *Acceptance*: **both** runs, on a post-T047 build at verbose — the 2026-09-02 shopping run (zero trips) *and* this ride (one trip per phone, starting within a minute of the real departure). Run 1 alone passes by doing nothing; run 2 alone passes by deleting the speed layer.
+  - *Cross-refs*: L-011 and L-079 (the single-sample fit T048 leans on harder without improving), L-083, T041 item 11
+  - *Estimate*: 1 session for the three fixes (done), then the two device runs
+  - *Also found, not in scope*: the Pixel obtained **no GNSS fix at all** in 25 minutes of riding (L-088's cause, as opposed to its handling) — a separate look at `adaptive_location_settings.dart` and the accuracy actually requested in `normal` mode; and a `TripRecorderService` error deleting a discarded trip that was never written (`Trip not found: 8`), a discard path that matters more since T044's L-081 half.
 
 ---
 
@@ -450,15 +470,15 @@ acceptance test. **Diagnosis only at this stage — no solution has been chosen 
 
 ## Progress Summary
 
-**Total Tasks**: 47
+**Total Tasks**: 48
 **Completed**: 26
-**In Progress**: 9 (T006, T013, T030, T037, T038, T039, T041, T042, T043)
+**In Progress**: 10 (T006, T013, T030, T037, T038, T039, T041, T042, T043, T048)
 **Pending**: 12
 **Blocked**: 0
 
 **Current Phase**: Phase 10 - Release Preparation, alongside the Phase 11 audit backlog and the Phase 12 export work
-**Last Completed**: T047 - audit log cost and honesty (2026-09-02); T044's L-080 and L-081 halves and T045's sampling-rate half the same day
-**Current Task**: T044–T046 (Phase 11.2) — the 2026-09-02 control run without a ride produced four 0 m trips on the Pixel and an invisible outing on the iPhone; ledger §6 holds the diagnoses. T047 is done, so the next verbose run keeps its own header; T044's L-080 half is closed (one departure can no longer become two trips) and its L-081 half too (a recording with no route points is deleted, not saved). T045's rate half is done too (and its L-082 finding withdrawn as a misdiagnosis). What remains is one cluster rather than four tasks: **L-079**, the single-sample fit, and behind it L-083, the `_lastLocation` freshness gap and the safety-net half of L-081 — all of them wait on the detector. Then T046. Then T039/T041 — iOS release is 2 blockers from submittable (build attach + screenshots); T041 device validation under way (first iPhone run done: prompts OK, one crash found and fixed — see `tasks/T041-device-validation.md`). T038 open on manual Play Console setup; T037 open (§5.6/§5.7).
+**Last Completed**: T047 - audit log cost and honesty (2026-09-02); T044's L-080 and L-081 halves and T045's sampling-rate half the same day. **T048 opened 2026-09-03** (diagnosis only) from the first ride run — ledger §7.
+**Current Task**: **T048** (Phase 11.3), then T044–T046 (Phase 11.2). The 2026-09-03 ride run turned the cluster around: the confidence cap ledger §6 read as *damping false starts* is a **veto on real ones** — the Pixel peaked at 0.586 against a 0.7 threshold for 25 minutes of genuine pedalling and recorded nothing, the iPhone started three minutes and 1.3 km late. T048 holds the three fixes (derived speed, an unusable fix treated as no fix, the 10 s freshness rule on the start path) and now runs **ahead** of L-079 rather than behind it, inheriting its risk — its acceptance test is both the shopping run and the ride. Behind it: **L-079**, the single-sample fit, then L-083 and the safety-net half of L-081, then T046. Then T039/T041 — iOS release is 2 blockers from submittable (build attach + screenshots); T041 device validation under way (items 1, 8, 9 and the pause logic settled on the iPhone by the 2026-09-03 log; item 11 blocked on T048). T038 open on manual Play Console setup; T037 open (§5.6/§5.7).
 **Next Task**: T039 - iOS Release Configuration (T038 now owns the version scheme and `publish_beta.sh`, so T039 can extend both)
 **Audit backlog**: `tasks/AUDIT-FINDINGS.md` (2026-06-17) and `tasks/LEDGER.md` (2026-08-31) record open defects that are not otherwise tracked here; the blocked core-pipeline cluster is T041.
 
@@ -504,5 +524,5 @@ acceptance test. **Diagnosis only at this stage — no solution has been chosen 
 
 ---
 
-**Last Updated**: 2026-09-02
+**Last Updated**: 2026-09-03
 **Version**: 1.2
