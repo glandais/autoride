@@ -192,8 +192,10 @@ iPhone 881 / **77 401** / 4.
 
 ## 3. Scope
 
-Four fixes. §3.1 is the one that matters; the rest are the defences that should
-have caught it and did not.
+Five fixes. §3.1 is the one that matters; §3.2 and §3.3 are the defences that
+should have caught it and did not; §3.4 makes the log readable and §3.5 —
+added from a later export of the same session — is the race §3.4's throttle
+was hiding.
 
 ### 3.1 Bracket the detection window instead of sliding it (L-093)
 
@@ -238,6 +240,36 @@ net-displacement arm is likely the safer of the two.
 Whatever lands, `trip {a:"discard"}` must carry the reason, the way `n` was
 added for L-081. A discard the log cannot explain is a bug report nobody can
 answer.
+
+### 3.5 One decision, one ending (L-097)
+
+Found after the fact, in a log exported an hour later on the same session, and
+it is §3.4's other half. The throttle was the *line*; this is the evaluation
+underneath it.
+
+Pixel trip 4, 21:31:03: three `pauseTrip` decisions 17 ms apart, then **two**
+`stopTrip` at `.265` and `.281`, each running the whole teardown —
+
+```
+21:31:03.265  trip discard id=4 dur=124 n=1
+21:31:03.282  trip discard id=4 dur=124 n=1     ← the same ride, again
+21:31:03.296  err  Failed to delete discarded trip 4
+                   TripRepositoryException: Trip not found: 4
+```
+
+`stopRecording`'s only guard is `_activeTrip == null`, and `_activeTrip` is
+cleared at the *end* of `_stopRecording` — after the final flush, the audit line
+and the delete. Every caller arriving in that window passes the check. This is
+**L-080 exactly, on the other end of the ride**.
+
+Benign on a discarded trip; on a kept one the second pass writes `updateTrip`
+twice, emits a second `trip stop` and calls `TripStateMachine.stopTrip` again —
+a second "trip recorded" notification for one ride.
+
+Claim the ending synchronously, before the first `await`, at **both** levels:
+the coordinator (so the ending stays one decision — one detector reset, one
+session restart) and the recorder (which the Stop button and the notification
+action reach without going through the coordinator).
 
 ### 3.4 Throttle a repeated decision, not just `continueTrip` (L-096)
 

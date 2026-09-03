@@ -128,6 +128,18 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
   /// and one `start` in the log per departure.
   bool _startInFlight = false;
 
+  /// The same claim on the stop side (L-097).
+  ///
+  /// The paused branch runs `analyzeForTripStop` on **every motion sample**, so
+  /// a `stopTrip` decision repeats until the state machine has actually left
+  /// the pause — and `_finalizeAndStopTrip` awaits the recorder before anything
+  /// changes phase. On 2026-09-03 two samples 17 ms apart both reached it: the
+  /// discard was journalled twice and the second pass tried to delete a row the
+  /// first had already deleted (`Trip not found: 4`). L-096 throttled the
+  /// *line*; the evaluation underneath it was still at 50 Hz, so this is the
+  /// L-080 defect exactly, on the other end of the ride.
+  bool _stopInFlight = false;
+
   // Heartbeat counters (T043). Three integers every 30 s, and they are what
   // makes a gap in the audit log readable at all: `n < expected` means the OS
   // froze the 1 Hz timer (the process was suspended), while `n` intact with
@@ -226,8 +238,9 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
     _isAnalyzing = true;
     // Belt and braces against a claim that outlived its session: nothing else
     // clears it, and a stuck claim would silently stop this coordinator from
-    // ever starting a trip again.
+    // ever starting — or ending — a trip again.
     _startInFlight = false;
+    _stopInFlight = false;
 
     // A detection session owns its own lifetime (audit #2).
     _releaseSessionLink ??= ref.keepAlive().close;
@@ -1203,6 +1216,22 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
 
   /// Finalize trip data and stop trip
   Future<void> _finalizeAndStopTrip() async {
+    // One decision, one ending (L-097). Claimed synchronously, before the first
+    // `await`: every sample arriving while the recorder is finalizing still
+    // reads a paused state machine and still decides `stopTrip`, and without
+    // this each of them runs the whole teardown again — a second `trip
+    // discard` in the log, a second `deleteTrip` on a row that is gone, two
+    // detector resets and two session restarts.
+    if (_stopInFlight) return;
+    _stopInFlight = true;
+    try {
+      await _finalizeAndStopTripInner();
+    } finally {
+      _stopInFlight = false;
+    }
+  }
+
+  Future<void> _finalizeAndStopTripInner() async {
     // Captured up front: stopping the recording flips the state machine to
     // idle, which lets `_onTripStateChanged` clear the flag before the check
     // below is reached — and the session would then be restarted anyway.

@@ -78,13 +78,20 @@ class _FakeTripRepository extends TripRepository {
     return withId;
   }
 
+  /// Held open to keep a stop suspended mid-teardown, the way the real one is
+  /// suspended by its database write — the window a second stop used to walk
+  /// straight into (L-097).
+  Completer<void>? finalWriteGate;
+
   @override
   Future<void> deleteTrip(int tripId) async {
+    await finalWriteGate?.future;
     deletedTripIds.add(tripId);
   }
 
   @override
   Future<void> updateTrip(Trip trip) async {
+    await finalWriteGate?.future;
     updatedTrips.add(trip);
   }
 
@@ -478,6 +485,57 @@ void main() {
         expect(machine.stopTripDiscardedFlags, isEmpty);
       },
     );
+
+    test('a second stopRecording during the first one\'s final write is a '
+        'no-op (L-097)', () async {
+      final recorder = await readRecorder();
+      fakeRepository.backdateStartBy = const Duration(minutes: 5);
+      await startTrip(recorder, confidenceScore: 0.9);
+      await pushFix(_fix(0));
+      await pushFix(_fix(20));
+
+      // Where the 2026-09-03 double discard came from: the paused branch
+      // decides `stopTrip` on every motion sample, and `_activeTrip` is only
+      // cleared once the teardown is over. Two samples 17 ms apart both ran it,
+      // and the second deleted a row the first had already deleted
+      // (`Trip not found: 4`).
+      fakeRepository.finalWriteGate = Completer<void>();
+      final first = recorder.stopRecording();
+      await pumpEventQueue();
+
+      expect(fakeRepository.updatedTrips, isEmpty);
+      await expectLater(recorder.stopRecording(), completion(isNull));
+
+      fakeRepository.finalWriteGate!.complete();
+      final finalTrip = await first;
+      await pumpEventQueue();
+
+      expect(finalTrip, isNotNull);
+      expect(fakeRepository.updatedTrips, hasLength(1));
+      final machine = container.read(
+        tripStateMachineProvider.notifier,
+      ) as _TestTripStateMachine;
+      expect(machine.stopTripDiscardedFlags, hasLength(1));
+    });
+
+    test('a repeated stop on a discarded recording deletes the row once '
+        '(L-097)', () async {
+      final recorder = await readRecorder();
+      await startTrip(recorder, confidenceScore: 0.9);
+
+      // The shape actually logged: a discard, so the second pass would call
+      // `deleteTrip` on an id that is gone.
+      fakeRepository.finalWriteGate = Completer<void>();
+      final first = recorder.stopRecording();
+      await pumpEventQueue();
+      await expectLater(recorder.stopRecording(), completion(isNull));
+
+      fakeRepository.finalWriteGate!.complete();
+      await first;
+      await pumpEventQueue();
+
+      expect(fakeRepository.deletedTripIds, equals([1]));
+    });
 
     test('stopRecording persists final trip and resets metrics', () async {
       final recorder = await readRecorder();

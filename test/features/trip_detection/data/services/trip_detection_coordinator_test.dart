@@ -136,6 +136,12 @@ class _RecorderLog {
   /// born, and it exists only while that future is pending.
   Completer<void>? startGate;
 
+  /// The same, on the stop side: holds `stopRecording` open the way the real
+  /// one is held open by its final flush and database write. The state machine
+  /// is still `paused` for as long as that future is pending, which is the
+  /// window every motion sample used to walk into (L-097).
+  Completer<void>? stopGate;
+
   /// Makes `stopRecording` hand back a trip flagged `discarded`, as the real
   /// recorder does for a ride shorter than `minTripDurationSeconds` (L-068) or
   /// one with too few route points to be a record of anything (L-081).
@@ -184,6 +190,7 @@ class _SpyTripRecorderService extends TripRecorderService {
   @override
   Future<Trip> stopRecording() async {
     log.stopCalls++;
+    await log.stopGate?.future;
     ref.read(tripStateMachineProvider.notifier).stopTrip();
     return Trip(
       id: 1,
@@ -2365,6 +2372,31 @@ void main() {
               .fieldsOf('stop')
               .where((f) => f['d'] == 'stopTrip');
           expect(stops, hasLength(1));
+        });
+
+        test('a trip is only ended once, however many samples decide it '
+            '(L-097)', () async {
+          await startTrip();
+          container.read(tripStateMachineProvider.notifier).pauseTrip();
+          sink.clear();
+
+          // The paused branch runs `analyzeForTripStop` on every motion sample,
+          // and the state machine stays `paused` until the recorder has
+          // finished tearing the ride down. On 2026-09-03 two samples 17 ms
+          // apart both reached `_finalizeAndStopTrip`: two `trip discard` lines
+          // for one ride, and a `deleteTrip` on a row the first pass had
+          // already deleted.
+          recorder.stopGate = Completer<void>();
+          stopDetector.decision = StopDecision.stopTrip;
+          await pushMotion(1);
+          coordinator.advance(const Duration(milliseconds: 17));
+          await pushMotion(2);
+
+          // Still one, and the gate is deliberately left pending: the claim is
+          // what the assertion is about, and completing it here would let the
+          // teardown-and-restart cycle run against a container the test is
+          // about to dispose.
+          expect(recorder.stopCalls, 1);
         });
 
         test('a resume decision is never dropped', () async {

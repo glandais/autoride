@@ -125,6 +125,15 @@ class TripRecorderService extends _$TripRecorderService {
   void Function()? _closeStateMachineSubscription;
   LocationData? _lastLocation;
 
+  /// Set synchronously by [stopRecording] before its first `await`, and the
+  /// reason a repeated stop is a no-op rather than a second teardown (L-097).
+  ///
+  /// `_activeTrip` cannot answer this on its own: it is cleared at the *end* of
+  /// [_stopRecording], after the final flush, the audit line and the delete, so
+  /// a second call arriving in that window passes the null check and replays
+  /// the whole path. Mirrors the start side's claim (L-080).
+  bool _stopInFlight = false;
+
   /// First route point kept by this recording, against which the last one is
   /// measured to give the net displacement the discard rule needs (L-095).
   /// Kept as a fix rather than recomputed from the database so the rule is
@@ -415,15 +424,27 @@ class TripRecorderService extends _$TripRecorderService {
   /// error. It used to throw a `StateError` that all three call sites either
   /// logged and swallowed or — in the tracking screen — let escape into an
   /// unhandled async error, so nothing ever depended on the exception (L-074).
+  ///
+  /// The `null` also covers a stop that is *already running* (L-097): the trip
+  /// is only cleared at the end of the teardown, so a second caller arriving
+  /// during the final flush would otherwise replay all of it.
   Future<Trip?> stopRecording() async {
     if (_activeTrip == null) {
       _logger.warning('stopRecording() called with no active trip - ignoring');
       return null;
     }
+    if (_stopInFlight) {
+      _logger.warning(
+        'stopRecording() called while one is in flight - ignoring',
+      );
+      return null;
+    }
+    _stopInFlight = true;
 
     try {
       return await _stopRecording();
     } finally {
+      _stopInFlight = false;
       // Release the session on every exit path, including failures: nothing is
       // recording any more, so the provider may be disposed normally again.
       _closeSession();
