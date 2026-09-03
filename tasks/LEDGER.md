@@ -840,6 +840,27 @@ session costs over a day, and whether a relaunch actually fires on this phone, a
 questions — T041 item 4 and the five-run protocol in the T046 task file. Nothing here is
 closed until those run.
 
+**Decision (2026-09-03) — T048 and T049 ship on one build, and the attribution is traded away
+knowingly.**
+
+T049 §5 puts the choice to the rider: T048's three fixes move evaluations *onto* the motion-only
+path and T049's four tighten what that path may conclude, so running them on one build costs one
+device session and confounds which change owns which outcome, while separate builds cost two and
+separate it.
+
+**One build.** Two reasons, and the first one is decisive: T048 is already shipped — 1.0.0+10 is
+the build §8 was recorded on — so "separate builds" is not a sequencing choice at all, it is a
+revert of shipped code onto a throwaway build. The second is that the two acceptance runs already
+cover both tasks as they stand: T049's run 1 (an hour of indoor activity, zero trips) *is* the
+control run T048 §5 asks for, and T049's run 2 (a real ride, one trip per phone within a minute
+of departure, route matching a parallel Strava recording) *is* T048's acceptance run.
+
+What is given up, stated so it is not rediscovered as a surprise: if run 2 fails to start a trip,
+the log cannot say on its own whether the streak rule (L-093) is now too tight or T048's speed
+trust never fired. The `start` lines carry `n`, `c` and `vt`, which is what would have to be read
+to tell them apart — a streak that reaches 2 and dies is L-093's cost; one that never reaches 1 is
+the confidence, i.e. T048's half.
+
 
 ---
 
@@ -966,3 +987,119 @@ unchanged: every one of the three fixes moves evaluations onto the motion-only p
 tests can only pin the arithmetic (a walk carrying an untrusted fix still does not start a trip).
 Whether a pocket on a bus produces three seconds of cycling-shaped motion is a question for the
 2026-09-02 shopping run repeated, not for a test.
+
+---
+
+## 8. Field findings — 2026-09-03 evening, a meal cooked at home (build 1.0.0+10)
+
+**Source**: two verbose audit logs exported the same evening, both phones lying in the kitchen,
+19:38→21:27 CEST, 109 minutes — Pixel 6a / Android 17 (`autoride-audit-20260903-2125.ndjson.gz`,
+104 796 lines) and iPhone 14,3 / iOS 26.6.1 (`autoride-audit-20260903-2127.ndjson.gz`,
+93 556 lines). Both on **1.0.0+10**, i.e. after T044/T045/T047 and after T048's shipped fixes —
+so unlike §7 this is a post-remediation run and the flood it still shows (L-096) is a *new*
+finding, not L-085 unremediated.
+
+The rider cooked a meal and did nothing else. The only correct outcome is zero trips on each
+phone. The Pixel started **4** and persisted **2** as cycling rides; the iPhone started **6** and
+discarded all six. This is the mirror image of §7 — there, a real ride that could not start; here,
+a kitchen that did — and the two share a cause, in that every fix §7 made moves evaluations onto
+the motion-only path that §8 shows firing on gestures. → **T049**
+
+### High
+
+| ID | Dim | Where | Finding | Status | Evidence |
+|---|---|---|---|---|---|
+| L-093 | pipeline | `trip_start_detector.dart:97` / `trip_start_state.dart:46` | The detection window **slides on every hit**, so `consecutiveDetections` counts neither consecutive detections nor detections within a fixed window | **Fixed** (T049) — pending the device runs | `lastDetectionTime = now` is reassigned on each positive detection and `isWithinDetectionWindow` compares `.inSeconds <= 5` (truncating, so the real bound is 5.99 s). The streak therefore survives any number of near-zero samples provided a spike lands within 6 s of the previous one — up to 18 s of wall clock for a 3-detection threshold documented at `trip_start_detector.dart:28` as "seconds of sustained cycling". **All ten false starts across both phones are this signature**, with no other cause present. Pixel trip 3 is the clearest: `c=0.834 n=2` at 21:33:22, then 0.203 / 0 / 0 / 0.273 / 0.156 across five consecutive seconds with `n` **unchanged at 2**, then `c=0.803 n=3 go` at 21:33:27 — 5.35 s later. iPhone trip 4: a 4.68 s gap. Intervals between the streaks' own positive detections, all ten starts: **1.03–5.35 s**, mean 2.1 s; not one start has three detections in three consecutive seconds. Three firm gestures in twelve seconds of cooking clear it. → **T049 §3.1** |
+| L-094 | pipeline | `trip_recorder_service.dart:706` + `:722` | GPS drift becomes recorded distance: the accuracy filter (50 m) and the route-point distance threshold (15 m) are independent, and one is three times the other in the wrong direction | **Fixed** (T049) — pending the device runs | A fix whose own uncertainty is 19–35 m clears a 15 m displacement gate on noise alone, and nothing compares the displacement to the confidence in it. Pixel trip 2 is **182.99 m over 930 s from 9 points that all sit inside a ~40 m square** around the house (47.22965–47.22988, −1.61437 −1.61387): `rp keep d=18.2 ac=33.5`, `d=62.8 ac=28.7`, `d=117.6 ac=35.1`, `d=182.9 ac=19.3`. Trip 3 is 68.47 m from 4 points on the same square. This is what separates the two phones on this run — the iPhone made the same false starts but received no fix at all during them, so the L-074 watchdog discarded each for having nothing in it. **The iPhone passes by accident, and the Pixel's two rides are in the database.** → **T049 §3.2** |
+
+### Medium
+
+| ID | Dim | Where | Finding | Status | Evidence |
+|---|---|---|---|---|---|
+| L-095 | pipeline · gates | `trip.dart:172` `isRideWorthKeeping` | The last line of defence tests duration and point count, and never asks whether the ride went anywhere | **Fixed** (T049) — pending the device runs | `duration >= 60 && routePointCount >= 2`, nothing else — no speed arm, no net-displacement arm, though `cyclingSpeedMinKmh` (8) exists. Pixel trip 2 clears it at 930 s / 9 points with **avg 0.708 m/s = 2.5 km/h**; trip 3 at 617 s / 4 points with **0.4 m/s = 1.4 km/h**. Both are written as `act: "cycling"`. A 183 m trip whose endpoints are 20 m apart is kept because it lasted a quarter of an hour. On this run it was the only defence that could still have fired after L-093 and L-094; it did not. Note the asymmetry with the cooldown, which *did* work — two `cool {a:"arm", why:"falseStart"}` on the iPhone's 31–32 s trips — because it is armed by the duration floor and so never sees a 930 s false trip. → **T049 §3.3** |
+| L-096 | audit | `trip_detection_coordinator.dart:1119` | The `stop` throttle exempts every decision that is not `continueTrip`, so a **paused** trip re-emits `pauseTrip` at the sample rate | **Fixed** (T049) — pending the device runs | **32.3 `stop` lines per second** against `evalMs` 1000: Pixel 88 208 lines (83 % of the file), iPhone 77 401 (83 %), every one of them `pauseTrip`. Decision counts — Pixel 1 693 `continueTrip` / 88 208 `pauseTrip` / 1 `stopTrip`; iPhone 881 / 77 401 / 4. The docstring's reasoning ("a decision other than `continue` is what the reader is looking for") holds for an *active* trip, where a non-continue decision is a transition; once the trip is paused the repeated decision is `pauseTrip`, never `continueTrip`, and the exemption lets every motion sample through for the length of the pause. **L-085 closed this class for the active case and left the paused one** — same defect, same file, one build later. Fix is to key the exemption on the previous decision rather than a hardcoded one. → **T049 §3.4** |
+
+### Confirmed, not new
+
+**L-088 at rest.** `vt: false` on **100 %** of evaluations on both phones; every fix carries
+`sp: 0` (29/29 Pixel), and `dsp` is derived 5 times in 109 minutes because the fixes are 30–120 s
+apart. So `c` was **motion-only on every single evaluation of this run**, the `wSpd` weight (0.4)
+was inert throughout, and a 0.7 threshold was crossed by wrist movement — `mag` 12.8–16.2 m/s²,
+`gyr` 1.4–2.0 rad/s, against a standing baseline of 9.82 / 0.005. No `pwr` event appears in either
+log, so `pwr.ui` could not be checked against the fix cadence and the `dsp` scarcity is stated as
+spacing, **not** as L-090 regressing.
+
+This is the tension T049 §5 has to resolve and the reason it cannot be judged apart from T048:
+T048's remedy moves *more* evaluations onto the motion-only path, and §8 is that path producing
+false starts. Tightening the streak (L-093) is what buys the room T048 spent.
+
+### The blue indicator, quantified
+
+The rider's report — *« heure très souvent bleue »* — is L-093's cost, not a gate defect. The
+iPhone held the GPS gate open **42.8 of 109 minutes (39 %)**, and the `why` on each close says
+where it went: five `inactivityTimeout` closes totalling 3.8 min — the gate working exactly as
+designed — and **five `session` closes totalling 39.0 min**, each one a false trip holding the
+gate open from its start to its discard, 5.5 to 12.8 minutes at a time. A trip legitimately holds
+the gate; the finding is that the gate was told a ride was in progress. Fixing L-093 removes 91 %
+of the open time on this run without touching the gate.
+
+**Battery is not measurable from this run and must not be quoted**: iPhone 55 % → 50 % over the
+period is one 5 % step of iOS's own reporting resolution, on a verbose log. T041 item 4 is
+unaffected.
+
+### What this run does *not* find
+
+`fgs {a:"start"}` on both (`plat: android` / `plat: ios`), `perm {k:"background"}` with
+`alw: true, acc: precise` on both, **no `err` line in either file**, heartbeats unbroken, and
+T046's keepAlive cycle visible working across both gate closes of the idle period
+(`gate close inactivityTimeout` → `ios keepAlive on:true` → `ios coarse` → `gate open motion` →
+`keepAlive on:false`). Nothing here is a permissions, foreground-service or process-survival
+failure. The Pixel's trip 1, which has no `trip stop`/`discard` line, was **not** lost:
+`TripRecoveryService` finalised it on the next launch (`Deleted interrupted trip 1: 0 point(s),
+0s — below the minimum`). Recovery worked; the gap is that a recovery deletion writes a `log`
+line and no `trip` event, so a reader counting trips in a log misses it — noted, unassigned.
+
+### Remediation (2026-09-03, T049) — what shipped, and what it cannot settle
+
+Four fixes, on the one build that also carries T048 (decision paragraph in §6). Tests 772.
+
+1. **The streak is now literally consecutive (L-093).** `TripStartDetector` breaks the streak on
+   the first evaluation interval that has gone by without a positive detection, instead of on the
+   window expiring: a positive sample is required in *every* second of it, and sub-threshold
+   samples inside the current second still only refresh the confidence, because at 50 Hz an
+   instantaneous single-sample fit dips below 0.7 constantly. `tripStartDetectionWindowSeconds`
+   keeps one job — refusing to resume a streak across a gap in which *nothing was evaluated*
+   (a suspended process, a stalled sensor stream) — and its comparison is now on `Duration`s, so
+   a 5 s window no longer means 5.99 s. Pixel trip 3 is replayed as a test and no longer starts a
+   trip; three consecutive seconds of cycling still do.
+
+   *The option not taken.* §3.1's fixed-window alternative (stamp the window on the first
+   detection, never move it) tolerates one dropped sample mid-pedal-stroke; the strict rule does
+   not, and that is the risk this fix carries into run 2. The discriminant chosen is continuity,
+   because §7's real ride shows sustained confidence and §8's false starts show isolated spikes.
+
+2. **A displacement must beat its own accuracy (L-094).** A fix further than `rpDist` from the
+   last kept point but not further than its own `ac` × `rpRatio` (1.0) is dropped as `drift`, a
+   reason of its own beside `dist` — a stationary rider and a coarse one are different failures
+   and the next log has to tell them apart. Neither `minRoutePointDistanceMeters` nor
+   `maxLocationAccuracyMeters` moved.
+
+3. **A ride is kept only if it went somewhere (L-095).** `Trip.discardReason` replaces the
+   boolean and names the arm that fired — `dur` / `pts` / `still` — which the `trip {a:"discard"}`
+   line now carries alongside `net`, the straight-line distance from the first kept point to the
+   last. The third arm is an **OR**: `net >= minTripNet` (100 m, twice the worst accepted fix
+   accuracy) **or** `avg >= minTripKmh` (4 km/h, half of `cyclingSpeedMin`). It has to be an OR —
+   a loop ride comes home with a net displacement of zero, and a ride recorded through a long
+   stop averages low. Total distance is deliberately not consulted: drift accumulates into it,
+   which is how the 183 m was reached.
+
+4. **The `stop` throttle keys on the previous decision (L-096).** Not on `continueTrip`. A
+   repeated `pauseTrip` is now one line per evaluation interval; a decision the reader has not
+   seen is still never dropped. `_emitResumeEval` was checked and does **not** have the hole: its
+   repeated decision is `shouldResume: false`, which its throttle already keys on.
+
+**What the tests cannot settle.** The same limit as §7, inverted. The unit tests pin the
+arithmetic — a broken streak does not start a trip, drift does not become distance, a 22 m
+"ride" is discarded as `still` — but whether three *consecutive* seconds of cycling-shaped motion
+are produced by a pocket on a bike is a device question, and it is exactly the question run 2
+asks. Run 1 answers the kitchen; neither run is evidence without the other.

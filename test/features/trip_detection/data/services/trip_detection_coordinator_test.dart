@@ -2381,6 +2381,51 @@ void main() {
           expect(go, hasLength(1));
         });
 
+        test('a paused trip does not re-emit its pause at the sample rate '
+            '(L-096)', () async {
+          await startTrip();
+          sink.clear();
+
+          // The paused branch decides `pauseTrip` on every motion sample and
+          // never `continueTrip`, so a throttle exempting "anything that is not
+          // continue" exempted all of them: 88 208 `stop` lines on the
+          // 2026-09-03 Pixel run, 32.3 a second against an `evalMs` of 1000,
+          // and 83 % of the file.
+          stopDetector.decision = StopDecision.pauseTrip;
+          for (var i = 0; i < 50; i++) {
+            coordinator.advance(const Duration(milliseconds: 10));
+            await pushMotion(i);
+          }
+
+          expect(sink.fieldsOf('stop'), hasLength(1));
+        });
+
+        test('a decision the reader has not seen yet is never dropped '
+            '(L-096)', () async {
+          await startTrip();
+          sink.clear();
+
+          // The other half of keying on the previous decision: the throttle
+          // must still not be a rate limit. `pauseTrip` after `continueTrip`
+          // goes through inside the same interval, and so does the `stopTrip`
+          // that ends the pause.
+          await pushMotion(1);
+          expect(sink.fieldsOf('stop').single['d'], 'continueTrip');
+
+          stopDetector.decision = StopDecision.pauseTrip;
+          coordinator.advance(const Duration(milliseconds: 10));
+          await pushMotion(2);
+
+          stopDetector.decision = StopDecision.stopTrip;
+          coordinator.advance(const Duration(milliseconds: 10));
+          await pushMotion(3);
+
+          expect(
+            sink.fieldsOf('stop').map((f) => f['d']),
+            equals(['continueTrip', 'pauseTrip', 'stopTrip']),
+          );
+        });
+
         test('`res` carries the movement timer the decision is made on', () async {
           await startTrip();
           container.read(tripStateMachineProvider.notifier).pauseTrip();

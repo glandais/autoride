@@ -168,7 +168,13 @@ abstract final class AuditEvent {
   /// Location stream resubscription after an error or completion.
   static const String gpsResubscribe = 'gps';
 
-  /// Route point kept (normal) or dropped (verbose). `why` = acc|speed|dist.
+  /// Route point kept (normal) or dropped (verbose).
+  ///
+  /// `why` = acc (the fix is coarser than `rpAcc`) | speed (faster than
+  /// `maxKmh`) | dist (closer than `rpDist` to the last kept point) | drift
+  /// (further than `rpDist`, but not further than its own accuracy — L-094).
+  /// `d` carries the displacement and `ac` the accuracy, so the two distance
+  /// reasons can be read against each other.
   static const String routePoint = 'rp';
 
   /// A database write. `a` = points|metrics, `n`, `ms`, `ok`.

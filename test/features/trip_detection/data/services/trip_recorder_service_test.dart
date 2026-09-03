@@ -482,13 +482,14 @@ void main() {
     test('stopRecording persists final trip and resets metrics', () async {
       final recorder = await readRecorder();
 
-      // Long enough to be a real ride, and with enough route points to be one:
-      // a 0 s recording is discarded (L-068) and a 0-point one is too (L-081),
-      // both covered by their own group below.
+      // Long enough to be a real ride, with enough route points to be one, and
+      // far enough to have gone somewhere: a 0 s recording is discarded
+      // (L-068), a 0-point one is too (L-081), and one that never left the
+      // block is discarded as well (L-095) — each covered by its own group.
       fakeRepository.backdateStartBy = const Duration(minutes: 5);
       await startTrip(recorder, confidenceScore: 0.9);
       await pushFix(_fix(0));
-      await pushFix(_fix(2));
+      await pushFix(_fix(20));
 
       final finalTrip = (await recorder.stopRecording())!;
 
@@ -496,7 +497,7 @@ void main() {
       expect(fakeRepository.updatedTrips, hasLength(1));
       final updated = fakeRepository.updatedTrips.first;
       expect(updated.id, 1);
-      expect(updated.distance, closeTo(22.3, 1.0));
+      expect(updated.distance, closeTo(222.6, 1.5));
       expect(updated.maxSpeed, closeTo(18.0, 0.1));
       expect(
         updated.endTime.isAfter(updated.startTime) ||
@@ -509,7 +510,7 @@ void main() {
 
       // Returned trip matches the persisted one.
       expect(finalTrip.id, updated.id);
-      expect(finalTrip.distance, closeTo(22.3, 1.0));
+      expect(finalTrip.distance, closeTo(222.6, 1.5));
 
       // The two points were flushed on the way out.
       expect(
@@ -636,7 +637,7 @@ void main() {
       fakeRepository.backdateStartBy = const Duration(minutes: 5);
       await startTrip(recorder, confidenceScore: 0.9);
       await pushFix(_fix(0));
-      await pushFix(_fix(2));
+      await pushFix(_fix(20));
 
       // A real pause: paused, some wall-clock time passes, resumed.
       await recorder.pauseRecording();
@@ -681,7 +682,7 @@ void main() {
       fakeRepository.backdateStartBy = const Duration(minutes: 5);
       await startTrip(recorder, confidenceScore: 0.9);
       await pushFix(_fix(0));
-      await pushFix(_fix(2));
+      await pushFix(_fix(20));
       await recorder.pauseRecording();
       await Future<void>.delayed(const Duration(milliseconds: 1100));
 
@@ -727,7 +728,7 @@ void main() {
       fakeRepository.backdateStartBy = const Duration(minutes: 5);
       await startTrip(recorder, confidenceScore: 0.9);
       await pushFix(_fix(0));
-      await pushFix(_fix(2));
+      await pushFix(_fix(20));
       await recorder.pauseRecording();
 
       final finalTrip = (await recorder.stopRecording())!;
@@ -796,14 +797,17 @@ void main() {
       );
     });
 
-    test('two points are enough, however short the distance', () async {
+    test('two points are enough, whatever happened between them', () async {
       final recorder = await readRecorder();
 
-      // Deliberately not a distance rule: this is 22 m, well under anything one
-      // would call a ride, and it is kept.
+      // The count is a count: two points that went somewhere are kept, and
+      // nothing here asks how many more there could have been. Whether the
+      // ride moved at all is L-095's question, one group down — before it
+      // existed this case read `_fix(0), _fix(2)`, 22 m, and was kept on the
+      // point count alone.
       final finalTrip = await longRecording(
         recorder,
-        fixes: [_fix(0), _fix(2)],
+        fixes: [_fix(0), _fix(20)],
       );
 
       expect(finalTrip.status, TripStatus.completed);
@@ -838,7 +842,7 @@ void main() {
       await recorder.startRecording(
         confidenceScore: 0.9,
         activity: ActivityType.cycling,
-        priorLocations: [_fix(0), _fix(2), _fix(4)],
+        priorLocations: [_fix(0), _fix(10), _fix(20)],
       );
       await pumpEventQueue();
 
@@ -852,7 +856,7 @@ void main() {
       final recorder = await readRecorder();
 
       // Trip 1: a real ride.
-      await longRecording(recorder, fixes: [_fix(0), _fix(2)]);
+      await longRecording(recorder, fixes: [_fix(0), _fix(20)]);
       expect(fakeRepository.deletedTripIds, isEmpty);
 
       // Trip 2 on the same recorder, with no fix at all. It must be judged on
@@ -901,6 +905,94 @@ void main() {
     );
   });
 
+  group('TripRecorderService - a ride that went nowhere (L-095)', () {
+    /// Long enough and with enough points to leave the movement rule as the
+    /// only thing still deciding.
+    Future<Trip> longRecording(
+      TripRecorderService recorder, {
+      required List<LocationData> fixes,
+    }) async {
+      fakeRepository.backdateStartBy = const Duration(minutes: 11);
+      await startTrip(recorder, confidenceScore: 0.9);
+      for (final fix in fixes) {
+        await pushFix(fix);
+      }
+      return (await recorder.stopRecording())!;
+    }
+
+    test('a phone on a kitchen counter is not a ride', () async {
+      final recorder = await readRecorder();
+
+      // The 2026-09-03 Pixel run: 183 m over 930 s at 2.5 km/h, nine points
+      // inside a ~40 m square, written to the database as `cycling`. Duration
+      // and point count were the whole rule, and both were comfortably met.
+      final finalTrip = await longRecording(
+        recorder,
+        fixes: [_fix(0), _fix(2)],
+      );
+
+      expect(finalTrip.status, TripStatus.discarded);
+      expect(fakeRepository.deletedTripIds, equals([1]));
+      expect(
+        finalTrip.discardReason(2, netDisplacementMeters: 22.2),
+        equals('still'),
+      );
+    });
+
+    test('a ride that went somewhere is kept, however slowly', () async {
+      final recorder = await readRecorder();
+
+      // 222 m in 11 minutes is 1.2 km/h — under every speed floor there is,
+      // and still a ride: the displacement arm answers on its own.
+      final finalTrip = await longRecording(
+        recorder,
+        fixes: [_fix(0), _fix(20)],
+      );
+
+      expect(finalTrip.status, TripStatus.completed);
+      expect(fakeRepository.deletedTripIds, isEmpty);
+    });
+
+    test('a loop that comes home is kept on its speed', () async {
+      final recorder = await readRecorder();
+
+      // Net displacement is what drift cannot fake, and it is also zero for
+      // every ride that ends where it started. The speed arm is why the rule
+      // is an OR: 1.3 km out and back in eleven minutes, ending where it
+      // began.
+      fakeRepository.backdateStartBy = const Duration(minutes: 11);
+      await startTrip(recorder, confidenceScore: 0.9);
+      for (var i = 0; i <= 60; i += 2) {
+        await pushFix(_fix(i));
+      }
+      for (var i = 58; i >= 0; i -= 2) {
+        await pushFix(_fix(i));
+      }
+      final finalTrip = (await recorder.stopRecording())!;
+
+      expect(finalTrip.avgSpeed, greaterThan(AppConstants.minTripAvgSpeedKmh));
+      expect(finalTrip.status, TripStatus.completed);
+      expect(fakeRepository.deletedTripIds, isEmpty);
+    });
+
+    test('the discard says which rule threw the recording away', () async {
+      final recorder = await readRecorder();
+
+      // A discard the log cannot explain is a bug report nobody can answer:
+      // `dur`, `pts` and `still` are three different failures and only the
+      // third is invisible in the numbers the line already carries.
+      final still = await longRecording(recorder, fixes: [_fix(0), _fix(2)]);
+      expect(still.discardReason(2, netDisplacementMeters: 22.2), 'still');
+      expect(still.discardReason(1, netDisplacementMeters: 22.2), 'pts');
+      expect(
+        still
+            .copyWith(duration: 10)
+            .discardReason(2, netDisplacementMeters: 500),
+        'dur',
+      );
+    });
+  });
+
   group('TripRecorderService - short trips are discarded (L-068)', () {
     test(
       'a recording under the minimum duration is deleted, not saved',
@@ -914,7 +1006,10 @@ void main() {
         expect(fakeRepository.deletedTripIds, equals([1]));
         expect(fakeRepository.updatedTrips, isEmpty);
         expect(finalTrip.status, TripStatus.discarded);
-        expect(finalTrip.isRideWorthKeeping(0), isFalse);
+        expect(
+          finalTrip.isRideWorthKeeping(0, netDisplacementMeters: 0),
+          isFalse,
+        );
       },
     );
 
@@ -944,7 +1039,7 @@ void main() {
         fakeRepository.backdateStartBy = const Duration(minutes: 5);
         await startTrip(recorder, confidenceScore: 0.9);
         await pushFix(_fix(0));
-        await pushFix(_fix(2)); // ~22 m further north
+        await pushFix(_fix(20)); // ~222 m further north
 
         final returned = (await recorder.stopRecording())!;
 
@@ -979,7 +1074,7 @@ void main() {
       fakeRepository.backdateStartBy = const Duration(minutes: 5);
       await startTrip(recorder, confidenceScore: 0.9);
       await pushFix(_fix(0));
-      await pushFix(_fix(2));
+      await pushFix(_fix(20));
       await recorder.stopRecording();
 
       expect(fakeRepository.deletedTripIds, isEmpty);
@@ -1102,6 +1197,45 @@ void main() {
       expect(
         container.read(tripRecorderServiceProvider).value!.routePointCount,
         1,
+      );
+    });
+
+    test('rejects a displacement that does not beat its own accuracy '
+        '(L-094)', () async {
+      final recorder = await readRecorder();
+      await startTrip(recorder);
+
+      // 22 m of travel reported by a fix accurate to +/-33 m: past
+      // `minRoutePointDistanceMeters` (15 m) and inside `maxLocationAccuracy`
+      // (50 m), so both existing filters let it through — and it is drift. The
+      // nine points of the 2026-09-03 Pixel "ride" were all this shape
+      // (`rp keep d=18.2 ac=33.5`) and they added up to 183 m without leaving
+      // a ~40 m square.
+      await pushFix(_fix(0));
+      await pushFix(_fix(2, accuracy: 33.0));
+
+      expect(currentDistance(), 0.0);
+      expect(
+        container.read(tripRecorderServiceProvider).value!.routePointCount,
+        1,
+      );
+    });
+
+    test('the same displacement is kept when the fix is precise about '
+        'it', () async {
+      final recorder = await readRecorder();
+      await startTrip(recorder);
+
+      // The bound is the accuracy, not the distance: 22 m from a 5 m fix is a
+      // rider who moved, and the ride of a slow start under a good sky must
+      // keep it.
+      await pushFix(_fix(0));
+      await pushFix(_fix(2));
+
+      expect(currentDistance(), closeTo(22.2, 1.0));
+      expect(
+        container.read(tripRecorderServiceProvider).value!.routePointCount,
+        2,
       );
     });
 

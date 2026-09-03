@@ -202,15 +202,25 @@ class _TripTrackingScreenState extends ConsumerState<TripTrackingScreen> {
 
   /// Why [trip] was not kept, in the user's terms.
   ///
-  /// The two rules of `Trip.isRideWorthKeeping` fail for opposite reasons and a
-  /// single "not saved" would be useless: one is "you barely started", the
-  /// other is "we never got a position".
+  /// The three rules of `Trip.discardReason` fail for different reasons and a
+  /// single "not saved" would be useless: one is "you barely started", one is
+  /// "we never got a position", and one is "the phone never went anywhere".
+  ///
+  /// The trip carries no reason of its own — the rule is re-asked here on what
+  /// the finalized row holds. `still` is the default rather than a test,
+  /// because the point count is not on the model: reaching this method at all
+  /// means the recorder discarded the recording, and the other two arms are
+  /// the ones this screen can actually check.
   String _discardReason(Trip trip) {
     if (trip.duration < AppConstants.minTripDurationSeconds) {
       return 'Trip not saved: shorter than '
           '${AppConstants.minTripDurationSeconds} seconds.';
     }
-    return 'Trip not saved: no GPS positions were recorded.';
+    if (trip.distance <= 0) {
+      return 'Trip not saved: no GPS positions were recorded.';
+    }
+    return 'Trip not saved: it did not go anywhere — '
+        'GPS drift, not a ride.';
   }
 
   @override

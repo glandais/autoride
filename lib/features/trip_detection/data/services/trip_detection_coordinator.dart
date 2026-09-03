@@ -153,6 +153,7 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
 
   /// Throttle state for the `stop` audit event — see [_emitStopEval].
   DateTime? _lastStopEvalEmit;
+  StopDecision? _lastStopEvalDecision;
   int? _lastStopEvalStationary;
   int? _lastStopEvalMovement;
 
@@ -1098,11 +1099,24 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
   /// with `win` and `res` they were 90 % of the file — enough for a verbose
   /// session to purge its own header, `sess start` and `perm` lines through the
   /// 20 MB retention bound inside two hours (L-085). Same throttle as
-  /// [_emitStartEval], and the same two exceptions: a decision other than
-  /// `continue` is what the reader is looking for, and a change in `cs`/`cm` is
-  /// the transition that explains how the detector got there. Both counters
-  /// only advance once per [AppConstants.detectionEvaluationInterval] anyway,
-  /// so nothing observable is lost between two lines.
+  /// [_emitStartEval], and the same two exceptions: a decision the detector did
+  /// not already emit is what the reader is looking for, and a change in
+  /// `cs`/`cm` is the transition that explains how the detector got there. Both
+  /// counters only advance once per [AppConstants.detectionEvaluationInterval]
+  /// anyway, so nothing observable is lost between two lines.
+  ///
+  /// The exception is keyed on the *previous* decision, not on `continueTrip`
+  /// (L-096). Hardcoding it read correctly for an active trip, where anything
+  /// other than `continue` is a transition — but once the trip is **paused**
+  /// the repeated decision is `pauseTrip`, never `continueTrip`, so every
+  /// motion sample went through for the length of the pause: 88 208 `stop`
+  /// lines on the 2026-09-03 Pixel run, 32.3 a second against an `evalMs` of
+  /// 1000, and 83 % of the file. L-085 closed this class for the active case
+  /// and left the paused one.
+  ///
+  /// [_emitResumeEval] was checked for the same hole and does not have it: its
+  /// repeated decision is `shouldResume: false`, which the throttle already
+  /// keys on, and a `true` changes the phase so it cannot repeat.
   void _emitStopEval(StopDecision decision) {
     if (!AuditLog.enabled) return;
 
@@ -1116,13 +1130,14 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
         last != null &&
         at.difference(last) < AppConstants.detectionEvaluationInterval;
     if (throttled &&
-        decision == StopDecision.continueTrip &&
+        decision == _lastStopEvalDecision &&
         stationary == _lastStopEvalStationary &&
         movement == _lastStopEvalMovement) {
       return;
     }
 
     _lastStopEvalEmit = at;
+    _lastStopEvalDecision = decision;
     _lastStopEvalStationary = stationary;
     _lastStopEvalMovement = movement;
 

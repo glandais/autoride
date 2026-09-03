@@ -65,10 +65,15 @@ abstract final class AuditSchema {
     // Recording filters
     'rpDist': AppConstants.minRoutePointDistanceMeters,
     'rpAcc': AppConstants.maxLocationAccuracyMeters,
+    // A ratio, not a distance: a point must beat its own accuracy times this
+    // (L-094), which is why `rpDist` and `rpAcc` alone cannot explain a drop.
+    'rpRatio': AppConstants.routePointAccuracyRatio,
     'rpBuf': AppConstants.routePointBufferSize,
     'recInt': AppConstants.maxRecordingIntervalSeconds,
     'minTrip': AppConstants.minTripDurationSeconds,
     'minTripPts': AppConstants.minTripRoutePoints,
+    'minTripNet': AppConstants.minTripNetDisplacementMeters,
+    'minTripKmh': AppConstants.minTripAvgSpeedKmh,
     // Pre-trip buffer (L-076)
     'preBufS': AppConstants.preTripLocationBufferDuration.inSeconds,
     'preBufN': AppConstants.preTripLocationBufferMaxPoints,

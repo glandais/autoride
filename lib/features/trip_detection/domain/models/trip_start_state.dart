@@ -41,12 +41,21 @@ sealed class TripStartState with _$TripStartState {
 
 /// Extension methods for TripStartState
 extension TripStartStateExtensions on TripStartState {
-  /// Check if enough time has passed since last detection
-  /// to consider detections as consecutive
+  /// Whether the streak is still current, i.e. whether the stream of samples
+  /// has been continuous enough for [consecutiveDetections] to mean anything.
+  ///
+  /// This is a *staleness* test, not the streak rule: the streak itself is
+  /// broken by [TripStartDetector] on the first evaluation interval scoring
+  /// below threshold (L-093). It only decides what to do with a positive
+  /// detection arriving after a gap in which nothing was evaluated at all — a
+  /// suspended process, a stalled sensor stream — where resuming an old streak
+  /// would start a trip on one sample.
+  ///
+  /// Compares [Duration]s. The `.inSeconds <= windowDuration.inSeconds` it
+  /// replaces truncated both sides, so a 5 s window silently meant 5.99 s.
   bool isWithinDetectionWindow(DateTime now, Duration windowDuration) {
     if (lastDetectionTime == null) return true;
-    return now.difference(lastDetectionTime!).inSeconds <=
-        windowDuration.inSeconds;
+    return now.difference(lastDetectionTime!) <= windowDuration;
   }
 
   /// Check if cooldown period has expired

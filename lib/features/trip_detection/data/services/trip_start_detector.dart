@@ -30,6 +30,12 @@ class TripStartDetector extends _$TripStartDetector {
   /// rather than a few tens of milliseconds. Samples arriving inside the
   /// current interval still refresh the confidence score.
   ///
+  /// "Sustained" is now literal (L-093): the streak requires a positive
+  /// detection in *every* interval, and one interval passing without one
+  /// resets it to zero. `tripStartDetectionWindowSeconds` no longer bounds the
+  /// streak — it only guards against resuming a stale one across a gap in
+  /// which nothing was evaluated at all.
+  ///
   /// [now] exists so tests can drive the clock deterministically; production
   /// callers omit it.
   Future<bool> analyzeForTripStart(
@@ -73,13 +79,8 @@ class TripStartDetector extends _$TripStartDetector {
     // Calculate confidence score
     final confidence = _calculateStartConfidence(motion, location, now);
 
-    // Check if detection is within time window
-    final withinWindow = state.isWithinDetectionWindow(
-      now,
-      const Duration(seconds: AppConstants.tripStartDetectionWindowSeconds),
-    );
-
-    // A new detection is only counted once per evaluation interval.
+    // A new detection is only counted once per evaluation interval, and the
+    // same boundary decides when the streak has missed one.
     final lastDetection = state.lastDetectionTime;
     final intervalElapsed =
         lastDetection == null ||
@@ -94,30 +95,46 @@ class TripStartDetector extends _$TripStartDetector {
         // the streak or the detection timestamp, otherwise 50 Hz sampling
         // would satisfy the consecutive-detection threshold in ~60 ms.
         state = state.copyWith(confidence: confidence);
-      } else if (withinWindow) {
-        // Within window, increment consecutive count
-        state = state.copyWith(
-          confidence: confidence,
-          consecutiveDetections: state.consecutiveDetections + 1,
-          lastDetectionTime: now,
-        );
       } else {
-        // Outside window, reset consecutive count
+        // A gap with no evaluation at all — the process was suspended, the
+        // sensor stream stalled — leaves a streak that describes a moment that
+        // is over. Start a new one rather than continuing it.
+        final stale = !state.isWithinDetectionWindow(
+          now,
+          const Duration(seconds: AppConstants.tripStartDetectionWindowSeconds),
+        );
         state = state.copyWith(
           confidence: confidence,
-          consecutiveDetections: 1,
+          consecutiveDetections: stale ? 1 : state.consecutiveDetections + 1,
           lastDetectionTime: now,
         );
       }
     } else {
-      // Negative detection - reset if outside window
-      if (!withinWindow) {
-        state = state.reset();
+      // Negative detection. The streak means *consecutive* evaluation
+      // intervals, so it dies as soon as one of them has gone by without a
+      // positive detection in it — which is precisely what `intervalElapsed`
+      // says here, the last positive being more than one interval old (L-093).
+      //
+      // The previous rule kept the streak alive for as long as a positive
+      // landed within `tripStartDetectionWindowSeconds` of the previous one:
+      // Pixel trip 3 of the 2026-09-03 run held `n=2` through five consecutive
+      // sub-threshold seconds and started a ride on the sixth. Three firm
+      // gestures inside twelve seconds of cooking were enough.
+      //
+      // Sub-threshold samples *inside* the current interval only refresh the
+      // confidence: at 50 Hz an instantaneous single-sample fit dips below the
+      // threshold constantly, and one positive sample per second is what the
+      // streak is counting.
+      if (intervalElapsed) {
+        // `confidence` is carried rather than zeroed, unlike `reset()`: the
+        // audit's `c` is the reason the reset happened and reading a flat 0
+        // cannot distinguish a near miss from no motion at all.
+        state = state.copyWith(
+          confidence: confidence,
+          consecutiveDetections: 0,
+          lastDetectionTime: null,
+        );
       } else {
-        // Within window but low confidence - just update confidence.
-        // lastDetectionTime is deliberately NOT refreshed: it marks the last
-        // *positive* detection, so a stream of low-confidence samples lets the
-        // window expire and the streak reset instead of holding it open.
         state = state.copyWith(confidence: confidence);
       }
     }
