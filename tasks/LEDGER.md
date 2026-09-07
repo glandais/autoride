@@ -1143,3 +1143,84 @@ that the build runs, journals, and does not start a ride on gestures for as long
 
 L-097 is the one *new* finding, and it comes from the 1.0.0+10 tail these exports added
 (21:24→21:31), not from the fixed build.
+
+---
+
+## 9. Field findings — 2026-09-06 evening, a real ride home (build 1.0.0+12)
+
+**Source**: one verbose audit log, `autoride-audit-20260906-2345.ndjson.gz`, iPhone 14,3 /
+iOS 26.6.1, **1.0.0+12** — i.e. after T048 and after all five T049 fixes. 202 764 lines spanning
+**2026-09-06 00:03 → 23:45 CEST**. The rider cycled home from an evening out; the only correct
+outcome is one trip covering the whole ride.
+
+One trip was started, and it is **9 min 50 s and ≈ 2.9 km short at the front**.
+
+| | |
+|---|---|
+| Real departure | ~23:20:50 (first fixes in motion, `dsp` 4.5 m/s at 23:20:56) |
+| `trip {a:"start", id:13}` | **23:30:38**, `conf` 0.721 |
+| `bdate` reached back to | 23:29:12 — 86 s, 595 m, 13 fixes |
+| Distance ridden before the start | **3 459 m** (summed between fixes), of which 595 m recovered |
+| `start` evaluations in between | **751** |
+| Streak `n` distribution | 0 × 501, 1 × 222, 2 × 27, **3 × 1** |
+
+This is §7's failure again — a real ride that could not start — on the build that was supposed to
+have fixed §7. The three findings below are one causal chain: an unusable score (L-079), an
+unnecessary veto on top of it (L-098), and a safety net too short to absorb the delay (L-099).
+→ **T050**
+
+### High
+
+| ID | Dim | Where | Finding | Status | Evidence |
+|---|---|---|---|---|---|
+| L-079 | pipeline | `trip_start_detector.dart` `_getMotionScore` | **Confirmed on a ride, and quantified.** The motion score is one 20 ms sample, so which side of the threshold an evaluation interval lands on is decided by a coin toss | **Fixed** (T050) — pending the device run | Open since 2026-09-02 as "walking scores as cycling"; the ride shows the other half of the same defect. Of the 751 evaluations while the rider was demonstrably cycling, **250 cleared `k.conf` and 501 did not** (mean `c` 0.489), and the unbiased estimate is worse still: the `start` lines are emitted preferentially on streak changes, while the 1 Hz `sens` series over the same window puts only **6.5 %** of sampled instants above 0.7. The streak distribution is the geometric law that follows — 501/222/27/**1** — and L-093's "three consecutive intervals" turns a low per-sample probability into a **590 s** wait. The instantaneous bands are the reason: `cyclingAccelerationMin/Max` = [10, 20] with a peak at 15 scores a *level*, and on a bike \|a\| swings 4→24 m/s² sample to sample while the mean barely leaves gravity (9.81 still, **10.2 pedalling**). What separates the two is the **spread**, and spread is a property of a window. Measured per phase from `sens`, std(\|a\|) / mean\|gyro\|: **phone still 0.56 / 0.16; carried, walking 1.86 / 0.65; the missed ride 3.90 / 1.32; the ride once started 3.39 / 1.08.** → **T050 §3.1** |
+
+### Medium
+
+| ID | Dim | Where | Finding | Status | Evidence |
+|---|---|---|---|---|---|
+| L-098 | pipeline · platform | `location_data.dart:64` `speedIsTrustworthyAt` | A fix carrying **no speed measurement** is trusted as a fix measuring 0 km/h, and vetoes the departure | **Fixed** (T050) — pending the device run | T048's predicate tests accuracy and age, never `hasReportedSpeed` — which exists, two getters above it, and is consulted only by `GpsSpeedEstimator`. Where the estimator can derive a speed the substitution hides the hole; where it cannot, what reaches the detector is a **fresh, accurate** fix reading exactly 0, `vt: true`, `speedScore` 0, and a confidence capped at `k.wMot` = 0.60 under a 0.7 threshold. **155 of the 751 evaluations** (21 %) are in that state, at 20 km/h, and 16 of them would have cleared the threshold motion-only. This is L-088's Android finding arriving on iOS one derivation short, and L-087's arithmetic surviving its own fix. Secondary to L-079 in magnitude — the ride would still not have started on the other 596 — which is why it is Medium. → **T050 §3.2** |
+| L-099 | pipeline | `app_constants.dart:70` `preTripLocationBufferDuration` | The back-date window is sized on the *intended* confirmation delay, so a late detection cannot be repaired even in principle | **Fixed** (T050) — pending the device run | 90 s, justified in the constant's own comment by `detectionTimeoutSeconds` (30 s) plus the streak plus the recorder's first fix. L-076 built the buffer to absorb "10-40 s and 50-200 m"; this ride needed 590 s and 2 900 m. `bdate` fired correctly and reached back **86 s / 595 m / 13 fixes** — the rest had aged out before the departure was confirmed. Bound raised to **10 min / 256 points**, which is safe because the buffer is cleared on every `gate close` (30 s stationary), so its span is always one continuous stretch of movement and `ridingTailOf` still cuts the walk off the front. Note this is a *net* rather than a fix: with L-079 repaired it should never be reached. → **T050 §3.3** |
+
+### Confirmed, not new
+
+- **L-093 is working, and is not the cause.** The streak dies on the first sub-threshold interval
+  exactly as designed; the 501 zeros are what it is being fed, not what it does. Reading this run
+  as "the streak rule is too tight" is the trap ledger §6 set up in advance — the discriminator it
+  named is `n` reaching 2 and dying (L-093's cost) versus never reaching 1 (the confidence), and
+  here `n` reaches 2 twenty-seven times out of 751. That is the confidence.
+- **L-011** (`CyclingPatternDetector` unwired) is untouched. T050 gives the *start* path a windowed
+  fit; it does not add the frequency layer, and the dead three-layer detector stays dead.
+- **T048's derived speed works when its preconditions hold** — `dsp` is present on roughly half the
+  ride's fixes, 3.2–15.5 m/s, all in the cycling band. L-098 is about the other half.
+
+### Remediation (2026-09-06, T050) — what shipped
+
+1. **The fit is windowed (L-079).** `TripStartDetector` scores the standard deviation of \|a\| and
+   the mean \|gyro\| over the last `detectionEvaluationInterval`, on ramps
+   `cyclingAccelStd{Min,Ideal,Max}` = 2.0 / 3.0 / 12.0 and `cyclingGyroMean{Min,Ideal,Max}` =
+   0.4 / 0.9 / 3.0, half each, and 0 while the window holds fewer than
+   `tripStartMotionWindowMinSamples` (5). The ramp is **asymmetric** where the old bands were
+   triangular: there is no "too much vibration for a bicycle" short of something that is not one,
+   so a rough road must not score below a smooth one. On the measured figures a ride scores 1.0 on
+   both arms, a walk 0 on the acceleration arm and ~0.5 on the gyroscope arm — 0.25 total, well
+   under `k.conf`, which is what keeps T049's answer to the kitchen intact. The window is a
+   `StationaryWindow` built over the evaluation interval rather than a second implementation of a
+   standard deviation; the class now takes its bounds as constructor parameters.
+2. **A fix with no speed is no fix (L-098).** `speedIsTrustworthyAt` gains its third arm,
+   `hasReportedSpeed`. The predicate now answers one question — may this fix's speed vote — with
+   the three reasons it might not: absent, too coarse, too old.
+3. **The back-date window covers the worst case (L-099).** 90 s → 10 min, 64 → 256 points.
+
+**Numbers the thresholds are provisional against.** They are read off a **1 Hz** `sens` series,
+and the fit runs on the 20–50 Hz stream where the within-second spread is at least as large. The
+device run is what settles them, and it is the same pair T049 §5 already asks for — an ordinary
+indoor hour (pass: zero trips) and a real ride (pass: one trip within a minute of the departure,
+route matching a parallel Strava recording). **Run 2's pass criterion is now the whole point**:
+this ride would have failed it by ten minutes, and the log to read it on is `start`'s new
+`asd`/`gav`/`wn`.
+
+**Schema 3.** `start.c` keeps its name, range and weights, and changes what its motion half *is*.
+Reconstructing it from `mag`/`gyr` — the recipe every earlier reading of these logs used — now
+silently reproduces the old arithmetic, so the version is bumped and the skill's procedure branches
+on it.

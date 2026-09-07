@@ -804,6 +804,7 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
     _lastStartEvalStreak = counted;
 
     final detectorState = ref.read(tripStartDetectorProvider);
+    final detector = ref.read(tripStartDetectorProvider.notifier);
     final fix = _lastLocation;
     AuditLog.emit(
       AuditEvent.startEval,
@@ -813,6 +814,13 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
         'go': shouldStart,
         'mag': motion.accelerometer.magnitude,
         'gyr': motion.gyroscope.magnitude,
+        // The windowed statistics the motion half of `c` is actually computed
+        // from since T050. `mag`/`gyr` stay: they are the instantaneous sample
+        // this line was emitted on, and the gap between them and `asd`/`gav` is
+        // the whole of L-079 made visible in one line.
+        'asd': detector.accelerationStdDev,
+        'gav': detector.averageRotation,
+        'wn': detector.motionWindowSamples,
         'spk': fix?.speedKmh,
         // Whether that speed was allowed to enter `c`, or whether the fix was
         // ruled unfit and the score is motion-only (T048).

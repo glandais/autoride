@@ -206,8 +206,8 @@ void main() {
   });
 
   group('LocationData.speedIsTrustworthyAt', () {
-    test('trusts an accurate, fresh fix', () {
-      final fix = _fix(atSeconds: 0);
+    test('trusts an accurate, fresh fix that reports a speed', () {
+      final fix = _fix(atSeconds: 0, speed: 5.0);
 
       expect(
         fix.speedIsTrustworthyAt(_t0.add(const Duration(seconds: 2))),
@@ -215,9 +215,25 @@ void main() {
       );
     });
 
+    test('refuses an accurate, fresh fix that reports no speed (L-098)', () {
+      // The iPhone's 2026-09-06 ride: fixes 15-25 m accurate, seconds old, and
+      // `sp` exactly 0 at 20 km/h. `GpsSpeedEstimator` substitutes a derived
+      // speed where it can; where it cannot, what reaches the detector is a fix
+      // whose speed is *absent*, not measured — and scoring it as 0 km/h capped
+      // the confidence at 0.60 for 155 of the ride's 751 evaluations.
+      final fix = _fix(atSeconds: 0);
+
+      expect(fix.hasReportedSpeed, isFalse);
+      expect(
+        fix.speedIsTrustworthyAt(_t0.add(const Duration(seconds: 2))),
+        isFalse,
+      );
+    });
+
     test('refuses a fix coarser than the speed can justify (L-088)', () {
       final fix = _fix(
         atSeconds: 0,
+        speed: 5.0,
         accuracy: AppConstants.speedTrustMaxAccuracyMeters + 1,
       );
 
@@ -225,7 +241,7 @@ void main() {
     });
 
     test('refuses a fix older than the freshness bound (L-089)', () {
-      final fix = _fix(atSeconds: 0);
+      final fix = _fix(atSeconds: 0, speed: 5.0);
       final now = _t0
           .add(AppConstants.speedTrustMaxAge)
           .add(const Duration(seconds: 1));
@@ -234,7 +250,7 @@ void main() {
     });
 
     test('measures age either way round, so a skewed clock cannot pass', () {
-      final fix = _fix(atSeconds: 60);
+      final fix = _fix(atSeconds: 60, speed: 5.0);
 
       expect(fix.speedIsTrustworthyAt(_t0), isFalse);
     });
