@@ -5,6 +5,7 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../../domain/models/activity_confidence.dart';
 import '../../domain/models/location_data.dart';
+import 'vehicle_speed_watch.dart';
 import '../../domain/models/trip.dart';
 import '../../domain/models/trip_state.dart';
 import '../../../trip_history/data/repositories/trip_repository.dart';
@@ -133,6 +134,23 @@ class TripRecorderService extends _$TripRecorderService {
   /// a second call arriving in that window passes the null check and replays
   /// the whole path. Mirrors the start side's claim (L-080).
   bool _stopInFlight = false;
+
+  /// Speed evidence for the vehicle arm of the discard rule (T051, L-100).
+  ///
+  /// Fed from *every* fix the recording sees, not only the ones kept as route
+  /// points: whether the phone is in a car is a question about the speeds
+  /// observed, and a fix dropped for sitting too close to the previous one is
+  /// still a measurement of how fast it got there.
+  final VehicleSpeedWatch _vehicleWatch = VehicleSpeedWatch();
+
+  /// Why the last recording was discarded, or `null` if it was kept.
+  ///
+  /// Read by `TripDetectionCoordinator` after the stop, which has to arm a
+  /// different cooldown for a vehicle than for a false start and cannot
+  /// re-derive the reason from the trip alone — `vehicle` and `still` are
+  /// invisible in a `Trip`'s own fields.
+  String? get lastDiscardReason => _lastDiscardReason;
+  String? _lastDiscardReason;
 
   /// First route point kept by this recording, against which the last one is
   /// measured to give the net displacement the discard rule needs (L-095).
@@ -336,6 +354,8 @@ class TripRecorderService extends _$TripRecorderService {
     _routePointsRecorded = 0;
     _lastLocation = null;
     _firstKeptLocation = null;
+    _vehicleWatch.reset();
+    _lastDiscardReason = null;
 
     // Do NOT clear the buffer: it may still hold points from a previous trip
     // whose final flush failed. Each RoutePoint carries its own trip id, so
@@ -508,7 +528,9 @@ class TripRecorderService extends _$TripRecorderService {
     final discardReason = candidate.discardReason(
       _routePointsRecorded,
       netDisplacementMeters: netDisplacement,
+      vehicleEvidence: _vehicleWatch.looksLikeVehicle,
     );
+    _lastDiscardReason = discardReason;
     final discarded = discardReason != null;
     final finalTrip = candidate.copyWith(
       status: discarded ? TripStatus.discarded : TripStatus.completed,
@@ -529,11 +551,17 @@ class TripRecorderService extends _$TripRecorderService {
         // `n` 0 is L-081's case, one with points is a rider who really did go
         // nowhere.
         'n': _routePointsRecorded,
-        // Which arm of `Trip.discardReason` fired — dur|pts|still — and the
-        // net displacement it was answered with. A `still` discard is the only
-        // one `dist`, `dur` and `n` cannot be read off (L-095).
+        // Which arm of `Trip.discardReason` fired — dur|pts|vehicle|still —
+        // and the net displacement it was answered with. A `still` discard is
+        // the only one `dist`, `dur` and `n` cannot be read off (L-095); a
+        // `vehicle` one is read off `vfx`/`vmf` (L-100).
         'why': discardReason,
         'net': netDisplacement,
+        // The speed evidence, on every ending rather than only on a vehicle
+        // discard: a ride that was *nearly* refused is the one worth seeing
+        // before the threshold is next moved.
+        'vfx': _vehicleWatch.vehicleFixes,
+        'vmf': _vehicleWatch.measuredFixes,
         'pts': flushed ? null : _routePointBuffer.length,
       },
       critical: true,
@@ -728,11 +756,55 @@ class TripRecorderService extends _$TripRecorderService {
   void _handleLocationUpdate(LocationData location) {
     if (_activeTrip == null) return;
 
+    // Speed evidence first, and outside the pause guard: a phone in a car at a
+    // red light is still in a car, and the recording filters below have nothing
+    // to say about how fast the fix says it was going (T051).
+    _watchForVehicle(location);
+
     // Don't record during pause
     final currentState = ref.read(tripStateMachineProvider);
     if (!currentState.isRecording) return;
 
     _recordLocation(location);
+  }
+
+  /// Feed [location] to the vehicle watch and end the ride if it has seen
+  /// enough (L-100).
+  ///
+  /// Ending it here rather than letting the end-of-ride arm catch it is the
+  /// difference between a drive that is discarded after half an hour of
+  /// recording — notification, GPS gate pinned open, battery — and one that is
+  /// refused four fixes after the car reached its cruising speed. The discard
+  /// itself is still the stop path's decision: `looksLikeVehicle` stays true
+  /// for the rest of the recording, so the same arm answers both.
+  void _watchForVehicle(LocationData location) {
+    if (_vehicleWatch.hasFired) return;
+
+    _vehicleWatch.add(location);
+    if (!_vehicleWatch.hasFired) return;
+
+    AuditLog.emit(
+      AuditEvent.vehicle,
+      () => <String, Object?>{
+        'a': 'fire',
+        'id': _activeTrip?.id,
+        'spk': location.speedKmh,
+        'lim': AppConstants.vehicleSpeedKmh,
+        'n': _vehicleWatch.vehicleFixes,
+        'm': _vehicleWatch.measuredFixes,
+      },
+      critical: true,
+    );
+    _logger.info(
+      'Ending trip ${_activeTrip?.id}: '
+      '${_vehicleWatch.vehicleFixes} of ${_vehicleWatch.measuredFixes} measured '
+      'fixes at or above ${AppConstants.vehicleSpeedKmh} km/h — this is a '
+      'vehicle, not a bicycle',
+    );
+
+    // Fire and forget, like every other self-initiated stop: this runs inside a
+    // location-stream callback, and `stopRecording` guards its own re-entry.
+    unawaited(stopRecording());
   }
 
   /// Apply the recording filters to [location] and, if it passes all of them,

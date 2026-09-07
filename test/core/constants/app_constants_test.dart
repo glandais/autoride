@@ -48,23 +48,47 @@ void main() {
       expect(AppConstants.tripStartMotionWindowMinSamples, greaterThan(1));
     });
 
-    test('the cycling ramp starts above what a carried phone produces', () {
-      // The 2026-09-06 log, 1 Hz `sens` samples: walking about with the phone
-      // in a pocket reads std 1.86 and mean |gyro| 0.65, the ride 3.4-3.9 and
-      // 1.08-1.32.
-      //
-      // The *acceleration* minimum is the one that has to clear the walking
-      // figure, and it is what a walk fails on. The gyroscope minimum
-      // deliberately does not: a pocket swings, so a walk scores about half
-      // that arm, and half of half a score has never started anything. Erring
-      // low on the acceleration arm is what would start a ride on a walk —
-      // the failure T049 was opened for.
-      expect(AppConstants.cyclingAccelStdMin, greaterThan(1.86));
-      // …and the ideal has to be reachable by an actual bicycle.
-      expect(AppConstants.cyclingAccelStdIdeal, lessThan(3.39));
-      expect(AppConstants.cyclingGyroMeanIdeal, lessThan(1.08));
-      // A walk cannot reach the threshold on the gyroscope arm alone.
+    test('the cycling ramp clears a phone at rest by an order of magnitude', () {
+      // T051 corrected the scale these were first set from: the 1 Hz `sens`
+      // series T050 used is a series of *instants* and overstates the spread
+      // within a second by roughly 2x. On the true 50 Hz figures, a phone lying
+      // still for 93 minutes reads a median `asd` of 0.01 and a p99 of 0.34,
+      // and its whole distribution has to sit under the foot of the ramp — that
+      // margin is what produced zero false starts across those 93 minutes.
+      expect(AppConstants.cyclingAccelStdMin, greaterThan(5 * 0.34));
+      expect(AppConstants.cyclingGyroMeanMin, greaterThan(0.23));
+
+      // The other side: a real ride's windows have to be able to reach the
+      // plateau. p90 of the 2026-09-06 ride is 5.34 / 1.76.
+      expect(AppConstants.cyclingAccelStdIdeal, lessThan(5.34));
+      expect(AppConstants.cyclingGyroMeanIdeal, lessThan(1.76));
+
+      // A single arm cannot start a ride on its own, whichever one it is.
       expect(0.5 * 1.0, lessThan(AppConstants.tripStartConfidenceThreshold));
+    });
+
+    test('the vehicle veto sits above a bicycle and below a car (T051)', () {
+      // 2026-09-07, provider-measured speeds only: the night ride's fastest is
+      // 31.6 km/h, the drive's cruise is five consecutive fixes at 38.0-39.3.
+      // The threshold has to fit between them, and it must NOT be
+      // `maxCyclingSpeedKmh` — the drive never came near 60, which is why a
+      // "no bicycle goes this fast" rule catches nothing real.
+      expect(AppConstants.vehicleSpeedKmh, greaterThan(31.6));
+      expect(AppConstants.vehicleSpeedKmh, lessThan(38.0));
+      expect(
+        AppConstants.vehicleSpeedKmh,
+        lessThan(AppConstants.maxCyclingSpeedKmh),
+      );
+      // The live arm needs a majority of its window, not one artefact.
+      expect(
+        AppConstants.vehicleSpeedMinFixes,
+        greaterThan(AppConstants.vehicleSpeedWindowFixes / 2),
+      );
+      // And a drive must not be turned into a string of discarded trips.
+      expect(
+        AppConstants.vehicleCooldownPeriodSeconds,
+        greaterThan(AppConstants.tripStartCooldownPeriodSeconds),
+      );
     });
 
     test('should have valid frequency thresholds', () {

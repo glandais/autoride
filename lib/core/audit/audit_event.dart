@@ -154,6 +154,15 @@ abstract final class AuditEvent {
   /// Pre-trip fixes replayed and the start back-dated (L-076).
   static const String backdate = 'bdate';
 
+  /// The vehicle veto (T051, L-100): `a` = fire, `spk` the measured speed that
+  /// tipped it, `lim` the threshold, `n` fast fixes of `m` measured ones.
+  ///
+  /// One line per recording at most — the watch latches — and it is always
+  /// followed by a `trip {a:"discard", why:"vehicle"}`. Its absence on a ride
+  /// that *was* discarded as a vehicle means the end-of-ride arm fired instead,
+  /// on speed bursts too far apart for the live window.
+  static const String vehicle = 'veh';
+
   /// Pre-trip location buffer activity (verbose).
   ///
   /// `a` = add (a fix was buffered) | tail (the buffer was handed to the
@@ -255,6 +264,7 @@ abstract final class AuditEvent {
     buffer,
     gpsWatchdog,
     gpsResubscribe,
+    vehicle,
     routePoint,
     flush,
     powerMode,

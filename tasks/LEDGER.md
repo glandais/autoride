@@ -1224,3 +1224,89 @@ this ride would have failed it by ten minutes, and the log to read it on is `sta
 Reconstructing it from `mag`/`gyr` — the recipe every earlier reading of these logs used — now
 silently reproduces the old arithmetic, so the version is bumped and the skill's procedure branches
 on it.
+
+---
+
+## 10. Field findings — 2026-09-07 midday, a drive to the shops (build 1.0.0+13)
+
+**Source**: one verbose audit log, `autoride-audit-20260907-1337.ndjson.gz`, iPhone 14,3 /
+iOS 26.6.1, **1.0.0+13** — the first build carrying T050. 200 491 lines; the T050 process launches
+at **11:12:48**, so the last 2 h 25 of the file are the ones that count. The rider drove to the
+shops. The only correct outcome is no trip at all.
+
+**T050 works, and the run says so twice.**
+
+| | |
+|---|---|
+| Phone at rest, 11:12→12:45 (93 min) | 4 370 evaluations, `asd` median **0.01**, **0 false starts**, streak max 2, 3 `idle→detecting` |
+| Departure | `gate open motion` 12:45:41, `trip start` **12:45:58**, `conf` 0.764 |
+| Back-date | none needed — `pre: 0`, no `bdate` |
+
+Three seconds from a phone reading `asd` 0.1 to a confirmed departure, and not one false start in
+an hour and a half of lying still. §9's defect is closed.
+
+**And the trip is a car.** `trip {a:"stop", id:14}`: 3 137 m, 1 629 s, `pau` 336, `avg` **6.9 km/h**,
+`max` 39.3, `n` 74, `net` 16 m, written as `act: "cycling"`. → **T051**
+
+### High
+
+| ID | Dim | Where | Finding | Status | Evidence |
+|---|---|---|---|---|---|
+| L-100 | pipeline | `trip_start_detector.dart` / nothing at all | **A car and a bicycle are indistinguishable to the motion fit, and nothing else was asking.** No accelerometer threshold can refuse one without refusing the other | **Fixed** (T051) — pending the device run | Replaying the T050 score over the `win` statistics of the drive and of the 2026-09-06 ride: mean motion **0.298 vs 0.331**, windows above `k.conf` **22.6 % vs 23.0 %**, and the underlying percentiles match to two digits (std\|a\| p50 0.81 / 0.81, p75 2.15 / 2.33; mean\|gyro\| p50 0.27 / 0.51). The one axis that *does* separate them was measured and ignored: the drive produced **37 provider-measured speeds, max 39.3 km/h, with an 11-fix run above 30**, against the ride's **11 measured, max 31.6, longest run 1**. The GPS said "car" from **+243 s** — 57.0, 54.5, 51.4, 55.0, 49.3 km/h — and nothing in the app reads a speed after the start decision: `cyclingSpeedMax` (40) only feeds `speedScore` during *start* evaluation, and `maxCyclingSpeedKmh` (60) only rejects route points, which a 57 km/h peak passes under. Neither could have refused the departure anyway: at 12:45:58 the car was stationary. → **T051 §3.1** |
+
+### Medium
+
+| ID | Dim | Where | Finding | Status | Evidence |
+|---|---|---|---|---|---|
+| L-101 | pipeline · method | `app_constants.dart` `cyclingAccelStd*` / `cyclingGyroMean*` | T050's ramps were calibrated on a series of *instants*, which overstates the within-second spread by roughly 2x | **Assessed, values unchanged** (T051) | §9 read std(\|a\|) off the 1 Hz `sens` series — one instantaneous sample a second — and treated 3.4-3.9 as "the spread of a riding window". The true 50 Hz figure, from `win.sd` on the same ride, is a **median of 0.81 and a p90 of 5.34**; a phone lying still reads a median 0.01 and a p99 0.34, not the 0.56 the proxy suggested. So the published justification was wrong even though the numbers happened to land well. **Re-derived on the true scale, the shipped values are the best of the candidates**: replaying five ramps over 93 minutes of a phone at rest and over a real ride gives 0 false starts / 23.0 % ride coverage at **2.0-3.0 / 0.4-0.9**, against 2 false starts / 36.0 % at 1.2-2.0 / 0.3-0.7 and 3 / 42.5 % at 0.8-1.5 / 0.25-0.6. Loosening buys coverage a ride does not need — one three-second streak starts it, and 12:45:58 took three seconds — and pays in the currency §8 was opened over. **Correction recorded rather than a change made**, because the reasoning in §9 would otherwise be re-used on the next log. |
+
+### Confirmed, not new
+
+- **L-098 works, and cost nothing here.** `vt` is absent throughout the departure window (`sp: 0`),
+  so the score was motion-only exactly as designed. Note what that means for §9's trade-off: the
+  speed veto it removed would, at 12:45:58, have had nothing to veto with — the car had not moved.
+- **L-099 was not exercised.** `pre: 0` and no `bdate`: with a detector that fires on time there is
+  nothing to back-date, which is what §9 predicted for its own fix ("a net, not a fix").
+- **L-011** untouched, again.
+
+### Remediation (2026-09-07, T051) — what shipped
+
+1. **A vehicle veto, on measured speed only (L-100).** `VehicleSpeedWatch` accumulates the speeds
+   of a recording and answers two questions with one statistic: a **live** arm — four of the last
+   six pieces of evidence at or above `vehicleSpeedKmh` (35), spanning at least
+   `vehicleSustainSeconds` (5 s) — which ends the ride, and an **end-of-ride** arm — four fast
+   fixes and at least a quarter of the evidence — which catches a drive whose bursts arrived too
+   far apart. `Trip.discardReason` gains a fourth arm, `vehicle`, between `pts` and `still`.
+
+   On the drive the live arm fires at **+339 s**, on the fourth of 38.0 / 38.0 / 37.9 / 39.3 —
+   five and a half minutes into a twenty-seven minute recording. On the 2026-09-06 ride it never
+   fires, and the end-of-ride arm answers false.
+
+   **Only provider-measured speeds are evidence**, and this is the load-bearing decision: every
+   reading above 40 km/h during the *bicycle* ride is a `dsp` derived from a fix accurate to
+   23-38 m — 55.7, 54.6, 52.4 km/h on a night ride that averaged 16.8. A watch fed those would
+   discard real rides on GPS noise, which is worse than recording a drive. The recorder subscribes
+   to `locationStreamProvider` directly, so what it sees *is* the provider's own number;
+   `GpsSpeedEstimator` lives in the coordinator's ingestion path and never touches it. **If that
+   ever changes, this rule silently starts eating inferences.**
+
+2. **A longer cooldown after a vehicle discard.** `vehicleCooldownPeriodSeconds` (300) against the
+   false start's 30. A car's motion *is* a bicycle's, so the detector starts again within seconds
+   of the veto and would keep doing so for the length of the drive — a string of discarded trips,
+   each with its own "trip started" notification. `TripStartState` carries the armed period so one
+   cooldown mechanism serves both, and the coordinator asks the recorder for the reason rather than
+   re-deriving it: `vehicle` and `still` leave no trace in a `Trip`'s own fields.
+
+3. **The calibration correction (L-101)**, in the constants' own comment, with the replay table
+   that justifies leaving the values alone.
+
+**What this costs, stated plainly.** A cyclist holding 35 km/h across four measured fixes spanning
+five seconds loses the ride. That is a fast descent or a paceline, and it is a real cost —
+`vehicleSpeedKmh` is the knob, `veh` in the log is what says it fired, and `vfx`/`vmf` now ride on
+**every** ending so a ride that was nearly refused is visible before the threshold is next moved.
+There is no threshold on this axis that separates a town car from a fast cyclist; 35 sits between
+*this* drive and *this* ride, and one of each is what the evidence amounts to.
+
+**Not settled.** Whether a real ride ever trips the veto — no ride on 1.0.0+13 exists yet. That is
+now the second thing run 2 of T048 §5 / T049 §5 has to show, alongside the departure timing:
+**one trip, and no `veh` line in it.**

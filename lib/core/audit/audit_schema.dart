@@ -57,6 +57,13 @@ abstract final class AuditSchema {
     'gavIdeal': AppConstants.cyclingGyroMeanIdeal,
     'gavMax': AppConstants.cyclingGyroMeanMax,
     'wnMin': AppConstants.tripStartMotionWindowMinSamples,
+    // Vehicle veto (T051, L-100) — measured speeds only, see `veh`
+    'vehKmh': AppConstants.vehicleSpeedKmh,
+    'vehWin': AppConstants.vehicleSpeedWindowFixes,
+    'vehMin': AppConstants.vehicleSpeedMinFixes,
+    'vehSec': AppConstants.vehicleSustainSeconds.inSeconds,
+    'vehShare': AppConstants.vehicleSpeedMinShare,
+    'vehCool': AppConstants.vehicleCooldownPeriodSeconds,
     // Speed trust and derived speed (T048)
     'spAcc': AppConstants.speedTrustMaxAccuracyMeters,
     'spAge': AppConstants.speedTrustMaxAge.inSeconds,

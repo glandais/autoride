@@ -93,12 +93,14 @@ class TripStartDetector extends _$TripStartDetector {
         // Cooldown expired, deactivate it. Journalled because the blind
         // window it opened is a reason a departure could be missed, and its
         // end is what makes the window measurable against `cool a:"arm"`.
+        final period =
+            state.cooldownDuration ??
+            const Duration(
+              seconds: AppConstants.tripStartCooldownPeriodSeconds,
+            );
         AuditLog.emit(
           AuditEvent.cooldown,
-          () => <String, Object?>{
-            'a': 'expire',
-            'd': AppConstants.tripStartCooldownPeriodSeconds,
-          },
+          () => <String, Object?>{'a': 'expire', 'd': period.inSeconds},
           critical: true,
         );
         state = state.deactivateCooldown();
@@ -184,8 +186,11 @@ class TripStartDetector extends _$TripStartDetector {
   }
 
   /// Activate cooldown period (e.g., after false start)
-  void activateCooldown() {
-    state = state.activateCooldown(DateTime.now());
+  ///
+  /// [period] overrides `tripStartCooldownPeriodSeconds` — the vehicle veto
+  /// arms a much longer one (T051).
+  void activateCooldown({Duration? period}) {
+    state = state.activateCooldown(DateTime.now(), period: period);
   }
 
   /// Reset detection state

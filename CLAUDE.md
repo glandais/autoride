@@ -295,6 +295,12 @@ It was an instantaneous single-sample fit until 2026-09-06, which is L-079: on a
 swings 4→24 m/s² sample to sample, so the score was a coin toss and a real ride started
 ten minutes late.
 
+**A car is not refused by any of this (T051).** Replayed over a real ride and over a drive
+to the shops, the windowed fit scores 0.331 and 0.298 — indistinguishable. What refuses a
+car is `VehicleSpeedWatch`, on **provider-measured** speeds only (a derived `dsp` inherits
+its fixes' accuracy and reads 55 km/h on a night ride), which ends the recording and
+discards it as `vehicle`.
+
 `CyclingPatternDetector` implements the intended three-layer design (motion 40 % / speed
 35 % / frequency 25 %, threshold 0.6) but has **no call site in production** — only two
 mentions in comments (`app_constants.dart:344`, `activity_confidence.dart:59`). It is
@@ -303,7 +309,8 @@ hardcoded 0.5.
 
 Full specification and wiring plan: `tasks/T041-device-validation.md` (appendix) and
 `tasks/LEDGER.md` L-011. The windowed fit that *did* ship, and the ride that forced it:
-`tasks/T050-windowed-motion-fit.md` and ledger §9. Thresholds: `lib/core/constants/app_constants.dart`.
+`tasks/T050-windowed-motion-fit.md` and ledger §9; the vehicle veto and the corrected
+calibration: `tasks/T051-vehicle-veto.md` and ledger §10. Thresholds: `lib/core/constants/app_constants.dart`.
 Implementation: `lib/features/trip_detection/data/services/cycling_pattern_detector.dart`.
 
 ---

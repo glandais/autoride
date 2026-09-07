@@ -155,7 +155,7 @@ extension TripExtensions on Trip {
   /// audit's `trip {a:"discard", why}` carries: a discard the log cannot
   /// explain is a bug report nobody can answer.
   ///
-  /// Three arms, and they reject different things:
+  /// Four arms, and they reject different things:
   ///
   /// * `dur` — shorter than [AppConstants.minTripDurationSeconds]: a false
   ///   start (a bump, a mis-tap on the manual start button);
@@ -167,6 +167,14 @@ extension TripExtensions on Trip {
   ///   kill — `rebuildFromRoutePoints` cannot describe a ride from fewer than
   ///   two points — so the same recording used to survive or not depending on
   ///   how it ended.
+  /// * `vehicle` — it was made in a car (L-100). The motion fit cannot tell a
+  ///   car from a bicycle — replayed over the 2026-09-07 log the two score
+  ///   0.298 and 0.331 — so the only thing that can is speed, and
+  ///   [vehicleEvidence] carries `VehicleSpeedWatch`'s verdict on the measured
+  ///   speeds of the whole recording. The 2026-09-07 drive to the shops was
+  ///   saved as a 3.1 km cycling trip at 6.9 km/h with a 39.3 km/h maximum, and
+  ///   not one of the three arms below could have refused it: it lasted, it had
+  ///   74 points, and it went somewhere.
   /// * `still` — it lasted, it has points, and it never went anywhere (L-095).
   ///   Duration and point count were the whole rule until the 2026-09-03
   ///   kitchen run wrote 183 m over 930 s at 2.5 km/h from nine points inside a
@@ -183,12 +191,21 @@ extension TripExtensions on Trip {
   /// [netDisplacementMeters] is the straight-line distance from the first kept
   /// route point to the last, and is required rather than optional so a new
   /// call site cannot silently skip the arm.
+  ///
+  /// [vehicleEvidence] defaults to false because the two call sites are not
+  /// equal: the live recorder watches every fix and knows, while the startup
+  /// recovery of an interrupted trip rebuilds from route points and has no
+  /// record of which fixes carried a measured speed. False there means "no
+  /// evidence", which is the honest answer and leaves recovery's behaviour
+  /// exactly as it was.
   String? discardReason(
     int routePointCount, {
     required double netDisplacementMeters,
+    bool vehicleEvidence = false,
   }) {
     if (duration < AppConstants.minTripDurationSeconds) return 'dur';
     if (routePointCount < AppConstants.minTripRoutePoints) return 'pts';
+    if (vehicleEvidence) return 'vehicle';
     if (netDisplacementMeters >= AppConstants.minTripNetDisplacementMeters) {
       return null;
     }
@@ -201,10 +218,12 @@ extension TripExtensions on Trip {
   bool isRideWorthKeeping(
     int routePointCount, {
     required double netDisplacementMeters,
+    bool vehicleEvidence = false,
   }) =>
       discardReason(
         routePointCount,
         netDisplacementMeters: netDisplacementMeters,
+        vehicleEvidence: vehicleEvidence,
       ) ==
       null;
 
