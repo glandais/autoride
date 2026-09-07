@@ -29,6 +29,18 @@ class _WindowSample {
 /// mutable scratch state owned by `TripStopDetector`, not part of its
 /// observable state, and it is directly unit-testable on its own.
 class StationaryWindow {
+  /// [duration] and [maxSamples] default to the stop path's own bounds. The
+  /// trip-start fit (T050) builds one over `detectionEvaluationInterval`
+  /// instead, so that the window it scores is exactly the interval the streak
+  /// counts — a longer one would carry the previous second's motion across the
+  /// boundary and blur the transition the streak is looking for.
+  StationaryWindow({Duration? duration, int? maxSamples})
+    : _duration = duration ?? AppConstants.stationaryWindowDuration,
+      _maxSamples = maxSamples ?? AppConstants.stationaryWindowMaxSamples;
+
+  final Duration _duration;
+  final int _maxSamples;
+
   final List<_WindowSample> _samples = <_WindowSample>[];
 
   /// Number of samples currently retained.
@@ -37,7 +49,7 @@ class StationaryWindow {
   bool get isEmpty => _samples.isEmpty;
 
   /// Add [motion], stamped with the evaluation time [now], and drop everything
-  /// older than [AppConstants.stationaryWindowDuration].
+  /// older than this window's duration.
   ///
   /// [now] rather than `motion.timestamp` is used for ageing so tests can drive
   /// the window deterministically with injected timestamps.
@@ -50,16 +62,13 @@ class StationaryWindow {
       ),
     );
 
-    final cutoff = now.subtract(AppConstants.stationaryWindowDuration);
+    final cutoff = now.subtract(_duration);
     _samples.removeWhere((sample) => sample.time.isBefore(cutoff));
 
     // Belt and braces: an unexpectedly high sample rate (or a clock that never
     // advances) must not grow the buffer without bound.
-    if (_samples.length > AppConstants.stationaryWindowMaxSamples) {
-      _samples.removeRange(
-        0,
-        _samples.length - AppConstants.stationaryWindowMaxSamples,
-      );
+    if (_samples.length > _maxSamples) {
+      _samples.removeRange(0, _samples.length - _maxSamples);
     }
   }
 

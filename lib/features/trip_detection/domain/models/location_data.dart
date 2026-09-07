@@ -49,19 +49,32 @@ extension LocationDataExtensions on LocationData {
   /// Whether this fix's speed may be believed at [now], and so is entitled to
   /// vote on trip start.
   ///
-  /// One predicate for the two arms of the same question (T048, L-088 and
-  /// L-089), because a caller that checks only one of them is checking half a
-  /// fix:
+  /// One predicate for the three arms of the same question (T048, L-088 and
+  /// L-089; T050, L-098), because a caller that checks only one of them is
+  /// checking part of a fix:
   ///
+  /// * **existence** — [hasReportedSpeed]. A fix carrying no speed measurement
+  ///   at all is not a measurement of standing still;
   /// * **accuracy** — a 300 m network fix from Android's cell/wifi ladder
   ///   carries no speed information, whatever number rides along with it;
   /// * **age** — a fix from 34 seconds ago describes where the rider *was*.
   ///
-  /// A fix failing either arm must be treated as *no fix at all* rather than as
-  /// a fix reporting zero, which is the whole of L-087: the motion-only path
+  /// A fix failing any arm must be treated as *no fix at all* rather than as a
+  /// fix reporting zero, which is the whole of L-087: the motion-only path
   /// scores up to 1.0, while `speedScore` 0 caps the confidence at 0.60 and
   /// vetoes a real departure.
+  ///
+  /// The existence arm was missing until T050, and it is the arm that matters
+  /// most on iOS. [GpsSpeedEstimator] substitutes a derived speed when it can,
+  /// but its own preconditions (a displacement beating the fix's accuracy,
+  /// a gap inside `derivedSpeedMinGap … pwr.ui × derivedSpeedMaxGapFactor`)
+  /// are not always met — and what came out the other side was a *fresh,
+  /// accurate* fix reading exactly 0. On the 2026-09-06 ride that is **155 of
+  /// 751 evaluations** during which a departure was arithmetically impossible,
+  /// at 20 km/h. This is L-088's Android finding arriving on the other
+  /// platform, one derivation short.
   bool speedIsTrustworthyAt(DateTime now) {
+    if (!hasReportedSpeed) return false;
     if (!accuracy.isFinite ||
         accuracy > AppConstants.speedTrustMaxAccuracyMeters) {
       return false;

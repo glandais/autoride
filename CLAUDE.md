@@ -287,17 +287,23 @@ see `tasks/T041-device-validation.md`.
 
 ## Cycling Detection Logic
 
-What decides a trip start today is `TripStartDetector`: an instantaneous single-sample
-accel+gyro fit, with no frequency analysis and no speed layer.
+What decides a trip start today is `TripStartDetector`: a **windowed** accel+gyro fit
+(T050) — the standard deviation of |a| and the mean |gyro| over
+`detectionEvaluationInterval`, scored on the `cyclingAccelStd*` / `cyclingGyroMean*`
+ramps — plus the GPS speed when a fix is entitled to vote. Still no frequency analysis.
+It was an instantaneous single-sample fit until 2026-09-06, which is L-079: on a bike |a|
+swings 4→24 m/s² sample to sample, so the score was a coin toss and a real ride started
+ten minutes late.
 
 `CyclingPatternDetector` implements the intended three-layer design (motion 40 % / speed
 35 % / frequency 25 %, threshold 0.6) but has **no call site in production** — only two
-mentions in comments (`app_constants.dart:207`, `activity_confidence.dart:59`). It is
+mentions in comments (`app_constants.dart:344`, `activity_confidence.dart:59`). It is
 covered by tests; its layer-3 `currentLocation` is never assigned, so `speedScore` is a
 hardcoded 0.5.
 
 Full specification and wiring plan: `tasks/T041-device-validation.md` (appendix) and
-`tasks/LEDGER.md` L-011. Thresholds: `lib/core/constants/app_constants.dart`.
+`tasks/LEDGER.md` L-011. The windowed fit that *did* ship, and the ride that forced it:
+`tasks/T050-windowed-motion-fit.md` and ledger §9. Thresholds: `lib/core/constants/app_constants.dart`.
 Implementation: `lib/features/trip_detection/data/services/cycling_pattern_detector.dart`.
 
 ---

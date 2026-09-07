@@ -17,7 +17,12 @@ abstract final class AuditSchema {
   /// * 2 — the stop/resume detector clock is `so` (seconds since the
   ///   stationary onset), where it used to be `pd` and read like the trip's
   ///   own `pau` (L-086).
-  static const int version = 2;
+  /// * 3 — `start.c` is computed from a *window* (T050, L-079). The key is the
+  ///   same and so is its range, but its motion half no longer comes from the
+  ///   `mag`/`gyr` on the same line, so reconstructing `c` from those two — the
+  ///   recipe every earlier reading of this log used — silently reproduces the
+  ///   old arithmetic. Read `asd`/`gav` against `k.asd*`/`k.gav*` instead.
+  static const int version = 3;
 
   /// The detection thresholds this build is running with, under short keys.
   ///
@@ -42,6 +47,16 @@ abstract final class AuditSchema {
     'cool': AppConstants.tripStartCooldownPeriodSeconds,
     'wMot': AppConstants.tripStartMotionWeight,
     'wSpd': AppConstants.tripStartSpeedWeight,
+    // Windowed cycling fit (T050, L-079) — the bands `asd` and `gav` are
+    // scored against. The instantaneous `cyclingAcceleration*`/`cyclingRotation*`
+    // bands are deliberately absent: since T050 no start decision reads them.
+    'asdMin': AppConstants.cyclingAccelStdMin,
+    'asdIdeal': AppConstants.cyclingAccelStdIdeal,
+    'asdMax': AppConstants.cyclingAccelStdMax,
+    'gavMin': AppConstants.cyclingGyroMeanMin,
+    'gavIdeal': AppConstants.cyclingGyroMeanIdeal,
+    'gavMax': AppConstants.cyclingGyroMeanMax,
+    'wnMin': AppConstants.tripStartMotionWindowMinSamples,
     // Speed trust and derived speed (T048)
     'spAcc': AppConstants.speedTrustMaxAccuracyMeters,
     'spAge': AppConstants.speedTrustMaxAge.inSeconds,

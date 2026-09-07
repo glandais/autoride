@@ -134,6 +134,45 @@ void main() {
       );
     });
 
+    test('a departure confirmed ten minutes late still finds its start '
+        '(L-099)', () {
+      // The 2026-09-06 ride: the rider set off at 23:20:50 and the detector
+      // only confirmed at 23:30:38, by which time the 90 s buffer of the day
+      // held 13 fixes and 595 m of a 2.9 km approach. The window has to cover
+      // the worst confirmation delay, not the intended one.
+      final buffer = PreTripLocationBuffer();
+      const cadence = Duration(seconds: 3);
+      const confirmationDelay = Duration(seconds: 590);
+
+      // A walk to the bike, then ten minutes of riding at a realistic fix
+      // cadence, all inside one continuous stretch of gate-open movement.
+      var index = 0;
+      for (final speed in <double>[0.0, 4.0, 5.0]) {
+        buffer.add(
+          _fix(speedKmh: speed, index: index),
+          _t0.add(cadence * index),
+        );
+        index++;
+      }
+      final firstRidingIndex = index;
+      while (cadence * index <= confirmationDelay) {
+        buffer.add(
+          _fix(speedKmh: 20.0, index: index),
+          _t0.add(cadence * index),
+        );
+        index++;
+      }
+
+      final tail = buffer.ridingTail;
+
+      expect(
+        tail.first.timestamp,
+        _t0.add(Duration(seconds: firstRidingIndex)),
+        reason: 'the first cycling fix of the ride is still in the buffer',
+      );
+      expect(tail.length, index - firstRidingIndex);
+    });
+
     test('clear() empties it', () {
       final buffer = PreTripLocationBuffer();
       buffer.add(_fix(speedKmh: 20.0), _t0);

@@ -58,17 +58,25 @@ class AppConstants {
   // neither a stalled clock nor an unexpectedly chatty location plugin can grow
   // it without limit:
   //
-  // - 90 s of history. The window that must be covered is the detection phase:
-  //   up to `detectionTimeoutSeconds` (30 s) in `Detecting`, plus the ~2-3 s the
-  //   consecutive-detection rule needs to confirm, plus the delay before the
-  //   recorder's own stream yields its first fix. 90 s covers all of it with
-  //   room to spare while staying far below anything a rider would recognise as
-  //   "the trip started too early".
-  // - 64 points. At `minRoutePointDistanceMeters` (15 m) and ~20 km/h a fix is
-  //   retained roughly every 3 s, so 90 s is about 30 points; 64 is a guard
-  //   against a faster rider or a denser stream, not the operative limit.
-  static const Duration preTripLocationBufferDuration = Duration(seconds: 90);
-  static const int preTripLocationBufferMaxPoints = 64;
+  // - 10 minutes of history. It was 90 s until T050, sized on the detection
+  //   phase alone — `detectionTimeoutSeconds` (30 s) plus the seconds the
+  //   consecutive-detection rule needs plus the recorder's first fix. That is
+  //   the *nominal* delay, and the 2026-09-06 ride is what happens when the
+  //   detector is late instead: departure at 23:20:50, confirmation at 23:30:38,
+  //   and a back-date that could only reach back 86 s and 595 m of the 2.9 km
+  //   already ridden, because the rest had aged out of this buffer. The window
+  //   has to cover the *worst* confirmation delay, not the intended one.
+  //
+  //   Nothing older can be prefixed by accident: the buffer is cleared whenever
+  //   the GPS gate closes (`gpsInactivityTimeout`, 30 s stationary), so its span
+  //   is always one continuous stretch of movement, and `ridingTailOf` then cuts
+  //   it back to the first fix at cycling speed.
+  // - 256 points. At `minRoutePointDistanceMeters` (15 m) and ~20 km/h a fix
+  //   arrives roughly every 3 s, so 10 minutes is about 200; 256 is a guard
+  //   against a faster rider or a denser stream, not the operative limit. ~40 kB
+  //   of `LocationData` at the bound.
+  static const Duration preTripLocationBufferDuration = Duration(minutes: 10);
+  static const int preTripLocationBufferMaxPoints = 256;
 
   /// How long a recording trip may go without a single GPS fix before the
   /// coordinator stops it (L-074). Counted from the last fix, or from the start
@@ -128,6 +136,72 @@ class AppConstants {
   // Rotation thresholds (rad/s)
   static const double cyclingRotationMin = 0.5; // Minimum rotation for cycling
   static const double cyclingRotationMax = 3.0; // Maximum typical rotation
+
+  // Windowed cycling fit for trip start (T050, L-079)
+  //
+  // The four bands above are INSTANTANEOUS: they score one 20 ms sample of raw
+  // magnitude. `TripStartDetector` used them that way until T050, and on a bike
+  // |a| swings between 4 and 24 m/s² from one sample to the next, so the score
+  // was a coin toss on whichever sample happened to land on the evaluation
+  // boundary. The 2026-09-06 ride measures it: 6.5 % of the sampled instants of
+  // a confirmed ride cleared the 0.7 threshold, the streak reached 3 once in
+  // 590 s, and the trip started 9 min 50 s and 2.9 km after the real departure.
+  //
+  // What separates a bike from everything else is not the level of |a| — a
+  // still phone reads 9.81 and a pedalling one 10.2 — but its **variability**,
+  // and a sustained rotation rate. Both are properties of a *window*, so the
+  // start path now scores the last `detectionEvaluationInterval` of samples.
+  //
+  // The numbers are read off the 1 Hz `sens` series of that log, per phase:
+  //
+  // | phase                      | std(|a|) | mean |g| |
+  // |----------------------------|----------|----------|
+  // | phone still on a table     |   0.56   |   0.16   |
+  // | carried, walking about     |   1.86   |   0.65   |
+  // | the ride that was missed   |   3.90   |   1.32   |
+  // | the ride once it started   |   3.39   |   1.08   |
+  //
+  // Hence a ramp that is 0 at the walking end, saturated at the cycling end,
+  // and back to 0 above anything a bicycle produces. Riding scores 1.0 on both
+  // arms, walking ~0.57 combined — under the 0.7 threshold, which is what keeps
+  // L-093's answer to the kitchen intact.
+  //
+  // Provisional until a device run: they come from 1 Hz samples, and the real
+  // fit runs on the 20–50 Hz stream where the within-second spread is at least
+  // as large.
+  //
+  // The acceleration minimum is the arm that has to clear the walking figure,
+  // and it does (2.0 against 1.86) — erring low there is what would start a
+  // ride on a walk. The gyroscope minimum deliberately sits *below* it: a
+  // pocket swings, so a walk scores about half that arm and nothing at all on
+  // the other, and half of half a score cannot reach 0.7.
+
+  /// Standard deviation of accelerometer magnitude (m/s²) below which a window
+  /// is not cycling at all.
+  static const double cyclingAccelStdMin = 2.0;
+
+  /// …and at which it scores full marks. Between the two the score ramps.
+  static const double cyclingAccelStdIdeal = 3.0;
+
+  /// Above this the shaking is not a bicycle (a dropped phone, a washing
+  /// machine, a train coupling) and the arm scores 0.
+  static const double cyclingAccelStdMax = 12.0;
+
+  /// Mean gyroscope magnitude (rad/s) below which a window is not cycling.
+  static const double cyclingGyroMeanMin = 0.4;
+
+  /// …and at which it scores full marks.
+  static const double cyclingGyroMeanIdeal = 0.9;
+
+  /// Above this the rotation is not a bicycle carrying a phone.
+  static const double cyclingGyroMeanMax = 3.0;
+
+  /// Samples a window must hold before it is allowed to score above zero.
+  ///
+  /// A standard deviation over two samples is noise. Five is half a second at
+  /// the critical power mode's 20 Hz — the slowest stream the app configures —
+  /// so the requirement never costs more than the first evaluation interval.
+  static const int tripStartMotionWindowMinSamples = 5;
 
   // Stationary thresholds (T007)
   //

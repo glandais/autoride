@@ -19,6 +19,10 @@ those, never today's `lib/core/constants/app_constants.dart` — explaining a
 decision an older build took with the current constants is how you conclude the
 opposite of what happened.
 
+`sv` is the schema, and it decides how `start.c` is read — see
+**Reconstructing `start.c`** below. 2 and 3 differ in what the motion half of a
+confidence *is*, not merely in a field name.
+
 Also in that first line: `lvl` (normal or verbose — several verdicts below
 depend on which), `cap` (whether this file is the **training capture** rather
 than the journal — see §2b), `app`, `os`, `dev`, `tz` (offset to apply to every
@@ -62,7 +66,7 @@ short; the table below is the whole vocabulary.
 | `gate` | Motion-gated GPS | `a` = open/sched/close; `why` = trip/motion (open), stationary (sched), inactivityTimeout/stop/session/dispose (close); `in` (s) on a sched |
 | `fix` | GPS fix | `lat` `lon` `ac` m `sp` **m/s** `al` `hd` `gt` (provider time). `sp` is always what the OS said; `dsp` **m/s** appears only where T048 derived a speed from the displacement since the previous fix and the pipeline used *that* — so `dsp` present means `sp` was 0 or invalid |
 | `hb` | Heartbeat, every 30 s | `n` ticks, `mn` motion samples the pipeline processed, `dr` samples the rate hold dropped, `fn` fixes, `dt` ms, `hz` configured sampling rate. `mn / (dt / 1000)` is what the pipeline ran at; `(mn + dr) / (dt / 1000)` is what the OS delivered, and that is the figure to compare with `hz` (L-086, T045) |
-| `start` | Trip-start evaluation | `c` confidence, `n` streak, `go`, `mag` `gyr` `spk`, `vt`. `vt` false means the fix was too coarse (`k.spAcc`) or too old (`k.spAge`) for its speed to be believed, so `c` is motion-only and `spk` did **not** enter it (T048); absent when there was no fix at all |
+| `start` | Trip-start evaluation | `c` confidence, `n` streak, `go`, `asd` `gav` `wn`, `mag` `gyr` `spk`, `vt`. **`asd`/`gav`/`wn` are what `c`'s motion half is computed from** since schema 3 (T050): the standard deviation of \|a\| and the mean \|gyro\| over the last `k.evalMs`, and the samples the window held. `mag`/`gyr` are the *instantaneous* sample the line was emitted on and no longer feed any decision. `vt` false means the fix reported no speed at all, or was too coarse (`k.spAcc`) or too old (`k.spAge`) for its speed to be believed, so `c` is motion-only and `spk` did **not** enter it (T048, T050); absent when there was no fix at all |
 | `dto` | Detection window timed out | `el` s, `n` streak at timeout |
 | `cool` | Start cooldown | `a` = arm (`d` s, `why` = falseStart) / expire (`d` s). Armed only by a recording discarded for being **too short** — a long one discarded for want of route points is a GPS failure, not a false start (L-081) |
 | `win` | Stationary window (**verbose**) | `n` `sd` m/s² `gy` rad/s `sta` `src` = gps/gps+vib/sensors `spk` km/h. Throttled to 1 Hz; every change of `sta` or `src` is kept (L-085) |
@@ -130,11 +134,27 @@ a column of its own, which is what retention deletes on.
 Speeds: `fix.sp` and `fix.dsp` are **m/s**; `win.spk`, `start.spk`, `rp.spk` are
 **km/h**.
 
-**Reconstructing `start.c`.** `c` is `mag`/`gyr` scored alone when `vt` is false
-or absent, and `mot × k.wMot + speed × k.wSpd` only when `vt` is true. Reading
-every line the second way — as was natural before T048 put `vt` in the file —
-attributes a motion-only score to a speed that never voted, and is how a fix
-that vetoed a whole ride (L-087) can be made to look like corroboration.
+**Reconstructing `start.c`.** The motion half is `mot`, the speed half votes
+only when `vt` is true: `c` is `mot` alone when `vt` is false or absent, and
+`mot × k.wMot + speed × k.wSpd` when it is true. Reading every line the second
+way — as was natural before T048 put `vt` in the file — attributes a motion-only
+score to a speed that never voted, and is how a fix that vetoed a whole ride
+(L-087) can be made to look like corroboration.
+
+**What `mot` is depends on the schema, and getting this wrong reverses the
+verdict.** Check `hdr.sv` first:
+
+* **`sv` ≤ 2** — `mot` is the single sample on the line: `mag` scored
+  triangularly inside `[10, 20]` m/s² and `gyr` inside `[0.5, 3.0]` rad/s, half
+  each. Wildly noisy from one line to the next; that is L-079, not the rider.
+* **`sv` ≥ 3** — `mot` is the *window*: `asd` on the ramp
+  `k.asdMin → k.asdIdeal` (0 below `k.asdMin`, 1 from `k.asdIdeal` to
+  `k.asdMax`, 0 above) and `gav` likewise on `k.gavMin → k.gavIdeal → k.gavMax`,
+  half each, and 0 outright while `wn < k.wnMin`. `mag`/`gyr` are along for the
+  ride and reproduce nothing.
+
+So on a `sv` 3 file a refusal to start is read off `asd` and `gav`: `asd` under
+`k.asdMin` is a phone that is not being shaken by a road, whatever `mag` says.
 
 **Two clocks, one pause.** `stop.so` / `res.so` count from the *stationary
 onset*; `trip.pau` counts from the state machine's *pause transition*, which
