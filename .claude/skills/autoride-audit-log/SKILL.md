@@ -75,7 +75,8 @@ short; the table below is the whole vocabulary.
 | `lbl` | Capture ground truth (**capture**, T034) | `a` = start/stop, `act` = bike/car/walk/still/other, `sess` the session id (its start, in epoch ms) |
 | `stop` | Stop decision | `d` = continueTrip/pauseTrip/stopTrip, `sta` `cs` `cm` `so` s. Throttled to `k.evalMs`; every decision and counter change is kept (L-085). While the trip is *paused* only the decisions appear here — the once-a-second `continue` is `res`'s job |
 | `res` | Resume evaluation | `go` `cm` `mv` ms of continuous movement (what the decision is made on, against `k.resume`) `so`. Throttled like `stop`, keyed on `mv` restarting |
-| `trip` | Trip lifecycle | `a` = start/pause/resume/stop/discard, `id`; start: `conf` `act` `pre` (or `man` on a manual start); pause: `dist`; resume: `pau`; stop/discard: `dist` m `dur` s `pau` s `avg` `max` `n` `net` `why` `pts`. `n` is every route point the ride kept, and it is what the point arm of the discard decision turns on against `k.minTripPts` (L-081); `net` is the straight-line distance from the first kept point to the last, against `k.minTripNet` OR `avg` against `k.minTripKmh` (L-095); `why` on a discard names the arm that fired — `dur` / `pts` / `still` — and `still` is the one the other fields cannot be read off; `pts` is present **only** when the final flush failed, and counts the points still stuck in the buffer |
+| `veh` | Vehicle veto (T051) | `a` = fire; `spk` the measured speed that tipped it, `lim` = `k.vehKmh`, `n` fast fixes of `m` measured ones. At most one per recording — the watch latches — and always followed by `trip {a:"discard", why:"vehicle"}`. A `vehicle` discard with **no** `veh` line above it was decided at the end of the ride instead, on bursts too far apart for the live window |
+| `trip` | Trip lifecycle | `a` = start/pause/resume/stop/discard, `id`; start: `conf` `act` `pre` (or `man` on a manual start); pause: `dist`; resume: `pau`; stop/discard: `dist` m `dur` s `pau` s `avg` `max` `n` `net` `why` `pts`. `n` is every route point the ride kept, and it is what the point arm of the discard decision turns on against `k.minTripPts` (L-081); `net` is the straight-line distance from the first kept point to the last, against `k.minTripNet` OR `avg` against `k.minTripKmh` (L-095); `why` on a discard names the arm that fired — `dur` / `pts` / `vehicle` / `still`; `still` is the one the other fields cannot be read off, and `vehicle` is read off `vfx`/`vmf` (fast and measured fixes, present on **every** ending so a ride that was nearly refused is visible before the threshold is next moved); `pts` is present **only** when the final flush failed, and counts the points still stuck in the buffer |
 | `bdate` | Start back-dated (L-076) | `id` `k` fixes `m` metres `ts` new start `was` old start |
 | `buf` | Pre-trip buffer (**verbose**) | `a` = add/tail/clear, `n` fixes, `sp` span ms, `kp` kept by the riding-tail cut (tail), `why` = inactivityTimeout/stop/session/dispose/gpsError/recording/tripEnd (clear) |
 | `gpsw` | GPS-loss watchdog (L-074) | `a` = arm/fire/disarm, `el` s `lim` s `ref` = lastFix/tripStart |
@@ -155,6 +156,17 @@ verdict.** Check `hdr.sv` first:
 
 So on a `sv` 3 file a refusal to start is read off `asd` and `gav`: `asd` under
 `k.asdMin` is a phone that is not being shaken by a road, whatever `mag` says.
+
+**A car is not readable off the motion.** Do not try to explain a `vehicle`
+discard — or argue against one — from `asd`/`gav`, `win.sd`/`win.gy` or `sens`.
+Replaying the T050 fit over a real ride and over a drive to the shops
+(2026-09-07) gives mean motion scores of **0.331 and 0.298**, 23.0 % and 22.6 %
+of windows above the threshold, and matching percentiles throughout. The only
+line that separates them is `veh`, and the only number in it that means anything
+is a **provider-measured** speed: on that same log every reading above 40 km/h
+during the *bicycle* ride is a `dsp` derived from a fix accurate to 23–38 m.
+When reading speed evidence, `fix.sp > 0` is a measurement and `fix.dsp` is an
+inference.
 
 **Two clocks, one pause.** `stop.so` / `res.so` count from the *stationary
 onset*; `trip.pau` counts from the state machine's *pause transition*, which

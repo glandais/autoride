@@ -147,34 +147,44 @@ class AppConstants {
   // a confirmed ride cleared the 0.7 threshold, the streak reached 3 once in
   // 590 s, and the trip started 9 min 50 s and 2.9 km after the real departure.
   //
-  // What separates a bike from everything else is not the level of |a| — a
+  // What distinguishes a bicycle from a pocket is not the level of |a| — a
   // still phone reads 9.81 and a pedalling one 10.2 — but its **variability**,
   // and a sustained rotation rate. Both are properties of a *window*, so the
-  // start path now scores the last `detectionEvaluationInterval` of samples.
+  // start path scores the last `detectionEvaluationInterval` of samples.
   //
-  // The numbers are read off the 1 Hz `sens` series of that log, per phase:
+  // **The scale, corrected (T051).** T050 set these from the 1 Hz `sens` series,
+  // which is a series of *instants* and overstates the spread within a second by
+  // roughly 2x. The true figures are `win.sd` / `win.gy`, computed over a 50 Hz
+  // window by the stop path — and the audit's own `asd`/`gav` since T050:
   //
-  // | phase                      | std(|a|) | mean |g| |
-  // |----------------------------|----------|----------|
-  // | phone still on a table     |   0.56   |   0.16   |
-  // | carried, walking about     |   1.86   |   0.65   |
-  // | the ride that was missed   |   3.90   |   1.32   |
-  // | the ride once it started   |   3.39   |   1.08   |
+  // | | std(|a|) | mean |gyro| |
+  // |---|---|---|
+  // | phone lying still, 93 min (`asd` median / p99) | 0.01 / 0.34 | 0.005 / 0.23 |
+  // | a real ride, per-window median / p75 / p90 | 0.81 / 2.33 / 5.34 | 0.51 / 1.35 / 1.76 |
+  // | a drive to the shops, same | 0.81 / 2.15 / 4.18 | 0.27 / 1.25 / 1.77 |
   //
-  // Hence a ramp that is 0 at the walking end, saturated at the cycling end,
-  // and back to 0 above anything a bicycle produces. Riding scores 1.0 on both
-  // arms, walking ~0.57 combined — under the 0.7 threshold, which is what keeps
-  // L-093's answer to the kitchen intact.
+  // Two things follow, and the second is why T051 exists:
   //
-  // Provisional until a device run: they come from 1 Hz samples, and the real
-  // fit runs on the 20–50 Hz stream where the within-second spread is at least
-  // as large.
+  // 1. The ramp below is NOT too high, despite sitting above the *median* of a
+  //    riding window. Replaying candidate ramps over the 2026-09-07 log — false
+  //    starts across 93 minutes of a phone lying still, against the share of a
+  //    real ride's windows that clear the threshold:
   //
-  // The acceleration minimum is the arm that has to clear the walking figure,
-  // and it does (2.0 against 1.86) — erring low there is what would start a
-  // ride on a walk. The gyroscope minimum deliberately sits *below* it: a
-  // pocket swings, so a walk scores about half that arm and nothing at all on
-  // the other, and half of half a score cannot reach 0.7.
+  //    | asd min/ideal | gav min/ideal | false starts | ride windows ≥ 0.7 |
+  //    |---|---|---|---|
+  //    | **2.0 / 3.0** | **0.4 / 0.9** | **0** | **23.0 %** |
+  //    | 1.2 / 2.0 | 0.3 / 0.7 | 2 | 36.0 % |
+  //    | 0.8 / 1.5 | 0.25 / 0.6 | 3 | 42.5 % |
+  //    | 0.4 / 1.0 | 0.15 / 0.4 | 3 | 54.1 % |
+  //
+  //    Loosening buys coverage a ride does not need — one three-second streak
+  //    starts it — and pays in exactly the currency T049 was opened over. The
+  //    2026-09-07 departure took **3 seconds** from a phone at rest, so the
+  //    values stay.
+  // 2. **They cannot separate a car from a bicycle**, and nothing on this axis
+  //    can: the two right-hand rows of the first table match to two digits, and
+  //    replaying the fit over both gives mean scores of 0.331 and 0.298. That is
+  //    what `vehicleSpeedKmh` and `VehicleSpeedWatch` are for.
 
   /// Standard deviation of accelerometer magnitude (m/s²) below which a window
   /// is not cycling at all.
@@ -202,6 +212,67 @@ class AppConstants {
   /// the critical power mode's 20 Hz — the slowest stream the app configures —
   /// so the requirement never costs more than the first evaluation interval.
   static const int tripStartMotionWindowMinSamples = 5;
+
+  // Vehicle veto (T051, L-100)
+  //
+  // A car with a phone in it shakes exactly like a bicycle with a phone on it.
+  // That is measured: replaying the T050 motion fit over the `win` statistics
+  // of a real ride and of a drive to the shops (2026-09-07 log) gives mean
+  // scores of **0.331 and 0.298**, 23.0 % and 22.6 % of windows above the
+  // confidence threshold, and matching percentiles throughout. No accelerometer
+  // threshold can refuse a car without refusing a bicycle, so the only usable
+  // discriminator is speed — and the only usable speed is the one the OS
+  // measured itself (see `VehicleSpeedWatch` for why a derived speed must not
+  // vote here).
+  //
+  // The numbers, from the same log:
+  //
+  // | | measured fixes | max measured | longest run > 30 km/h |
+  // |---|---|---|---|
+  // | night ride, 3.5 km at 16.8 km/h | 11 | 31.6 | 1 |
+  // | drive to the shops, 3.1 km | 37 | 39.3 | **11** |
+  //
+  // 35 km/h sits above everything the ride measured and below the drive's
+  // cruise (five consecutive fixes at 38.0-39.3, accurate to 3.5 m). It is
+  // deliberately NOT `maxCyclingSpeedKmh` (60): the drive never came near 60,
+  // which is why a "no bicycle goes this fast" rule catches nothing real.
+  //
+  // **What this costs.** A cyclist holding 35 km/h across four measured fixes
+  // spanning five seconds loses the ride. That is a fast descent or a paceline,
+  // and it is a real cost — `vehicleSpeedKmh` is the knob, and the audit's
+  // `veh` line is what says whether it fired on one.
+
+  /// Measured speed at or above which a fix is evidence of a motor vehicle.
+  static const double vehicleSpeedKmh = 35.0;
+
+  /// How many recent pieces of evidence the live arm looks at.
+  static const int vehicleSpeedWindowFixes = 6;
+
+  /// …and how many of them must be above [vehicleSpeedKmh]. Also the floor on
+  /// the end-of-ride arm: fewer than this is an artefact, not a road.
+  static const int vehicleSpeedMinFixes = 4;
+
+  /// The fast fixes of the live arm must span at least this much wall clock, so
+  /// that a burst of fixes 200 ms apart cannot satisfy the count alone.
+  static const Duration vehicleSustainSeconds = Duration(seconds: 5);
+
+  /// Share of a recording's measured fixes that must be above the threshold for
+  /// the end-of-ride arm. A long ride accumulates four artefacts eventually;
+  /// a quarter of the evidence is a journey, not a glitch.
+  static const double vehicleSpeedMinShare = 0.25;
+
+  /// How long the start detector stays blind after a ride was discarded as a
+  /// vehicle.
+  ///
+  /// `tripStartCooldownPeriodSeconds` (30 s) is sized for a false start, where
+  /// whatever fooled the detector lasts seconds. A drive lasts half an hour, and
+  /// at 30 s the rest of it would be a string of started-and-discarded trips,
+  /// each with its own "trip started" notification. Five minutes is the
+  /// compromise: at most a handful per drive, and the veto only fires while the
+  /// vehicle is moving — a rider who parks and gets on a bicycle is not blind
+  /// from the moment they stop, but from the last time the car was doing
+  /// 35 km/h.
+  static const int vehicleCooldownPeriodSeconds = 300;
 
   // Stationary thresholds (T007)
   //

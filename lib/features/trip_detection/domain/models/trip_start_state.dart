@@ -25,6 +25,15 @@ sealed class TripStartState with _$TripStartState {
 
     /// Timestamp when cooldown was activated
     required DateTime? cooldownStartTime,
+
+    /// How long the active cooldown lasts, when it is not the caller's default.
+    ///
+    /// `null` means "whatever the detector passes to [isCooldownExpired]",
+    /// i.e. `tripStartCooldownPeriodSeconds`, which is what a false start arms.
+    /// A ride discarded as a *vehicle* arms a much longer one (T051): a drive
+    /// lasts half an hour, and at 30 s the rest of it would be a string of
+    /// started-and-discarded trips, each with its own notification.
+    Duration? cooldownDuration,
   }) = _TripStartState;
 
   /// Create initial state
@@ -35,6 +44,7 @@ sealed class TripStartState with _$TripStartState {
       lastDetectionTime: null,
       cooldownActive: false,
       cooldownStartTime: null,
+      cooldownDuration: null,
     );
   }
 }
@@ -59,10 +69,13 @@ extension TripStartStateExtensions on TripStartState {
   }
 
   /// Check if cooldown period has expired
-  bool isCooldownExpired(DateTime now, Duration cooldownDuration) {
+  ///
+  /// [defaultDuration] applies unless this cooldown was armed with one of its
+  /// own — see the field.
+  bool isCooldownExpired(DateTime now, Duration defaultDuration) {
     if (!cooldownActive || cooldownStartTime == null) return true;
-    return now.difference(cooldownStartTime!).inSeconds >=
-        cooldownDuration.inSeconds;
+    final period = cooldownDuration ?? defaultDuration;
+    return now.difference(cooldownStartTime!).inSeconds >= period.inSeconds;
   }
 
   /// Reset detection state (clears consecutive detections and confidence)
@@ -74,11 +87,12 @@ extension TripStartStateExtensions on TripStartState {
     );
   }
 
-  /// Activate cooldown
-  TripStartState activateCooldown(DateTime now) {
+  /// Activate cooldown, optionally for a [period] other than the default.
+  TripStartState activateCooldown(DateTime now, {Duration? period}) {
     return copyWith(
       cooldownActive: true,
       cooldownStartTime: now,
+      cooldownDuration: period,
       confidence: 0.0,
       consecutiveDetections: 0,
     );
@@ -86,6 +100,10 @@ extension TripStartStateExtensions on TripStartState {
 
   /// Deactivate cooldown
   TripStartState deactivateCooldown() {
-    return copyWith(cooldownActive: false, cooldownStartTime: null);
+    return copyWith(
+      cooldownActive: false,
+      cooldownStartTime: null,
+      cooldownDuration: null,
+    );
   }
 }

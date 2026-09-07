@@ -1051,6 +1051,85 @@ void main() {
     });
   });
 
+  group('TripRecorderService - a ride made in a car (L-100)', () {
+    /// A fix carrying a *measured* speed the app is allowed to believe, moving
+    /// far enough each time to clear the recording filters. [index] spaces both
+    /// the position and the timestamp, at two seconds a step — the cadence iOS
+    /// actually delivered during the drive.
+    ///
+    /// These are **provider** speeds, which is what the recorder receives: it
+    /// subscribes to `locationStreamProvider` directly, so `GpsSpeedEstimator`
+    /// — which lives in the coordinator's ingestion path — never touches them.
+    /// The vehicle rule depends on that: a derived speed must not vote.
+    LocationData carFix(int index, double speedKmh) {
+      return LocationData(
+        latitude: 48.8566 + index * 0.001,
+        longitude: 2.3522,
+        accuracy: 3.5,
+        altitude: 35.0,
+        speed: speedKmh / 3.6,
+        heading: 90.0,
+        timestamp: DateTime(
+          2026,
+          9,
+          7,
+          12,
+          45,
+        ).add(Duration(seconds: index * 2)),
+      );
+    }
+
+    test('the drive to the shops ends four fixes after it reaches speed', () async {
+      // 2026-09-07: a 27-minute drive recorded as a 3.1 km cycling trip at
+      // 6.9 km/h. The motion fit could not have refused it — a car shakes like
+      // a bicycle — and none of the three older discard arms could either: it
+      // lasted, it had 74 points, and it went somewhere.
+      final recorder = await readRecorder();
+      fakeRepository.backdateStartBy = const Duration(minutes: 11);
+      await startTrip(recorder, confidenceScore: 0.9);
+
+      // Town speeds first: evidence, but not a verdict.
+      var index = 0;
+      for (final speed in <double>[25.1, 30.7, 32.1, 32.6]) {
+        await pushFix(carFix(index++, speed));
+      }
+      expect(
+        container.read(tripStateMachineProvider).hasActiveTrip,
+        isTrue,
+        reason: 'nothing under the threshold ends a ride',
+      );
+
+      // Then the cruise the log actually recorded, two seconds apart.
+      for (final speed in <double>[38.0, 38.0, 37.9, 39.3]) {
+        await pushFix(carFix(index++, speed));
+      }
+      await pumpEventQueue();
+
+      expect(fakeRepository.deletedTripIds, equals([1]));
+      expect(recorder.lastDiscardReason, 'vehicle');
+    });
+
+    test('a ride whose provider reports no speed is kept', () async {
+      // The iPhone's normal output (L-098): `sp` exactly 0 on fixes taken at
+      // 20 km/h. No measured speed is no evidence — and a rule that read those
+      // as slow, or that read the derived replacement as measured, would be
+      // deciding on the wrong number in both directions.
+      final recorder = await readRecorder();
+      fakeRepository.backdateStartBy = const Duration(minutes: 11);
+      await startTrip(recorder, confidenceScore: 0.9);
+
+      for (var i = 0; i < 8; i++) {
+        await pushFix(carFix(i, 0.0));
+      }
+
+      expect(container.read(tripStateMachineProvider).hasActiveTrip, isTrue);
+
+      final finalTrip = (await recorder.stopRecording())!;
+      expect(finalTrip.status, TripStatus.completed);
+      expect(recorder.lastDiscardReason, isNull);
+    });
+  });
+
   group('TripRecorderService - short trips are discarded (L-068)', () {
     test(
       'a recording under the minimum duration is deleted, not saved',

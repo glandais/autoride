@@ -148,9 +148,15 @@ class _RecorderLog {
   bool discardOnStop = false;
 
   /// Moving seconds carried by the trip `stopRecording` hands back. It is what
-  /// separates the two discard reasons at the coordinator: only the short one
-  /// is a false start.
+  /// separates two of the discard reasons at the coordinator: only the short
+  /// one is a false start.
   int durationOnStop = 0;
+
+  /// What the recorder reports as the reason for the last discard. `vehicle`
+  /// arms a much longer cooldown than a false start (T051, L-100), and it
+  /// cannot be re-derived from the trip: a drive lasts, has points, and goes
+  /// somewhere.
+  String? discardReasonOnStop;
 }
 
 class _SpyTripRecorderService extends TripRecorderService {
@@ -188,6 +194,9 @@ class _SpyTripRecorderService extends TripRecorderService {
   }
 
   @override
+  String? get lastDiscardReason => log.discardReasonOnStop;
+
+  @override
   Future<Trip> stopRecording() async {
     log.stopCalls++;
     await log.stopGate?.future;
@@ -219,6 +228,10 @@ class _StartDetectorScript {
   final List<LocationData?> seenLocations = [];
   int resetCalls = 0;
   int cooldownCalls = 0;
+
+  /// The period the last cooldown was armed with — `null` for the default
+  /// (a false start), `vehicleCooldownPeriodSeconds` for a vehicle (T051).
+  Duration? cooldownPeriod;
 }
 
 class _FakeTripStartDetector extends TripStartDetector {
@@ -250,8 +263,9 @@ class _FakeTripStartDetector extends TripStartDetector {
   }
 
   @override
-  void activateCooldown() {
+  void activateCooldown({Duration? period}) {
     script.cooldownCalls++;
+    script.cooldownPeriod = period;
   }
 }
 
@@ -427,8 +441,9 @@ class _StreakStartDetector extends TripStartDetector {
   }
 
   @override
-  void activateCooldown() {
+  void activateCooldown({Duration? period}) {
     script.cooldownCalls++;
+    script.cooldownPeriod = period;
   }
 }
 
@@ -1662,6 +1677,61 @@ void main() {
 
       expect(recorder.stopCalls, 1);
       expect(startDetector.cooldownCalls, 0);
+    });
+
+    test('a ride discarded as a vehicle arms the long cooldown (L-100)', () async {
+      // The 2026-09-07 drive to the shops. A car's motion is a bicycle's, so
+      // the detector will start again within seconds of the veto and keep doing
+      // so for the length of the drive — thirty seconds of blindness would turn
+      // one drive into a string of started-and-discarded trips, each with its
+      // own notification.
+      recorder
+        ..discardOnStop = true
+        ..durationOnStop = AppConstants.minTripDurationSeconds * 11
+        ..discardReasonOnStop = 'vehicle';
+      await begin();
+
+      for (
+        var i = 1;
+        i <= AppConstants.tripStartMinConsecutiveDetections;
+        i++
+      ) {
+        await pushMotion(i);
+      }
+      stopDetector.decision = StopDecision.stopTrip;
+      await pushMotion(10);
+
+      expect(recorder.stopCalls, 1);
+      expect(startDetector.cooldownCalls, 1);
+      expect(
+        startDetector.cooldownPeriod,
+        const Duration(seconds: AppConstants.vehicleCooldownPeriodSeconds),
+      );
+    });
+
+    test('a false start still arms the short one', () async {
+      recorder
+        ..discardOnStop = true
+        ..durationOnStop = 10
+        ..discardReasonOnStop = 'dur';
+      await begin();
+
+      for (
+        var i = 1;
+        i <= AppConstants.tripStartMinConsecutiveDetections;
+        i++
+      ) {
+        await pushMotion(i);
+      }
+      stopDetector.decision = StopDecision.stopTrip;
+      await pushMotion(10);
+
+      expect(startDetector.cooldownCalls, 1);
+      expect(
+        startDetector.cooldownPeriod,
+        isNull,
+        reason: 'null means the default, which is what a false start arms',
+      );
     });
 
     test('a completed trip does not arm the cooldown', () async {
