@@ -174,6 +174,18 @@ abstract final class AuditEvent {
   /// GPS-loss watchdog (L-074). `a` = arm|fire|disarm, `el`, `lim`, `ref`.
   static const String gpsWatchdog = 'gpsw';
 
+  /// No-progress deadline (T052, L-103). `a` = arm|fire|disarm, `el` s, `lim`
+  /// s, `net` m (the recording's displacement when the deadline was read), and
+  /// `cyc` — whether a *measured* cycling speed had ever been seen.
+  ///
+  /// A recording that has run `lim` seconds without a measured cycling speed
+  /// and without going anywhere is ended here. Distinct from [gpsWatchdog],
+  /// which asks whether fixes are arriving at all: this one asks whether they
+  /// say anything. A `fire` is followed by the ordinary ending — the deadline
+  /// creates no discard reason of its own, so what `trip` reports next is
+  /// whatever `Trip.discardReason` would have answered anyway.
+  static const String noProgress = 'prog';
+
   /// Location stream resubscription after an error or completion.
   static const String gpsResubscribe = 'gps';
 
@@ -263,6 +275,7 @@ abstract final class AuditEvent {
     backdate,
     buffer,
     gpsWatchdog,
+    noProgress,
     gpsResubscribe,
     vehicle,
     routePoint,

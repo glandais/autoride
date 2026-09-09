@@ -1033,6 +1033,58 @@ void main() {
       expect(fakeRepository.deletedTripIds, isEmpty);
     });
 
+    test(
+      'a short walk that comes home is not a loop ride (T052, L-103)',
+      () async {
+        final recorder = await readRecorder();
+        final walk = await longRecording(recorder, fixes: [_fix(0), _fix(2)]);
+
+        // The two recordings of 2026-09-09 that reached History as cycling
+        // rides. Both fail the displacement arm by half and were saved by speed
+        // alone; the speed arm exists for the *loop* ride, and a loop ride has
+        // distance.
+        expect(
+          walk
+              .copyWith(distance: 545, duration: 301, avgSpeed: 6.51)
+              .discardReason(9, netDisplacementMeters: 52),
+          equals('still'),
+        );
+        expect(
+          walk
+              .copyWith(distance: 219, duration: 197, avgSpeed: 4.01)
+              .discardReason(8, netDisplacementMeters: 45),
+          equals('still'),
+        );
+
+        // And the arm still does its job at a distance a walk does not cover:
+        // same speed, same displacement, a real loop's kilometre.
+        expect(
+          walk
+              .copyWith(distance: 2600, duration: 660, avgSpeed: 14.2)
+              .discardReason(60, netDisplacementMeters: 12),
+          isNull,
+        );
+      },
+    );
+
+    test(
+      'a straight ride shorter than a loop is kept on displacement',
+      () async {
+        final recorder = await readRecorder();
+        final ride = await longRecording(recorder, fixes: [_fix(0), _fix(2)]);
+
+        // 800 m to the bakery: under `minTripLoopDistanceMeters`, and never
+        // reaches it — the displacement arm answers first, which is exactly why
+        // the distance term is an AND on the *other* branch.
+        expect(
+          ride
+              .copyWith(distance: 800, duration: 240, avgSpeed: 12.0)
+              .discardReason(20, netDisplacementMeters: 780),
+          isNull,
+        );
+      },
+    );
+
     test('the discard says which rule threw the recording away', () async {
       final recorder = await readRecorder();
 
@@ -1079,28 +1131,90 @@ void main() {
       );
     }
 
-    test('the drive to the shops ends four fixes after it reaches speed', () async {
+    test('the drive to the shops is refused at the end (T052, L-102)', () async {
       // 2026-09-07: a 27-minute drive recorded as a 3.1 km cycling trip at
       // 6.9 km/h. The motion fit could not have refused it — a car shakes like
       // a bicycle — and none of the three older discard arms could either: it
       // lasted, it had 74 points, and it went somewhere.
+      //
+      // Under T051 the live arm ended it at the fourth fix above 35 km/h. It no
+      // longer does: a bicycle descent reaches 39.9 and the drive peaks at
+      // 39.3, so nothing at town speeds may end a ride in progress (L-102).
+      // The verdict is taken at the stop instead, on the share of the whole
+      // recording — 10 of 37 measured fixes here, well over the quarter.
       final recorder = await readRecorder();
       fakeRepository.backdateStartBy = const Duration(minutes: 11);
       await startTrip(recorder, confidenceScore: 0.9);
 
-      // Town speeds first: evidence, but not a verdict.
       var index = 0;
       for (final speed in <double>[25.1, 30.7, 32.1, 32.6]) {
         await pushFix(carFix(index++, speed));
       }
+      for (final speed in <double>[38.0, 38.0, 37.9, 39.3]) {
+        await pushFix(carFix(index++, speed));
+      }
+      await pumpEventQueue();
+
       expect(
         container.read(tripStateMachineProvider).hasActiveTrip,
         isTrue,
-        reason: 'nothing under the threshold ends a ride',
+        reason: 'town speeds no longer end a ride where it stands',
       );
+      expect(fakeRepository.deletedTripIds, isEmpty);
 
-      // Then the cruise the log actually recorded, two seconds apart.
-      for (final speed in <double>[38.0, 38.0, 37.9, 39.3]) {
+      final finalTrip = (await recorder.stopRecording())!;
+      expect(recorder.lastDiscardReason, 'vehicle');
+      expect(finalTrip.status, TripStatus.discarded);
+      expect(fakeRepository.deletedTripIds, equals([1]));
+    });
+
+    test('a descent at 39.9 km/h keeps the ride (T052, L-102)', () async {
+      // The 2026-09-09 morning commute. Six measured fixes at or above 35 over
+      // ten seconds, peaking at 39.9 — faster than the drive above, and held
+      // longer. Under 1.0.0+14 this deleted 1 561 m of a real ride.
+      final recorder = await readRecorder();
+      fakeRepository.backdateStartBy = const Duration(minutes: 11);
+      await startTrip(recorder, confidenceScore: 0.9);
+
+      var index = 0;
+      for (final speed in <double>[
+        30.1,
+        31.5,
+        35.6,
+        37.6,
+        39.1,
+        39.1,
+        39.5,
+        39.9,
+        34.5,
+      ]) {
+        await pushFix(carFix(index++, speed));
+      }
+      // …and the rest of the commute, which is what puts the fast fixes in the
+      // minority the end-of-ride arm reads.
+      for (var i = 0; i < 30; i++) {
+        await pushFix(carFix(index++, 18.0 + (i % 7)));
+      }
+      await pumpEventQueue();
+
+      expect(container.read(tripStateMachineProvider).hasActiveTrip, isTrue);
+
+      final finalTrip = (await recorder.stopRecording())!;
+      expect(recorder.lastDiscardReason, isNull);
+      expect(finalTrip.status, TripStatus.completed);
+      expect(fakeRepository.deletedTripIds, isEmpty);
+    });
+
+    test('a road drive still ends where it stands', () async {
+      // The live arm keeps its purpose above `vehicleLiveSpeedKmh`: a drive
+      // that is actually travelling is stopped in seconds rather than recorded
+      // for half an hour.
+      final recorder = await readRecorder();
+      fakeRepository.backdateStartBy = const Duration(minutes: 11);
+      await startTrip(recorder, confidenceScore: 0.9);
+
+      var index = 0;
+      for (final speed in <double>[52.0, 51.0, 55.0, 54.0]) {
         await pushFix(carFix(index++, speed));
       }
       await pumpEventQueue();

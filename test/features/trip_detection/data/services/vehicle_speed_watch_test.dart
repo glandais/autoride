@@ -98,28 +98,91 @@ void main() {
       [24.1, 1548],
     ];
 
-    test('the drive to the shops fires the live arm', () {
+    test('the drive to the shops is refused at the end, not live', () {
       final watch = VehicleSpeedWatch();
 
-      expect(_replay(watch, carTrip), isTrue);
+      // T052, L-102: the live arm no longer answers at town speeds. This drive
+      // peaks at 39.3 km/h, and so does a bicycle descent — see the group
+      // below. Nothing here is fast enough for the live threshold.
+      expect(_replay(watch, carTrip), isFalse);
+
+      // The end-of-ride arm still refuses it, and on its own evidence: ten of
+      // the thirty-seven measured fixes are at or above 35 km/h — 27.0 %, over
+      // the quarter it needs.
       expect(watch.looksLikeVehicle, isTrue);
-      // Ten of the thirty-seven measured fixes are at or above 35 km/h — over
-      // the quarter the end-of-ride arm needs, so this drive would have been
-      // refused even if every burst had arrived too far apart to be live.
       expect(watch.measuredFixes, 37);
       expect(watch.vehicleFixes, 10);
     });
 
-    test('it fires at the fourth fast fix, not at the end of the drive', () {
+    test(
+      'the live arm answers on a road, at four fixes over its own threshold',
+      () {
+        final watch = VehicleSpeedWatch();
+
+        // Three fast fixes: not yet.
+        expect(_replay(watch, motorwaySample.sublist(0, 3)), isFalse);
+
+        // The fourth closes a six-second span above `vehicleLiveSpeedKmh`.
+        watch.add(_fix(speedKmh: 54.0, atSeconds: 6));
+        expect(watch.hasFired, isTrue);
+        expect(watch.looksLikeVehicle, isTrue);
+      },
+    );
+
+    /// The 2026-09-09 morning commute, as `[speed, second]` — the descent that
+    /// L-102 is about, taken from `autoride-audit-20260909-1802.ndjson.gz`.
+    /// Seconds are relative to the first of these fixes.
+    ///
+    /// Six measured fixes at or above 35 km/h spanning ten seconds, peaking at
+    /// **39.9** — faster than the drive above, and held longer. This is the
+    /// trace that proves peak speed and sustain cannot separate the two.
+    const descent = <List<double>>[
+      [30.1, 0],
+      [30.1, 1],
+      [28.2, 4],
+      [31.5, 7],
+      [35.6, 9],
+      [37.6, 11],
+      [39.1, 13],
+      [39.1, 15],
+      [39.5, 17],
+      [39.9, 19],
+      [34.5, 21],
+      [28.0, 24],
+      [19.3, 27],
+    ];
+
+    test('the descent does not end the ride (T052, L-102)', () {
       final watch = VehicleSpeedWatch();
 
-      // Everything up to and including 37.9 km/h at +337 s: three fast fixes.
-      expect(_replay(watch, carTrip.sublist(0, 12)), isFalse);
+      // Under 1.0.0+14 this fired at the fourth fix above 35 and deleted
+      // 1 561 m of a real commute.
+      expect(_replay(watch, descent), isFalse);
+    });
 
-      // The fourth, at +339 s, closes a six-second span and ends the ride —
-      // 5 min 39 s in, against a drive that ran for 27 minutes.
-      watch.add(_fix(speedKmh: 39.3, atSeconds: 339));
-      expect(watch.hasFired, isTrue);
+    test('the commute that contained it is not a vehicle either', () {
+      final watch = VehicleSpeedWatch();
+
+      // The descent, then the rest of the ride — 42 measured fixes in all, of
+      // which 6 are at or above 35 km/h. 14.3 %, under the quarter the
+      // end-of-ride arm needs, against the drive's 27.0 %.
+      //
+      // The share is the whole point: read on the truncated recording the veto
+      // itself produced (4 of 11) it is 36 %, and the ride looks like a car
+      // *because* it was cut short.
+      _replay(watch, descent);
+      for (var i = 0; i < 29; i++) {
+        watch.add(_fix(speedKmh: 18.0 + (i % 7), atSeconds: 40 + i * 30));
+      }
+
+      expect(watch.hasFired, isFalse);
+      expect(watch.measuredFixes, 42);
+      expect(watch.vehicleFixes, 6);
+      expect(
+        watch.vehicleFixes / watch.measuredFixes,
+        lessThan(AppConstants.vehicleSpeedMinShare),
+      );
+      expect(watch.looksLikeVehicle, isFalse);
     });
 
     test('the night ride does not', () {
@@ -210,7 +273,7 @@ void main() {
 
     test('reset forgets the recording', () {
       final watch = VehicleSpeedWatch();
-      _replay(watch, carTripSample);
+      _replay(watch, motorwaySample);
       expect(watch.hasFired, isTrue);
 
       watch.reset();
@@ -223,11 +286,15 @@ void main() {
   });
 }
 
-/// Four fast fixes spanning more than the sustain window — the shortest trace
-/// that fires the live arm.
-const carTripSample = <List<double>>[
-  [38.0, 0],
-  [38.0, 2],
-  [37.9, 4],
-  [39.3, 6],
+/// Four fixes above `vehicleLiveSpeedKmh`, spanning more than the sustain
+/// window — the shortest trace that fires the live arm since T052.
+///
+/// Deliberately not the drive's own 38-39.3 km/h burst: those are *town* car
+/// speeds, and a bicycle descent reaches 39.9 (L-102). The live arm's job is
+/// the road, where nothing on two wheels follows.
+const motorwaySample = <List<double>>[
+  [52.0, 0],
+  [51.0, 2],
+  [55.0, 4],
+  [54.0, 6],
 ];

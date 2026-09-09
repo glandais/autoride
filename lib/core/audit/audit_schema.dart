@@ -63,6 +63,9 @@ abstract final class AuditSchema {
     'vehMin': AppConstants.vehicleSpeedMinFixes,
     'vehSec': AppConstants.vehicleSustainSeconds.inSeconds,
     'vehShare': AppConstants.vehicleSpeedMinShare,
+    // The live arm's own threshold since T052 (L-102); `vehKmh` now describes
+    // the end-of-ride arm only.
+    'vehLiveKmh': AppConstants.vehicleLiveSpeedKmh,
     'vehCool': AppConstants.vehicleCooldownPeriodSeconds,
     // Speed trust and derived speed (T048)
     'spAcc': AppConstants.speedTrustMaxAccuracyMeters,
@@ -96,6 +99,11 @@ abstract final class AuditSchema {
     'minTripPts': AppConstants.minTripRoutePoints,
     'minTripNet': AppConstants.minTripNetDisplacementMeters,
     'minTripKmh': AppConstants.minTripAvgSpeedKmh,
+    // The distance the speed arm of the discard rule needs before it may keep a
+    // recording whose displacement failed (T052, L-103).
+    'minTripLoop': AppConstants.minTripLoopDistanceMeters,
+    // The no-progress deadline (T052, L-103), in seconds.
+    'noProg': AppConstants.noProgressStopTimeout.inSeconds,
     // Pre-trip buffer (L-076)
     'preBufS': AppConstants.preTripLocationBufferDuration.inSeconds,
     'preBufN': AppConstants.preTripLocationBufferMaxPoints,

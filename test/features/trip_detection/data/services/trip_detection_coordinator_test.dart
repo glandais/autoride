@@ -1326,6 +1326,142 @@ void main() {
     });
   });
 
+  group('TripDetectionCoordinator - the no-progress deadline (T052, L-103)', () {
+    late _WatchdogCoordinator watchdog;
+
+    setUp(() {
+      container.dispose();
+      container = ProviderContainer(
+        overrides: baseOverrides(
+          extra: [
+            tripDetectionCoordinatorProvider.overrideWith(
+              _WatchdogCoordinator.new,
+            ),
+          ],
+        ),
+      );
+      coordinatorSubscription = container.listen(
+        tripDetectionCoordinatorProvider,
+        (_, _) {},
+      );
+    });
+
+    Future<void> startTrip() async {
+      startDetector.verdict = true;
+      final coordinator = await startedCoordinator();
+      watchdog = coordinator as _WatchdogCoordinator;
+      await pushMotion(1);
+      expect(_stateName(container.read(tripStateMachineProvider)), 'active');
+    }
+
+    /// A fix at [index] (~22 m a step) carrying [speed] m/s as the *provider's*
+    /// own measurement.
+    Future<void> pushFix(int index, {double speed = 5.0}) async {
+      locationController.add(_location(index: index, speed: speed));
+      await pumpEventQueue();
+    }
+
+    Future<void> tick() async {
+      watchdog.tick();
+      await pumpEventQueue();
+    }
+
+    test('a recording that says nothing is ended at the deadline', () async {
+      await startTrip();
+
+      watchdog.advance(
+        AppConstants.noProgressStopTimeout - const Duration(seconds: 1),
+      );
+      await tick();
+      expect(recorder.stopCalls, 0);
+
+      watchdog.advance(const Duration(seconds: 1));
+      await tick();
+      expect(recorder.stopCalls, 1);
+      expect(_stateName(container.read(tripStateMachineProvider)), 'idle');
+    });
+
+    test('a measured cycling speed disarms it for good', () async {
+      await startTrip();
+
+      // 5 m/s = 18 km/h, over `cyclingSpeedMin`. One honest fix is proof
+      // enough that a bicycle is involved.
+      await pushFix(1);
+
+      // Well past the deadline, and short of `gpsLossStopTimeout` — which owns
+      // the other question and would otherwise answer this test for it.
+      watchdog.advance(
+        AppConstants.gpsLossStopTimeout - const Duration(seconds: 1),
+      );
+      await tick();
+
+      expect(recorder.stopCalls, 0);
+      expect(_stateName(container.read(tripStateMachineProvider)), 'active');
+    });
+
+    test('walking pace does not disarm it', () async {
+      await startTrip();
+
+      // 1.2 m/s = 4.3 km/h. A measurement, and not of cycling — this is the
+      // whole of the 2026-09-09 working day.
+      await pushFix(1, speed: 1.2);
+      await pushFix(2, speed: 1.2);
+
+      watchdog.advance(AppConstants.noProgressStopTimeout);
+      await tick();
+
+      expect(recorder.stopCalls, 1);
+    });
+
+    test('a recording that went somewhere survives the deadline', () async {
+      await startTrip();
+
+      // The load-bearing case (L-103): on 2026-09-09 a genuine commute went
+      // 423 s before its first *measured* cycling speed, because the iPhone
+      // reported `sp` 0 through the start of the ride — but it had already
+      // covered 271 m. Displacement is what makes this rule independent of how
+      // generous the provider is being.
+      for (var i = 0; i <= 8; i++) {
+        await pushFix(i, speed: 0);
+      }
+
+      watchdog.advance(AppConstants.noProgressStopTimeout);
+      await tick();
+
+      expect(recorder.stopCalls, 0);
+      expect(_stateName(container.read(tripStateMachineProvider)), 'active');
+
+      // And it does not come back to re-ask the same question a second later.
+      // (A fix keeps the GPS-loss watchdog — the other rule, at 600 s — out of
+      // this assertion.)
+      await pushFix(9, speed: 0);
+      watchdog.advance(
+        AppConstants.gpsLossStopTimeout - const Duration(seconds: 1),
+      );
+      await tick();
+      expect(recorder.stopCalls, 0);
+    });
+
+    test('a derived speed is not a measured one', () async {
+      await startTrip();
+
+      // Fixes that move but report `sp` 0 — the iPhone's normal output
+      // (L-098). `GpsSpeedEstimator` fills in a derived speed for the rest of
+      // the pipeline, and the deadline must not read it: a `dsp` inherits the
+      // accuracy of the pair it came from, which is how a walk reads 20 km/h.
+      // Kept under `minTripNetDisplacementMeters` so the displacement term
+      // cannot be what answers.
+      for (var i = 0; i <= 3; i++) {
+        await pushFix(i, speed: 0);
+      }
+
+      watchdog.advance(AppConstants.noProgressStopTimeout);
+      await tick();
+
+      expect(recorder.stopCalls, 1);
+    });
+  });
+
   group('TripDetectionCoordinator - GPS-loss auto-stop (L-074)', () {
     late _WatchdogCoordinator watchdog;
 
@@ -1381,10 +1517,20 @@ void main() {
     test('a trip that just started is not stopped before the timeout', () async {
       await startTrip();
 
-      // The first fix legitimately takes a while; the grace period is the full
-      // timeout, counted from the start of the trip.
+      // The first fix legitimately takes a while, and the countdown runs from
+      // the start of the trip.
+      //
+      // The grace period is no longer the *whole* of `gpsLossStopTimeout`,
+      // though: since T052 a recording that has neither a measured cycling
+      // speed nor any displacement is ended at `noProgressStopTimeout`, which
+      // is shorter (420 s against 600). A trip that never receives a fix at all
+      // satisfies both terms, so that deadline is what now ends it — the
+      // "never got a fix" branch of this watchdog is unreachable in practice,
+      // and deliberately so: 600 s of a phone left indoors was the case L-105
+      // was opened over. What this watchdog still owns is a ride that *had*
+      // fixes and lost them, which the deadline disarms itself for.
       watchdog.advance(
-        AppConstants.gpsLossStopTimeout - const Duration(seconds: 1),
+        AppConstants.noProgressStopTimeout - const Duration(seconds: 1),
       );
       await tick();
 

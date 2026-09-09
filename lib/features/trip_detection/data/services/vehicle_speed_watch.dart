@@ -28,12 +28,27 @@ import '../../../../core/constants/app_constants.dart';
 /// ([LocationData.hasReportedSpeed]) and is accurate enough for that speed to
 /// be believed — the same predicate the start path uses.
 ///
-/// **Two arms, one statistic.** [isVehicleNow] is the live one: enough of the
-/// last few pieces of evidence are above the threshold, over a span long enough
-/// not to be one burst of noise. [looksLikeVehicle] is the end-of-ride one,
-/// over everything the trip saw — it catches a drive whose speed bursts arrived
-/// too far apart for the rolling window, and it is what the discard decision
-/// reads.
+/// **Two arms, two thresholds (T052, L-102).** [isVehicleNow] is the live one:
+/// enough of the last few pieces of evidence above [AppConstants
+/// .vehicleLiveSpeedKmh], over a span long enough not to be one burst of noise.
+/// [looksLikeVehicle] is the end-of-ride one, over everything the trip saw
+/// against [AppConstants.vehicleSpeedKmh] — it catches a drive whose speed
+/// bursts arrived too far apart for the rolling window, and it is what the
+/// discard decision reads.
+///
+/// The thresholds differ because the arms cost differently when wrong. On
+/// 2026-09-09 the live arm ended a real commute on a 39.9 km/h descent, and the
+/// drive it was calibrated against never exceeded 39.3: **the two are not
+/// separable on peak speed or on sustain**, only on the share of a whole
+/// recording, which is what the end-of-ride arm measures. The live arm is now
+/// held back to a speed no cyclist holds on a public road, so it stops a
+/// motorway drive early and leaves town driving to the end-of-ride arm — where
+/// being wrong costs a verdict, not a ride in progress.
+///
+/// This also repairs the end-of-ride arm's evidence. Truncating that commute at
+/// the veto left it reading 4 fast fixes of 11 measured — 36 % — because the
+/// slow remainder never got counted; recombined with the ride that resumed 12 s
+/// later it reads 6 of 42, **14.3 %**, against the drive's 27.0 %.
 ///
 /// Deliberately plain Dart, like [StationaryWindow] and `PreTripLocationBuffer`:
 /// mutable scratch state owned by `TripRecorderService`, directly unit-testable.
@@ -47,7 +62,8 @@ class VehicleSpeedWatch {
   /// Fixes that carried a believable measured speed, over the whole recording.
   int get measuredFixes => _measured;
 
-  /// How many of those were above [AppConstants.vehicleSpeedKmh].
+  /// How many of those were above [AppConstants.vehicleSpeedKmh] — the
+  /// end-of-ride threshold, and what `vfx` reports on every trip ending.
   int get vehicleFixes => _above;
 
   /// Whether the live arm has already fired during this recording.
@@ -71,10 +87,14 @@ class VehicleSpeedWatch {
     }
 
     _measured++;
-    final fast = fix.speedKmh >= AppConstants.vehicleSpeedKmh;
-    if (fast) _above++;
+    if (fix.speedKmh >= AppConstants.vehicleSpeedKmh) _above++;
 
-    _recent.add(_SpeedSample(fix.timestamp, fast));
+    _recent.add(
+      _SpeedSample(
+        fix.timestamp,
+        fix.speedKmh >= AppConstants.vehicleLiveSpeedKmh,
+      ),
+    );
     if (_recent.length > AppConstants.vehicleSpeedWindowFixes) {
       _recent.removeRange(
         0,
@@ -90,7 +110,8 @@ class VehicleSpeedWatch {
   /// Three conditions, and all three are needed:
   ///
   /// * at least [AppConstants.vehicleSpeedMinFixes] of the retained fixes are
-  ///   above the threshold — one is a GPS artefact, four is a road;
+  ///   above [AppConstants.vehicleLiveSpeedKmh] — one is a GPS artefact, four
+  ///   is a road;
   /// * they span at least [AppConstants.vehicleSustainSeconds] of wall clock,
   ///   so a burst of fixes 200 ms apart cannot satisfy the count on its own;
   /// * the window is full enough to have a majority in it at all.
@@ -106,8 +127,10 @@ class VehicleSpeedWatch {
 
   /// Whether the recording as a whole was made in a vehicle.
   ///
-  /// The live arm having fired is sufficient — it is the stronger evidence, and
-  /// it is what stopped the ride. Otherwise the whole-trip shape has to say it:
+  /// The live arm having fired is sufficient — since T052 it only fires above
+  /// [AppConstants.vehicleLiveSpeedKmh], which is overwhelming evidence and is
+  /// exactly what this short circuit assumes; at 35 km/h it was not, and that
+  /// is L-102. Otherwise the whole-trip shape has to say it:
   /// enough fast fixes *and* a large enough share of the evidence, because a
   /// long ride accumulates four artefacts eventually while a short drive does
   /// not have many fixes to begin with.
@@ -133,5 +156,8 @@ class _SpeedSample {
   const _SpeedSample(this.at, this.fast);
 
   final DateTime at;
+
+  /// Above [AppConstants.vehicleLiveSpeedKmh] — the live arm's threshold, not
+  /// the end-of-ride one. `_above` counts the other.
   final bool fast;
 }

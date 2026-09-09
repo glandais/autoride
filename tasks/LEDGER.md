@@ -1310,3 +1310,116 @@ There is no threshold on this axis that separates a town car from a fast cyclist
 **Not settled.** Whether a real ride ever trips the veto — no ride on 1.0.0+13 exists yet. That is
 now the second thing run 2 of T048 §5 / T049 §5 has to show, alongside the departure timing:
 **one trip, and no `veh` line in it.**
+
+---
+
+## 11. Field findings — 2026-09-09, two commutes and a working day (build 1.0.0+14)
+
+**Source**: two verbose audit logs, `autoride-audit-20260909-0928.ndjson.gz` and
+`autoride-audit-20260909-1802.ndjson.gz`, iPhone 14,3 / iOS 26.6.1, **1.0.0+14** — the first build
+carrying T051. The second covers 09-08 12:46 → 09-09 16:02 UTC and contains everything the first
+does; all times below are **local (CEST, `hdr.tz` +02:00)**. The rider commuted by bicycle in the
+morning and in the evening and spent the day between them at a desk.
+
+**This is the run §10 asked for**, and it answers its "Not settled" question in the negative:
+*"Whether a real ride ever trips the veto — no ride on 1.0.0+13 exists yet. **One trip, and no
+`veh` line in it.**"* There is a `veh` line in it, and it is in the morning commute.
+
+**What works, and it is most of the build.** T050's departure timing holds on both commutes —
+four seconds from the first shaken second to `trip start` on the evening ride, three streak
+evaluations, no `dto`. T048's back-dating fired three times. The evening commute is clean end to
+end: one trip, 8 803 m, 26.8 min moving, `avg` 19.7, `max` 28.1, 159 points, one pause, an
+automatic stop on `maxPause`, `vfx: 0 / vmf: 38`. The GPS-loss watchdog fired once, correctly, on
+a recording that never got a fix. Pauses on the morning commute (11 s, 12 s, 88 s) are traffic
+lights and read as such.
+
+| | morning | evening |
+|---|---|---|
+| recorded | **two trips** — 30 (1 561 m, discarded `vehicle`) then 31 (6 238 m) | one trip — 44 (8 803 m) |
+| what it was | one commute, 7.8 km | one commute, 8.8 km |
+| moving avg / max | 12.7 / 39.1 then 17.2 / 39.9 | 19.7 / 28.1 |
+
+### High
+
+| ID | Dim | Where | Finding | Status | Evidence |
+|---|---|---|---|---|---|
+| L-102 | pipeline | `vehicle_speed_watch.dart` / `app_constants.dart` `vehicleSpeedKmh` | **The vehicle veto discarded a real bicycle commute.** A fast descent and a town car are the same measurement on the axis the live arm reads, and no value of `vehicleSpeedKmh` × `vehicleSustainSeconds` separates the two the evidence now holds | **Fixed** (T052) — pending the device run | `veh {a:"fire", spk:39.096, lim:35, n:4, m:11}` at 08:40:03, then `trip {a:"discard", why:"vehicle", id:30}` — **1 561 m and 7 min 21 s of a real commute deleted**. The speeds are not inferences: 35.6 / 37.6 / 39.1 / 39.1 / 39.5 / 39.9 / 34.5 km/h, `sp > 0` throughout, `ac` 4.3–14 m. Six measured fixes at or above 35 spanning **10 s**. Against §10's drive, on the same statistic: burst 1 **5 fixes / 8 s / max 39.3 / `ac` 3.5–14**, burst 2 **5 fixes / 8 s / max 37.7 / `ac` 3.5–4.7**. The car never exceeded 39.3 and the cyclist reached 39.9 — **the peak is worthless and the sustain is worthless**. The 2026-09-06 ride reached 38.4 measured and escaped only on `vehMin` (2 fast fixes, not 4). What *does* separate them is the **share of measured fixes that are fast**, over the whole recording: **0 % (n=38, evening), 4.7 % (n=43, 09-06), 14.3 % (n=42, the morning commute recombined)** against the drive's **27.0 % (n=37)** — with `vehShare` 0.25 already sitting between them. The morning ride only reads 30 % as `vfx 4 / vmf 11` because the live arm truncated it before the slow part could be counted: **the live arm destroys the evidence the end-of-ride arm needs.** → **T052 §3.1** |
+| L-103 | pipeline | `trip.dart` `discardReason` / `app_constants.dart` `minTripAvgSpeedKmh` | **Walking starts trips, and the discard rule's speed arm lets two of them through as cycling rides.** The `net` OR `avg` arm has no distance proof on the `avg` side, so a short walk that comes back near its start is kept | **Fixed** (T052) — pending the device run | **13 false starts** between 07:36 and 16:43 on top of the two commutes, every one of them with `spk 0` and `vt` absent — the gate has only just opened, no fix has arrived, so `c` is motion-only and motion does not separate walking from cycling any better than it separates driving (L-100). `asd` 2.4–7.2 and `gav` 1.4–3.8 on the false starts, against `gav` 0.77–1.84 on the morning commute: **the gyro is *higher* on foot.** Eleven were caught by `still` / `dur` / `pts`; **two were persisted as cycling trips** — trip 39 (545 m, 5 min, `avg` 6.51, **`net` 52 m**) and trip 43 (219 m, 3.3 min, `avg` 4.01, **`net` 45 m**), the second clearing `minTripAvgSpeedKmh` by 0.01. Both fail the `net` arm by half and are saved by `avg` alone. The arm is an OR for the loop ride that comes home (§L-095) — but a loop ride has *distance*: every genuine ride on record is ≥ 2 750 m (5 520 / 2 750 / 11 567 / 7 621 / 5 501 / 3 494 / 6 238 / 8 803) and the largest false trip of the day is **597 m**. → **T052 §3.2** |
+
+### Medium
+
+| ID | Dim | Where | Finding | Status | Evidence |
+|---|---|---|---|---|---|
+| L-104 | pipeline · method | nothing reads it | **The motion duty cycle over a whole recording separates a commute from a walk cleanly, and no arm consults it.** Not the peak, not the mean — the *fraction of the recording spent being shaken* | **Measured, not implemented** → T052 §5 | Median `win.sd` over each recording of 09-09: the three real rides read **0.86 / 1.38 / 2.28**, and **all thirteen** false trips read **0.01–0.22** — a 4× gap with nothing in it. As a duty cycle, the fraction of `win` samples with `sd ≥ 1`: rides **47.2 % / 54.8 % / 70.4 %**, false trips **3.4 %–35.1 %**, gap between 35.1 % and 47.2 %. This is *why* the phone is different on a bicycle: not that the peaks are bigger — the false trips reach `sd` p90 5.31, higher than the morning commute's 4.92 — but that a bicycle shakes it **continuously**. It is a candidate second arm and deliberately not the first one: it needs the `win` statistics plumbed into the recorder, and a ride held at a level crossing would lower it. |
+| L-105 | battery | — | Thirteen false starts cost roughly **2 h 30 of GPS held open** across the working day | **Mitigated** (T052 §3.3) — ~62 min of the ~148 recovered over the corpus | Summing each false recording's own span: ~148 min of a session with the gate open and a `gpsw` armed, none of it a ride. The day's battery reads 100 % at 03:37 → 65 % at 17:38 (**3.5 %/h**), but the log ran **verbose** and wrote 219 376 lines, so this number is not a T041 item-4 measurement and must not be quoted as one. |
+
+### Confirmed, not new
+
+* **L-100 holds in the other direction.** Motion cannot separate walking from cycling any more than
+  it separates driving from cycling. Three activities, one statistic, no threshold.
+* **L-095's OR is still the right shape** — the fix in T052 §3.2 tightens the `avg` side rather than
+  removing it, because the loop ride it was written for is real.
+* **T051's stated cost was accurate and arrived on the second ride.** §10 wrote it down in advance:
+  *"A cyclist holding 35 km/h across four measured fixes spanning five seconds loses the ride. That
+  is a fast descent or a paceline, and it is a real cost."* It was a fast descent, and it was two
+  days later. The `vfx`/`vmf` fields §10 added to every ending are what made this readable — they
+  did their job on the first run that needed them.
+
+### Remediation (2026-09-09, T052) — what shipped
+
+1. **Two vehicle thresholds where there was one (L-102).** `vehicleLiveSpeedKmh` (50) feeds
+   `VehicleSpeedWatch.isVehicleNow` alone; `vehicleSpeedKmh` (35) keeps the end-of-ride share arm.
+   The live arm decides on a handful of fixes and deletes a ride in progress, so it may not be
+   wrong cheaply — and at town speeds it *is* wrong, because a descent (39.9 km/h, 10 s) and a town
+   car (39.3, 8 s) are the same measurement. At 50 neither fires; the drive is still refused, at
+   the end, on its 27.0 % share, and the morning commute survives at 14.3 %.
+
+   **50 is a guard, not a calibration**, and the constant's comment says so: no measured speed
+   above 39.9 exists anywhere in the corpus, so it separates nothing that has been observed. It is
+   sized above what a cyclist holds on a public road and below a car that is actually travelling,
+   and it is untested until a log fires it.
+
+2. **A distance proof on the speed branch of the discard rule (L-103).**
+   `minTripLoopDistanceMeters` (1 000), ANDed onto the `avg` arm and nowhere else. That arm exists
+   for the loop ride that comes home, and a loop ride has distance; a walk that ends near where it
+   began has neither. Total distance is still not a general test — drift accumulates into it — but
+   it is consulted only where displacement has *already* failed, which is precisely where drift is
+   the hypothesis under test. Replayed over the 40 recordings of the corpus, exactly two verdicts
+   change, and both are walks.
+
+3. **A no-progress deadline (`noProgressStopTimeout`, 420 s), with two terms.** The start stays
+   permissive — requiring a fix to have voted before a trip may begin reverses T048 and T050 — and
+   the *recording* carries the deadline instead: no **measured** cycling speed ever seen, and less
+   than `minTripNetDisplacementMeters` travelled. It ends the recording and nothing more;
+   `Trip.discardReason` then answers what it would have answered at any other ending.
+
+   **The calibration is the finding here.** "No fix has voted" is the wrong test — a genuine
+   commute went 256 s before one did, another 204 s. Restricting to a measured cycling speed makes
+   the *discriminant* excellent (19 of 21 false recordings never see one; all nine genuine rides
+   eventually do) but not the *timing* — the slowest real ride waits **423 s**, because the iPhone
+   reports `sp` 0 through the start. The displacement term is what removes the dependence on how
+   generous the provider is being: at 420 s that ride had covered 271 m, and the nine genuine rides
+   read 271 / 964 / 1 277 / 1 536 / 1 943 / 2 146 / 2 426 / 2 462 / 2 810 m against the false
+   recordings' **0-63 m**. Over the corpus: 11 recordings cut, ~62 min of GPS recovered, both walks
+   of item 2 caught a second time, no genuine ride touched.
+
+4. **`prog` in the log**, and `k.vehLiveKmh` / `k.minTripLoop` / `k.noProg` in its header, so the
+   next log can be read against the build that wrote it.
+
+**What this costs, stated plainly.** A town drive is now recorded for its full length and refused
+at the end — the `veh` line moves from +339 s to the ending, and the "trip started" notification
+stands for the duration of the drive. That is the price of not deleting a real ride in the middle,
+and it is the right way round.
+
+`gpsLossStopTimeout` (600 s) and the deadline (420 s) both cover a recording that never receives a
+fix, and the shorter now wins. That branch of the GPS-loss watchdog is unreachable in practice,
+deliberately: 600 s of a phone left indoors is what L-105 is about. The watchdog still owns the
+ride that *had* fixes and lost them, which the deadline disarms itself for.
+
+**Not settled.** The share arm's margin is **14.3 % against 27.0 %**, on *one* drive and four
+rides. A cyclist who spends more than a quarter of their measured fixes above 35 km/h — a long
+descent, a paceline — still loses the ride, at the end instead of in the middle. And the deadline's
+displacement margin (271 m against a 100 m line) rests on a single slow-GPS commute. Both want a
+second observation before either number moves again.
+
+Gates: `flutter analyze` clean, **806 tests** (779 → 806).

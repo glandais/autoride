@@ -111,6 +111,26 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
   /// 1 s tick cannot fire the stop twice.
   DateTime? _gpsWatchdogReference;
 
+  /// Start instant of the current recording, for the no-progress deadline
+  /// (T052, L-103). `null` outside a recording, and cleared while a stop is in
+  /// flight so the 1 s tick cannot fire the stop twice — same discipline as
+  /// [_gpsWatchdogReference].
+  DateTime? _noProgressReference;
+
+  /// Whether any fix of the current recording has reported a **measured**
+  /// cycling speed.
+  ///
+  /// Measured, not derived: a `dsp` inherits the accuracy of the fixes it was
+  /// computed from, and on a coarse pair that is how a walk reads 20 km/h —
+  /// the same rule, and the same reason, as `VehicleSpeedWatch`. This latches
+  /// on for the rest of the recording; one honest fix at cycling speed is proof
+  /// enough that a bicycle is involved.
+  bool _sawMeasuredCyclingSpeed = false;
+
+  /// First accurate fix of the current recording, and the yardstick the
+  /// deadline's displacement term is measured against.
+  LocationData? _progressAnchor;
+
   bool _isAnalyzing = false;
   bool _disposed = false;
 
@@ -197,6 +217,11 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
   /// Overridden in tests, like [gpsInactivityTimeout].
   @visibleForTesting
   Duration get gpsLossStopTimeout => AppConstants.gpsLossStopTimeout;
+
+  /// How long a recording may run with nothing saying a bicycle is involved.
+  /// Seam for the tests, same reason as [gpsLossStopTimeout].
+  @visibleForTesting
+  Duration get noProgressStopTimeout => AppConstants.noProgressStopTimeout;
 
   /// Wall clock, as a seam: the GPS-loss watchdog compares instants, and tests
   /// move this forward instead of waiting ten real minutes.
@@ -415,6 +440,7 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
       _heartbeatArmed = false;
     }
     _checkGpsLossTimeout();
+    _checkNoProgressTimeout();
     _checkDetectionTimeout();
   }
 
@@ -674,6 +700,36 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
       _gpsWatchdogReference = null;
     }
 
+    // The no-progress deadline runs on the same transitions and from the same
+    // instant, but answers a different question: not whether fixes arrive, but
+    // whether they ever say a bicycle is involved (T052, L-103).
+    if (next.hasActiveTrip && previous?.hasActiveTrip != true) {
+      _noProgressReference = now();
+      _sawMeasuredCyclingSpeed = false;
+      _progressAnchor = null;
+      AuditLog.emit(
+        AuditEvent.noProgress,
+        () => <String, Object?>{
+          'a': 'arm',
+          'lim': noProgressStopTimeout.inSeconds,
+        },
+        critical: true,
+      );
+    } else if (!next.hasActiveTrip) {
+      if (_noProgressReference != null) {
+        AuditLog.emit(
+          AuditEvent.noProgress,
+          () => <String, Object?>{
+            'a': 'disarm',
+            'cyc': _sawMeasuredCyclingSpeed,
+          },
+        );
+      }
+      _noProgressReference = null;
+      _sawMeasuredCyclingSpeed = false;
+      _progressAnchor = null;
+    }
+
     AuditLog.emit(
       AuditEvent.stateChange,
       () => <String, Object?>{'f': previous?.stateName, 'to': next.stateName},
@@ -885,6 +941,108 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
     if (_gpsWatchdogReference != null) {
       _gpsWatchdogReference = now();
     }
+
+    // `rawLocation`, not `location`: the deadline's speed term is about what
+    // the provider *measured*, and a derived speed inherits the accuracy of the
+    // pair it came from. Everything else in this method deliberately sees the
+    // refined fix; this is the one consumer that must not.
+    _feedNoProgressDeadline(rawLocation);
+  }
+
+  /// Update what the no-progress deadline knows, from one fix.
+  void _feedNoProgressDeadline(LocationData rawLocation) {
+    if (_noProgressReference == null) return;
+    if (!rawLocation.accuracy.isFinite ||
+        rawLocation.accuracy > AppConstants.speedTrustMaxAccuracyMeters) {
+      return;
+    }
+
+    if (rawLocation.hasReportedSpeed &&
+        rawLocation.speedKmh >= AppConstants.cyclingSpeedMin) {
+      _sawMeasuredCyclingSpeed = true;
+    }
+    _progressAnchor ??= rawLocation;
+  }
+
+  /// Displacement of the current recording so far, in metres.
+  double get _progressSoFar {
+    final anchor = _progressAnchor;
+    final last = _lastLocation;
+    if (anchor == null || last == null) return 0;
+    return anchor.distanceTo(last);
+  }
+
+  /// End a recording that has run [noProgressStopTimeout] with nothing saying a
+  /// bicycle is involved (T052, L-103).
+  ///
+  /// Two terms, and both are needed. **Speed**: no fix has ever reported a
+  /// measured cycling speed — the walks of 2026-09-09 never did, while every
+  /// genuine ride of the corpus eventually does. **Displacement**: the
+  /// recording has not travelled [AppConstants.minTripNetDisplacementMeters]
+  /// from where it began. Timing alone cannot carry this — one real commute
+  /// went 423 s before its first measured cycling speed, because the iPhone
+  /// reported `sp` 0 through the start of the ride — and the displacement term
+  /// is what makes the rule independent of how generous the provider is being:
+  /// at 420 s that same commute had already covered 271 m, against 0-63 m for
+  /// every false recording.
+  ///
+  /// Ending is all this does. The recorder's ordinary stop path runs, and
+  /// `Trip.discardReason` answers exactly what it would have answered at any
+  /// other ending — so a recording that *had* gone somewhere is kept, and the
+  /// deadline can only ever cost a ride its tail, never its existence.
+  void _checkNoProgressTimeout() {
+    final reference = _noProgressReference;
+    if (reference == null) return;
+    if (!ref.read(tripStateMachineProvider).hasActiveTrip) {
+      _noProgressReference = null;
+      return;
+    }
+    if (_sawMeasuredCyclingSpeed) return;
+
+    final elapsed = now().difference(reference);
+    if (elapsed < noProgressStopTimeout) return;
+
+    final net = _progressSoFar;
+    if (net >= AppConstants.minTripNetDisplacementMeters) {
+      // It went somewhere. The speed term alone is not enough to end a ride,
+      // and re-reading it every second would only re-answer the same question:
+      // disarm and let the ordinary stop logic own the rest of the recording.
+      AuditLog.emit(
+        AuditEvent.noProgress,
+        () => <String, Object?>{
+          'a': 'disarm',
+          'el': elapsed.inSeconds,
+          'net': net,
+          'cyc': false,
+        },
+        critical: true,
+      );
+      _noProgressReference = null;
+      return;
+    }
+
+    AuditLog.emit(
+      AuditEvent.noProgress,
+      () => <String, Object?>{
+        'a': 'fire',
+        'el': elapsed.inSeconds,
+        'lim': noProgressStopTimeout.inSeconds,
+        'net': net,
+        'cyc': false,
+      },
+      critical: true,
+    );
+
+    _logger.warning(
+      'No measured cycling speed in ${elapsed.inSeconds}s and only '
+      '${net.toStringAsFixed(0)}m travelled (limit '
+      '${noProgressStopTimeout.inSeconds}s) — stopping the trip',
+    );
+
+    // Cleared before the await, same reason as the GPS-loss watchdog: a tick
+    // landing during the stop must not re-enter.
+    _noProgressReference = null;
+    unawaited(_finalizeAndStopTrip());
   }
 
   /// Stop a recording trip that has gone [gpsLossStopTimeout] without a fix.

@@ -80,6 +80,7 @@ short; the table below is the whole vocabulary.
 | `bdate` | Start back-dated (L-076) | `id` `k` fixes `m` metres `ts` new start `was` old start |
 | `buf` | Pre-trip buffer (**verbose**) | `a` = add/tail/clear, `n` fixes, `sp` span ms, `kp` kept by the riding-tail cut (tail), `why` = inactivityTimeout/stop/session/dispose/gpsError/recording/tripEnd (clear) |
 | `gpsw` | GPS-loss watchdog (L-074) | `a` = arm/fire/disarm, `el` s `lim` s `ref` = lastFix/tripStart |
+| `prog` | No-progress deadline (T052, L-103) | `a` = arm/fire/disarm, `el` s `lim` s, `net` m (displacement so far), `cyc` (had a **measured** cycling speed ever been seen). A `fire` ends a recording that has run `k.noProg` seconds with `cyc` false *and* `net` under `k.minTripNet`; the ordinary ending follows, so `trip`'s `why` is whatever `discardReason` would have answered anyway. A `disarm` carrying `el`/`net` is the displacement term answering — the ride went somewhere, and the deadline steps aside for the rest of it. Distinct from `gpsw`: that one asks whether fixes arrive, this one whether they say anything |
 | `gps` | Location stream trouble | `a` = resub (`n` failures, `in` ms backoff) / error (`ex`) |
 | `rp` | Route point | `a` = keep (normal) / drop (**verbose**), `why` = acc/speed/dist/drift, `d` `ac` `spk`. `dist` is closer than `k.rpDist` to the last kept point (a stationary rider); `drift` is further than that but not further than the fix's own `ac` × `k.rpRatio` (a coarse one) — the two were one reason until L-094 |
 | `flush` | Database write | `a` = points, `n` `ms` `ok` |
@@ -156,6 +157,15 @@ verdict.** Check `hdr.sv` first:
 
 So on a `sv` 3 file a refusal to start is read off `asd` and `gav`: `asd` under
 `k.asdMin` is a phone that is not being shaken by a road, whatever `mag` says.
+
+**Two vehicle thresholds since T052 (L-102).** `k.vehLiveKmh` (50) is the **live** arm's — the
+one that may end a recording where it stands. `k.vehKmh` (35) is the **end-of-ride share** arm's,
+read against `k.vehShare` on `vfx`/`vmf`. They differ because a fast descent and a town car are the
+same measurement: on 2026-09-09 a bicycle held 39.9 km/h for 10 s against the 2026-09-07 drive's
+39.3 for 8 s, at the same accuracy. **Do not read a `veh` line as proof of a car** — read the share
+on the ending. And note that a live fire *truncates the denominator*: a ride cut at the veto reads
+a share it would not have read whole (36 % against 14.3 % recombined), so a pre-T052 log's `vfx`/
+`vmf` on a `vehicle` discard is not evidence about the whole ride.
 
 **A car is not readable off the motion.** Do not try to explain a `vehicle`
 discard — or argue against one — from `asd`/`gav`, `win.sd`/`win.gy` or `sens`.

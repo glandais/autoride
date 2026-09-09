@@ -184,9 +184,22 @@ extension TripExtensions on Trip {
   /// The third arm is an **OR** of net displacement and average speed, and it
   /// needs to be: a loop ride comes home with a net displacement of zero, and a
   /// ride recorded through a tunnel or a long red light averages low. A false
-  /// start fails both — that is exactly what makes it one. Total distance is
-  /// deliberately not consulted, because drift accumulates into it and that is
-  /// how the 183 m was reached in the first place.
+  /// start fails both — that is exactly what makes it one.
+  ///
+  /// **The speed branch carries a distance term (T052, L-103), and only that
+  /// branch.** It exists for the loop ride, and a loop ride has distance; a
+  /// short walk that ends near where it began has neither. On 2026-09-09 two of
+  /// them cleared the arm on speed alone and were written to History as cycling
+  /// rides — 545 m at 6.51 km/h with a net displacement of 52 m, and 219 m at
+  /// 4.01 km/h with 45 m. Replayed over the 40 recordings of the corpus,
+  /// exactly those two verdicts change.
+  ///
+  /// Total distance is still not a general test — drift accumulates into it,
+  /// which is how the 183 m was reached in the first place. It is consulted
+  /// only on the branch where displacement has *already* failed, which is
+  /// precisely where drift is the hypothesis being tested rather than a
+  /// measurement being trusted. The displacement branch is untouched, so a
+  /// straight 800 m ride to the bakery is kept on `net` and never reaches it.
   ///
   /// [netDisplacementMeters] is the straight-line distance from the first kept
   /// route point to the last, and is required rather than optional so a new
@@ -209,7 +222,10 @@ extension TripExtensions on Trip {
     if (netDisplacementMeters >= AppConstants.minTripNetDisplacementMeters) {
       return null;
     }
-    if ((avgSpeed ?? 0) >= AppConstants.minTripAvgSpeedKmh) return null;
+    if ((avgSpeed ?? 0) >= AppConstants.minTripAvgSpeedKmh &&
+        distance >= AppConstants.minTripLoopDistanceMeters) {
+      return null;
+    }
     return 'still';
   }
 

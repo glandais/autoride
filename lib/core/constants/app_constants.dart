@@ -237,19 +237,68 @@ class AppConstants {
   // deliberately NOT `maxCyclingSpeedKmh` (60): the drive never came near 60,
   // which is why a "no bicycle goes this fast" rule catches nothing real.
   //
-  // **What this costs.** A cyclist holding 35 km/h across four measured fixes
-  // spanning five seconds loses the ride. That is a fast descent or a paceline,
-  // and it is a real cost — `vehicleSpeedKmh` is the knob, and the audit's
-  // `veh` line is what says whether it fired on one.
+  // **That cost arrived on the second ride, and it is why there are now two
+  // thresholds (T052, L-102).** On 2026-09-09 a descent at 39.9 km/h discarded
+  // 1 561 m of a real commute. Read against the drive above, on the same
+  // statistic:
+  //
+  // | | fixes >= 35 | span | max | accuracy |
+  // |---|---|---|---|---|
+  // | the descent (bicycle) | 6 | 10 s | **39.9** | 4.3-14 m |
+  // | the drive, burst 1 | 5 | 8 s | 39.3 | 3.5-14 m |
+  // | the drive, burst 2 | 5 | 8 s | 37.7 | 3.5-4.7 m |
+  //
+  // The cyclist is faster than the car and holds it longer. **No pair
+  // (`vehicleSpeedKmh`, `vehicleSustainSeconds`) refuses the drive and keeps
+  // the descent** — the live arm was not miscalibrated, it was measuring a
+  // quantity on which the two do not differ. The 2026-09-06 ride reached 38.4
+  // measured and survived only on `vehicleSpeedMinFixes`; that was luck.
+  //
+  // What does differ is the **share** of a recording's measured evidence that
+  // is fast, over the whole ride:
+  //
+  // | recording | measured | >= 35 | share |
+  // |---|---|---|---|
+  // | 2026-09-09 evening commute | 38 | 0 | 0.0 % |
+  // | 2026-09-06 evening ride | 43 | 2 | 4.7 % |
+  // | 2026-09-09 morning commute | 42 | 6 | **14.3 %** |
+  // | 2026-09-07 drive to the shops | 37 | 10 | **27.0 %** |
+  //
+  // `vehicleSpeedMinShare` (0.25) already sits in that gap. So `vehicleSpeedKmh`
+  // stays 35 and keeps feeding the **end-of-ride** arm, which was right about
+  // that morning and never got to answer — truncating the ride at the veto left
+  // it reading `vfx 4 / vmf 11` = 36 %, so the live arm destroyed the evidence
+  // the end-of-ride arm needed.
 
-  /// Measured speed at or above which a fix is evidence of a motor vehicle.
+  /// Measured speed at or above which a fix is evidence of a motor vehicle,
+  /// for the end-of-ride share arm.
   static const double vehicleSpeedKmh = 35.0;
+
+  /// Measured speed at or above which the **live** arm may end a recording
+  /// outright (T052, L-102).
+  ///
+  /// Higher than [vehicleSpeedKmh] because the live arm decides on a handful of
+  /// fixes and cannot be wrong cheaply: it deletes a ride in progress. At 50
+  /// neither the 2026-09-09 descent (39.9) nor the 2026-09-07 town drive (39.3)
+  /// fires, which is the point — the drive is still refused, at the end, on its
+  /// 27 % share, and no real ride is lost in the middle.
+  ///
+  /// The live arm keeps its purpose: a road or motorway drive is stopped in
+  /// seconds instead of recorded for half an hour.
+  ///
+  /// **This value is a guard, not a calibration.** No measured speed above 39.9
+  /// exists anywhere in the corpus, so 50 separates nothing that has been
+  /// observed — it is sized to sit above what a cyclist can hold on a public
+  /// road and below a car that is actually travelling. Treat it as untested
+  /// until a log fires it.
+  static const double vehicleLiveSpeedKmh = 50.0;
 
   /// How many recent pieces of evidence the live arm looks at.
   static const int vehicleSpeedWindowFixes = 6;
 
-  /// …and how many of them must be above [vehicleSpeedKmh]. Also the floor on
-  /// the end-of-ride arm: fewer than this is an artefact, not a road.
+  /// …and how many of them must be above [vehicleLiveSpeedKmh]. Also the floor
+  /// on the end-of-ride arm, where it counts fixes above [vehicleSpeedKmh]:
+  /// fewer than this is an artefact, not a road.
   static const int vehicleSpeedMinFixes = 4;
 
   /// The fast fixes of the live arm must span at least this much wall clock, so
@@ -606,6 +655,69 @@ class AppConstants {
   // alongside the bike, a climb, a rider who is simply slow. The two false
   // trips of the 2026-09-03 run averaged 2.5 and 1.4 km/h.
   static const double minTripAvgSpeedKmh = cyclingSpeedMin / 2;
+
+  // Minimum total distance (meters) for the average-speed arm above to keep a
+  // recording whose net displacement has already failed (T052, L-103).
+  //
+  // The speed arm exists for the **loop ride** — the one that comes home, so
+  // its displacement is zero and only its speed vouches for it (L-095). A loop
+  // ride has distance. A short walk that ends near where it began has neither,
+  // and on 2026-09-09 two of them cleared the arm on speed alone and were
+  // written to History as cycling rides: 545 m at 6.51 km/h with a net
+  // displacement of 52 m, and 219 m at 4.01 km/h with 45 m — the second beating
+  // `minTripAvgSpeedKmh` by 0.01.
+  //
+  // A thousand metres: the largest false recording of that day is 597 m and the
+  // smallest genuine ride on record is 2 750 m, so this sits 1.7x above the one
+  // and 2.75x below the other. Replayed over all 40 recordings of the corpus,
+  // exactly those two verdicts change.
+  //
+  // This does **not** reintroduce total distance as a general test — the
+  // objection in `minTripNetDisplacementMeters` above (drift accumulates into
+  // distance) still stands, and is why the term is an AND on the speed branch
+  // only. The displacement arm is untouched, so a straight 800 m ride to the
+  // bakery is kept on `net` and never reaches this test; distance is consulted
+  // only where displacement has already said the ride went nowhere, which is
+  // exactly where drift is the hypothesis under test rather than a measurement
+  // being trusted.
+  static const double minTripLoopDistanceMeters = 1000.0;
+
+  // How long a recording may run without evidence of cycling before it is
+  // ended (T052, L-103, L-105).
+  //
+  // Motion alone cannot tell walking from cycling any better than it can tell
+  // driving from cycling (L-100): on 2026-09-09 thirteen false starts each had
+  // `asd` 2.4-7.2 and `gav` 1.4-3.8, and the gyro reads *higher* on foot than
+  // on the commute. Every one of them started with no fix yet delivered, so the
+  // confidence was motion-only and there was nothing else to consult.
+  //
+  // Refusing those starts is the wrong fix — requiring a fix to have voted
+  // before a trip may begin reverses T048 and T050, which were opened over
+  // departures that arrived minutes late. So the start stays permissive and the
+  // recording carries a **deadline** instead: at this point, if no fix has ever
+  // reported a *measured* cycling speed AND the recording has not gone anywhere
+  // ([minTripNetDisplacementMeters]), it ends. `Trip.discardReason` then judges
+  // it as it would have at any other ending — the deadline creates no new
+  // discard reason and deletes nothing the ordinary rule would have kept.
+  //
+  // **Both terms are load-bearing, and 420 s is where they stop fighting.**
+  // Timing alone does not separate the two populations: a genuine commute went
+  // 423 s before its first measured cycling speed (an iPhone reporting `sp` 0
+  // throughout the start of the ride), and another 344 s, so any deadline tight
+  // enough to catch the walks quickly would cut real rides. The displacement
+  // term is what removes that dependence on GPS generosity — at 420 s that same
+  // commute had already travelled **271 m**, and the nine genuine rides of the
+  // corpus read 271 / 964 / 1 277 / 1 536 / 1 943 / 2 146 / 2 426 / 2 462 /
+  // 2 810 m against the false recordings' 0-63 m. Both sides have margin
+  // against the 100 m line: 2.7x on one, 1.6x on the other.
+  //
+  // Measured, not asserted: over the corpus this cuts 11 recordings, saves
+  // ~62 min of GPS held open for nothing, catches both walks that reached
+  // History, and touches no genuine ride.
+  //
+  // Distinct from `gpsLossStopTimeout` (600 s), which asks whether fixes are
+  // arriving at all. This one asks whether they say anything.
+  static const Duration noProgressStopTimeout = Duration(seconds: 420);
 
   // Database
   static const String databaseName = 'autoride.db';
