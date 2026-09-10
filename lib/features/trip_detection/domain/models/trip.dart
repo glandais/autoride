@@ -76,6 +76,11 @@ sealed class Trip with _$Trip {
     @Default(false) bool userConfirmed,
     @Default(TripStatus.completed) TripStatus status,
     @Default(0) int pauseDuration, // seconds STOPPED
+    /// Speed evidence says this was probably made in a motor vehicle (T053,
+    /// L-106). A **flag**, never a verdict: the recording is kept like any
+    /// other, History paints a badge, and the rider decides. See
+    /// `VehicleSpeedWatch` for why speed cannot be trusted to decide it.
+    @Default(false) bool suspectedVehicle,
     @Default([]) List<RoutePoint> routePoints,
   }) = _Trip;
 
@@ -99,6 +104,10 @@ sealed class Trip with _$Trip {
       // Absent on a database that predates schema v3; NOT NULL DEFAULT 0
       // afterwards. `as int?` covers both without a separate code path.
       pauseDuration: (map['pause_duration'] as int?) ?? 0,
+      // Absent on a database that predates schema v4; NOT NULL DEFAULT 0
+      // afterwards. Same idiom as `pause_duration` above — a row written
+      // before the flag existed reads back false, not null.
+      suspectedVehicle: ((map['suspected_vehicle'] as int?) ?? 0) == 1,
       routePoints: points,
     );
   }
@@ -121,6 +130,7 @@ extension TripExtensions on Trip {
       'user_confirmed': userConfirmed ? 1 : 0,
       'status': status.name,
       'pause_duration': pauseDuration,
+      'suspected_vehicle': suspectedVehicle ? 1 : 0,
     };
   }
 
@@ -167,14 +177,6 @@ extension TripExtensions on Trip {
   ///   kill — `rebuildFromRoutePoints` cannot describe a ride from fewer than
   ///   two points — so the same recording used to survive or not depending on
   ///   how it ended.
-  /// * `vehicle` — it was made in a car (L-100). The motion fit cannot tell a
-  ///   car from a bicycle — replayed over the 2026-09-07 log the two score
-  ///   0.298 and 0.331 — so the only thing that can is speed, and
-  ///   [vehicleEvidence] carries `VehicleSpeedWatch`'s verdict on the measured
-  ///   speeds of the whole recording. The 2026-09-07 drive to the shops was
-  ///   saved as a 3.1 km cycling trip at 6.9 km/h with a 39.3 km/h maximum, and
-  ///   not one of the three arms below could have refused it: it lasted, it had
-  ///   74 points, and it went somewhere.
   /// * `still` — it lasted, it has points, and it never went anywhere (L-095).
   ///   Duration and point count were the whole rule until the 2026-09-03
   ///   kitchen run wrote 183 m over 930 s at 2.5 km/h from nine points inside a
@@ -205,20 +207,18 @@ extension TripExtensions on Trip {
   /// route point to the last, and is required rather than optional so a new
   /// call site cannot silently skip the arm.
   ///
-  /// [vehicleEvidence] defaults to false because the two call sites are not
-  /// equal: the live recorder watches every fix and knows, while the startup
-  /// recovery of an interrupted trip rebuilds from route points and has no
-  /// record of which fixes carried a measured speed. False there means "no
-  /// evidence", which is the honest answer and leaves recovery's behaviour
-  /// exactly as it was.
+  /// **There is no `vehicle` arm (T053, L-106).** T051 added one and 2026-09-09
+  /// deleted 71.8 km of real sporting rides with it — the drive it was
+  /// calibrated against has the lowest measured maximum in the whole corpus,
+  /// and its 27.0 % fast-fix share is indistinguishable from a real ride's
+  /// 27.7 %. Speed evidence now sets [Trip.suspectedVehicle], which paints a
+  /// badge and deletes nothing.
   String? discardReason(
     int routePointCount, {
     required double netDisplacementMeters,
-    bool vehicleEvidence = false,
   }) {
     if (duration < AppConstants.minTripDurationSeconds) return 'dur';
     if (routePointCount < AppConstants.minTripRoutePoints) return 'pts';
-    if (vehicleEvidence) return 'vehicle';
     if (netDisplacementMeters >= AppConstants.minTripNetDisplacementMeters) {
       return null;
     }
@@ -234,12 +234,10 @@ extension TripExtensions on Trip {
   bool isRideWorthKeeping(
     int routePointCount, {
     required double netDisplacementMeters,
-    bool vehicleEvidence = false,
   }) =>
       discardReason(
         routePointCount,
         netDisplacementMeters: netDisplacementMeters,
-        vehicleEvidence: vehicleEvidence,
       ) ==
       null;
 

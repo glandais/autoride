@@ -517,6 +517,10 @@ class TripRecorderService extends _$TripRecorderService {
       pauseDuration: _totalPauseDuration.inSeconds,
       avgSpeed: avgSpeed,
       maxSpeed: _maxSpeedKmh > 0 ? _maxSpeedKmh : null,
+      // A flag, not a verdict (T053, L-106). The recording is kept and judged
+      // on the same three arms as any other; History paints a badge and the
+      // rider decides.
+      suspectedVehicle: _vehicleWatch.looksLikeVehicle,
     );
 
     // A recording that is too short (a false start: a bump, a mis-tap on the
@@ -528,7 +532,6 @@ class TripRecorderService extends _$TripRecorderService {
     final discardReason = candidate.discardReason(
       _routePointsRecorded,
       netDisplacementMeters: netDisplacement,
-      vehicleEvidence: _vehicleWatch.looksLikeVehicle,
     );
     _lastDiscardReason = discardReason;
     final discarded = discardReason != null;
@@ -551,21 +554,43 @@ class TripRecorderService extends _$TripRecorderService {
         // `n` 0 is L-081's case, one with points is a rider who really did go
         // nowhere.
         'n': _routePointsRecorded,
-        // Which arm of `Trip.discardReason` fired — dur|pts|vehicle|still —
-        // and the net displacement it was answered with. A `still` discard is
-        // the only one `dist`, `dur` and `n` cannot be read off (L-095); a
-        // `vehicle` one is read off `vfx`/`vmf` (L-100).
+        // Which arm of `Trip.discardReason` fired — dur|pts|still — and the
+        // net displacement it was answered with. A `still` discard is the only
+        // one `dist`, `dur` and `n` cannot be read off (L-095). There is no
+        // `vehicle` arm since T053 (L-106).
         'why': discardReason,
         'net': netDisplacement,
-        // The speed evidence, on every ending rather than only on a vehicle
-        // discard: a ride that was *nearly* refused is the one worth seeing
-        // before the threshold is next moved.
+        // The speed evidence behind `suspectedVehicle`, on every ending. It
+        // no longer refuses anything (T053, L-106); it is what a reader needs
+        // to judge a flag, and what says how badly a fast rider is over
+        // -flagged.
         'vfx': _vehicleWatch.vehicleFixes,
         'vmf': _vehicleWatch.measuredFixes,
+
         'pts': flushed ? null : _routePointBuffer.length,
       },
       critical: true,
     );
+
+    if (candidate.suspectedVehicle) {
+      AuditLog.emit(
+        AuditEvent.vehicle,
+        () => <String, Object?>{
+          'a': 'flag',
+          'id': candidate.id,
+          'lim': AppConstants.vehicleSpeedKmh,
+          'n': _vehicleWatch.vehicleFixes,
+          'm': _vehicleWatch.measuredFixes,
+        },
+        critical: true,
+      );
+      _logger.info(
+        'Trip ${candidate.id} flagged as a suspected vehicle: '
+        '${_vehicleWatch.vehicleFixes} of ${_vehicleWatch.measuredFixes} '
+        'measured fixes at or above ${AppConstants.vehicleSpeedKmh} km/h — '
+        'kept, not discarded',
+      );
+    }
 
     if (discarded) {
       _logger.info(
@@ -768,44 +793,16 @@ class TripRecorderService extends _$TripRecorderService {
     _recordLocation(location);
   }
 
-  /// Feed [location] to the vehicle watch and end the ride if it has seen
-  /// enough (L-100).
+  /// Feed [location] to the vehicle watch, which accumulates the recording's
+  /// speed evidence and decides nothing (T053, L-106).
   ///
-  /// Ending it here rather than letting the end-of-ride arm catch it is the
-  /// difference between a drive that is discarded after half an hour of
-  /// recording — notification, GPS gate pinned open, battery — and one that is
-  /// refused four fixes after the car reached its cruising speed. The discard
-  /// itself is still the stop path's decision: `looksLikeVehicle` stays true
-  /// for the rest of the recording, so the same arm answers both.
-  void _watchForVehicle(LocationData location) {
-    if (_vehicleWatch.hasFired) return;
-
-    _vehicleWatch.add(location);
-    if (!_vehicleWatch.hasFired) return;
-
-    AuditLog.emit(
-      AuditEvent.vehicle,
-      () => <String, Object?>{
-        'a': 'fire',
-        'id': _activeTrip?.id,
-        'spk': location.speedKmh,
-        'lim': AppConstants.vehicleSpeedKmh,
-        'n': _vehicleWatch.vehicleFixes,
-        'm': _vehicleWatch.measuredFixes,
-      },
-      critical: true,
-    );
-    _logger.info(
-      'Ending trip ${_activeTrip?.id}: '
-      '${_vehicleWatch.vehicleFixes} of ${_vehicleWatch.measuredFixes} measured '
-      'fixes at or above ${AppConstants.vehicleSpeedKmh} km/h — this is a '
-      'vehicle, not a bicycle',
-    );
-
-    // Fire and forget, like every other self-initiated stop: this runs inside a
-    // location-stream callback, and `stopRecording` guards its own re-entry.
-    unawaited(stopRecording());
-  }
+  /// **This used to end the ride**, four fixes after a car reached cruising
+  /// speed. On 2026-09-09 it ended eight real sporting rides instead, cutting
+  /// one 64.5 km ride into seven fragments — each restarting 21-26 s later,
+  /// because the cooldown it should have armed lives in the coordinator's stop
+  /// path and this method bypassed it (L-107). The evidence goes to
+  /// `Trip.suspectedVehicle` now, read once at the ending.
+  void _watchForVehicle(LocationData location) => _vehicleWatch.add(location);
 
   /// Apply the recording filters to [location] and, if it passes all of them,
   /// fold it into the trip. Returns whether the point was kept.

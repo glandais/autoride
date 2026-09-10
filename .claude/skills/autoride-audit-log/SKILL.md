@@ -75,8 +75,8 @@ short; the table below is the whole vocabulary.
 | `lbl` | Capture ground truth (**capture**, T034) | `a` = start/stop, `act` = bike/car/walk/still/other, `sess` the session id (its start, in epoch ms) |
 | `stop` | Stop decision | `d` = continueTrip/pauseTrip/stopTrip, `sta` `cs` `cm` `so` s. Throttled to `k.evalMs`; every decision and counter change is kept (L-085). While the trip is *paused* only the decisions appear here — the once-a-second `continue` is `res`'s job |
 | `res` | Resume evaluation | `go` `cm` `mv` ms of continuous movement (what the decision is made on, against `k.resume`) `so`. Throttled like `stop`, keyed on `mv` restarting |
-| `veh` | Vehicle veto (T051) | `a` = fire; `spk` the measured speed that tipped it, `lim` = `k.vehKmh`, `n` fast fixes of `m` measured ones. At most one per recording — the watch latches — and always followed by `trip {a:"discard", why:"vehicle"}`. A `vehicle` discard with **no** `veh` line above it was decided at the end of the ride instead, on bursts too far apart for the live window |
-| `trip` | Trip lifecycle | `a` = start/pause/resume/stop/discard, `id`; start: `conf` `act` `pre` (or `man` on a manual start); pause: `dist`; resume: `pau`; stop/discard: `dist` m `dur` s `pau` s `avg` `max` `n` `net` `why` `pts`. `n` is every route point the ride kept, and it is what the point arm of the discard decision turns on against `k.minTripPts` (L-081); `net` is the straight-line distance from the first kept point to the last, against `k.minTripNet` OR `avg` against `k.minTripKmh` (L-095); `why` on a discard names the arm that fired — `dur` / `pts` / `vehicle` / `still`; `still` is the one the other fields cannot be read off, and `vehicle` is read off `vfx`/`vmf` (fast and measured fixes, present on **every** ending so a ride that was nearly refused is visible before the threshold is next moved); `pts` is present **only** when the final flush failed, and counts the points still stuck in the buffer |
+| `veh` | Suspected-vehicle flag (T053, L-106) | `a` = flag; `lim` = `k.vehKmh`, `n` fast fixes of `m` measured ones. Emitted **at the ending**, and it means a badge was painted — the ride is kept. There is no `{a:"fire"}` and no `vehicle` discard any more: T051's live arm ended recordings mid-ride and deleted 71.8 km of real sporting rides on 2026-09-09. On an older log, `a:"fire"` and `trip {why:"vehicle"}` are that build's destructive behaviour |
+| `trip` | Trip lifecycle | `a` = start/pause/resume/stop/discard, `id`; start: `conf` `act` `pre` (or `man` on a manual start); pause: `dist`; resume: `pau`; stop/discard: `dist` m `dur` s `pau` s `avg` `max` `n` `net` `why` `pts`. `n` is every route point the ride kept, and it is what the point arm of the discard decision turns on against `k.minTripPts` (L-081); `net` is the straight-line distance from the first kept point to the last, against `k.minTripNet` OR `avg` against `k.minTripKmh` (L-095); `why` on a discard names the arm that fired — `dur` / `pts` / `vehicle` / `still`; `still` is the one the other fields cannot be read off. There is no `vehicle` reason since T053 (L-106); `vfx`/`vmf` (fast and measured fixes) are present on **every** ending and now describe only the suspected-vehicle **flag**; `pts` is present **only** when the final flush failed, and counts the points still stuck in the buffer |
 | `bdate` | Start back-dated (L-076) | `id` `k` fixes `m` metres `ts` new start `was` old start |
 | `buf` | Pre-trip buffer (**verbose**) | `a` = add/tail/clear, `n` fixes, `sp` span ms, `kp` kept by the riding-tail cut (tail), `why` = inactivityTimeout/stop/session/dispose/gpsError/recording/tripEnd (clear) |
 | `gpsw` | GPS-loss watchdog (L-074) | `a` = arm/fire/disarm, `el` s `lim` s `ref` = lastFix/tripStart |
@@ -158,14 +158,27 @@ verdict.** Check `hdr.sv` first:
 So on a `sv` 3 file a refusal to start is read off `asd` and `gav`: `asd` under
 `k.asdMin` is a phone that is not being shaken by a road, whatever `mag` says.
 
-**Two vehicle thresholds since T052 (L-102).** `k.vehLiveKmh` (50) is the **live** arm's — the
-one that may end a recording where it stands. `k.vehKmh` (35) is the **end-of-ride share** arm's,
-read against `k.vehShare` on `vfx`/`vmf`. They differ because a fast descent and a town car are the
-same measurement: on 2026-09-09 a bicycle held 39.9 km/h for 10 s against the 2026-09-07 drive's
-39.3 for 8 s, at the same accuracy. **Do not read a `veh` line as proof of a car** — read the share
-on the ending. And note that a live fire *truncates the denominator*: a ride cut at the veto reads
-a share it would not have read whole (36 % against 14.3 % recombined), so a pre-T052 log's `vfx`/
-`vmf` on a `vehicle` discard is not evidence about the whole ride.
+**The speed axis is closed (T053, L-106).** `k.vehKmh` (35) and `k.vehShare` (0.25) still produce
+`vfx`/`vmf` and the flag, and they are **not to be recalibrated** — three logs and three Karoo FIT
+files have shown measured speed cannot separate the modes at all:
+
+| recording | measured | ≥ 35 | share | max |
+|---|---|---|---|---|
+| 2026-09-07 town drive | 37 | 10 | 27.0 % | **39.3** ← lowest in the corpus |
+| 2026-09-09 morning commute | 42 | 6 | 14.3 % | 39.9 |
+| sporting ride #1 | 354 | 98 | **27.7 %** | 46.7 |
+| sporting ride #2 (64.5 km) | 2 800 | 1 554 | **55.5 %** | **59.9** |
+
+The car is slower than every ride on both axes, and its share is indistinguishable from a real
+ride's. **So `vfx`/`vmf` and a `veh` line are evidence about a badge, never proof of a car.** A high
+share on a fast rider is expected over-flagging, not a finding. The mode of travel is to be
+classified from the **inertial unit** (the T034 capture), not from these numbers.
+
+**Reading a pre-T053 log**: a live fire truncated the recording, so `vfx`/`vmf` on a `vehicle`
+discard describe the fragment the veto cut, not the ride — the 2026-09-09 morning commute reads
+36 % as `4/11` truncated and **14.3 %** recombined with the trip that resumed 12 s later. And a
+`vehicle` discard there armed no cooldown unless it came from the end-of-ride arm (L-107), which is
+why one ride can appear as a string of fragments 21-26 s apart.
 
 **A car is not readable off the motion.** Do not try to explain a `vehicle`
 discard — or argue against one — from `asd`/`gav`, `win.sd`/`win.gy` or `sens`.

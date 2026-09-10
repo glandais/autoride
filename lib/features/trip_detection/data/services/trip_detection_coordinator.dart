@@ -1438,38 +1438,16 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
     // it would blind the detector for another 30 s just as the rider comes back
     // into the open, and would journal a `falseStart` that never happened.
     //
-    // A ride discarded as a *vehicle* is the third case, and it arms a much
-    // longer cooldown (T051): the motion of a car is indistinguishable from a
-    // bicycle's, so the detector would start again within seconds and keep
-    // doing so for the length of the drive — a string of discarded trips, each
-    // with its own "trip started" notification. The reason is asked of the
-    // recorder rather than re-derived here, because `vehicle` and `still` leave
-    // no trace in a `Trip`'s own fields.
-    final discardReason = ref
-        .read(tripRecorderServiceProvider.notifier)
-        .lastDiscardReason;
+    // There is no vehicle case any more (T053, L-106). T051 added one — a
+    // 300 s back-off after a `vehicle` discard — and it was never reached on
+    // the arm that needed it: the live arm ended the recording from inside the
+    // recorder, bypassing this method entirely, so a drive backed off only when
+    // the end-of-ride arm answered (L-107). That is why one 64.5 km sporting
+    // ride became seven fragments 21-26 s apart on 2026-09-09. Both the arm and
+    // the cooldown are gone; a car is now kept and flagged.
     final tooShort =
         (finalTrip?.duration ?? 0) < AppConstants.minTripDurationSeconds;
-    if (finalTrip?.status == TripStatus.discarded &&
-        discardReason == 'vehicle') {
-      AuditLog.emit(
-        AuditEvent.cooldown,
-        () => <String, Object?>{
-          'a': 'arm',
-          'd': AppConstants.vehicleCooldownPeriodSeconds,
-          'why': 'vehicle',
-        },
-        critical: true,
-      );
-      _logger.info('Trip discarded as a vehicle — backing off');
-      ref
-          .read(tripStartDetectorProvider.notifier)
-          .activateCooldown(
-            period: const Duration(
-              seconds: AppConstants.vehicleCooldownPeriodSeconds,
-            ),
-          );
-    } else if (finalTrip?.status == TripStatus.discarded && tooShort) {
+    if (finalTrip?.status == TripStatus.discarded && tooShort) {
       AuditLog.emit(
         AuditEvent.cooldown,
         () => <String, Object?>{

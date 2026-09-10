@@ -1423,3 +1423,92 @@ displacement margin (271 m against a 100 m line) rests on a single slow-GPS comm
 second observation before either number moves again.
 
 Gates: `flutter analyze` clean, **806 tests** (779 → 806).
+
+---
+
+## 12. Field findings — 2026-09-09 evening, three sporting rides (build 1.0.0+15)
+
+**Source**: one verbose audit log, `autoride-audit-20260910-0329.ndjson.gz`, iPhone 14,3 /
+iOS 26.6.1, **1.0.0+15** — the first build carrying T052 — **and three Karoo FIT files recorded in
+parallel**, which is what makes this section's verdict ground truth rather than inference. The T052
+process launches at **19:38:04** local; trips 29-47 are the previous build re-exported and duplicate
+§11. Times local (CEST). Clock offset against GPS time: **32 ms** median over 5 210 fixes, so the
+two traces sit on one timescale.
+
+**T052's second and third changes hold.** `prog` armed 25 times and fired **four** — trips 50, 59,
+60, 61 — each on a recording that was going to be discarded anyway (1 point, 0 points, 168 m at
+0.85 km/h). No genuine ride was cut, and no short walk reached History. The tightest case is the
+one that reads best: trip 50 was killed at 20:04:38, **two seconds before the first FIT started** —
+the detector had opened a recording seven minutes before the rider rolled out, the deadline cleared
+it, and the real ride took over immediately.
+
+**T052's first change is refuted, and the FIT files are why there is no argument left.**
+
+| FIT | duration | distance | AutoRide | mean | max | share ≥ 35 |
+|---|---|---|---|---|---|---|
+| Sortie le soir 20:04 | 15 min | 6.80 km | trip 51 — 6.92 km | 29.4 | 47.2 | 23.5 % |
+| Sortie le soir 20:40 | 1 h 50 | **64.48 km** | trips 52-58 — 64.88 km | **35.5** | **59.6** | **56.1 %** |
+| Sortie la nuit 02:54 | 15 min | 6.82 km | trip 66 — 7.11 km | 26.5 | 46.7 | 7.4 % |
+
+Distances agree to 0.6-4 %, peak speeds to 0.3 km/h. **The app measured these rides correctly and
+then deleted two of them.**
+
+### High
+
+| ID | Dim | Where | Finding | Status | Evidence |
+|---|---|---|---|---|---|
+| L-106 | pipeline | `vehicle_speed_watch.dart` / `trip.dart` `discardReason` | **The vehicle veto is not calibratable and must stop discarding. It deleted 71.8 km of real rides in one evening** | **Open** → T053 | Eight recordings ended `discard vehicle`: trips 51-58, 6.9 / 10.8 / 6.7 / 5.5 / 9.3 / 11.6 / 10.7 / 10.3 km, shares 25.9-73.7 %. Cross-referenced against the Karoo, trips 52-58 are **one continuous 64.5 km ride** cut into seven fragments, every one refused. T052 raised the live arm to 50 km/h on the basis that no cyclist holds it; **1.8 % of that ride is above 50 and its peak is 59.6**. The end-of-ride share arm is worse, not better: the ride reads **55.5 %** aggregated (1 554 of 2 800 measured fixes) against `vehShare` 0.25. And the axis is not merely mis-thresholded, it is **inverted** — the 2026-09-07 town drive peaks at **39.3 km/h, the lowest maximum of any recording in the corpus**, and its 27.0 % share is indistinguishable from sporting ride #1's 27.7 %. There is no ordering of these recordings by measured speed that puts the car on one side. → **T053** |
+
+### Medium
+
+| ID | Dim | Where | Finding | Status | Evidence |
+|---|---|---|---|---|---|
+| L-107 | pipeline | `trip_recorder_service.dart:807` vs `trip_detection_coordinator.dart:1453` | **The vehicle cooldown is armed only when the *end-of-ride* arm fires, never when the live arm does** — the exact inverse of T051 §3.2's intent | **Open** → T053 (moot once the veto stops discarding) | `_watchForVehicle` calls `stopRecording()` on the recorder directly, bypassing the coordinator's `_finalizeAndStopTrip`, which is where `vehicleCooldownPeriodSeconds` is armed. So a live fire backs off for `tripStartCooldownPeriodSeconds` at most — in practice not at all. This is why one ride became seven fragments: trips 53, 54 and 55 each started **21-26 s** after the previous discard, with no `cool` line between them. Only trips 51 and 58, refused by the end-of-ride arm through the ordinary stop path, carry `cool {a:"arm", why:"vehicle"}`. **The signature was already in §11's log and was read past**: trip 30 discarded 08:40:03, trip 31 started 08:40:15, no `cool` line — twelve seconds, not five minutes. |
+
+### Confirmed, not new
+
+* **L-100 in its final form.** Motion cannot separate a car from a bicycle; §11 added that it cannot
+  separate walking either; this section closes the other half — **speed cannot separate them
+  either**, and the three logs together leave the pair with no discriminating axis in the app at
+  all. Which is the maintainer's own conclusion, recorded here as the project's direction: the
+  thing that will eventually tell these modes apart is **the inertial unit** (the T034 capture
+  feeding a classifier), not a speed threshold. **Do not recalibrate `vehicleSpeedKmh` or
+  `vehicleSpeedMinShare` again** — that avenue is closed by evidence and by decision.
+* **T052 §3.2 and §3.3 need no change.** Ten days of corpus and one sporting evening have not
+  produced a false keep or a wrongly-cut ride from either.
+
+### Remediation (2026-09-10, T053) — what shipped
+
+1. **The veto records; it never decides (L-106).** `Trip.suspectedVehicle`, persisted as
+   `trips.suspected_vehicle` (schema **v4**, default 0 so a pre-migration row reads back unflagged
+   rather than null). `Trip.discardReason` loses its `vehicle` arm and its `vehicleEvidence`
+   parameter; `_watchForVehicle` is one line that feeds the watch and returns. History paints a
+   second badge beside the activity one, and the detail screen spells it out.
+
+2. **The live arm and everything that existed only for it are deleted** rather than left as dead
+   weight: `isVehicleNow`, `hasFired`, the rolling window, `vehicleLiveSpeedKmh` (added the day
+   before and refuted the day after), `vehicleSpeedWindowFixes`, `vehicleSustainSeconds`, and
+   `vehicleCooldownPeriodSeconds` with its arming — **L-107's subject goes with its defect**.
+   `vehicleSpeedKmh` (35) and `vehicleSpeedMinShare` (0.25) survive as what raises the flag.
+
+3. **The `veh` log line becomes `{a:"flag"}` at the ending.** A reader of an older log needs to know
+   the difference, so the skill now says it: on a pre-T053 build a live fire *truncated the
+   recording*, which means `vfx`/`vmf` on a `vehicle` discard describe the fragment the veto cut and
+   not the ride.
+
+**What this costs, stated plainly.** A drive is recorded in full, kept, and appears in History with
+a badge for the rider to delete. That is strictly better than the alternative the evidence
+actually offers: on 2026-09-09 the previous behaviour spent 71.8 km of real rides to refuse one
+trip to the shops.
+
+**And the flag itself will be wrong often.** It fires on any sporting ride — 55.5 % of the 64.5 km
+ride's measured fixes are above 35 km/h. That is accepted: the cost of a badge is not the cost of a
+ride. **It is not a reason to move the thresholds**, which is the one thing §12 asks the next
+maintainer not to do.
+
+**Not settled.** Nothing here classifies anything. A car and a bicycle remain indistinguishable to
+this app on every axis it reads — motion (L-100), speed (L-106) — and the flag is a hint, not a
+verdict. The classification work is the **inertial unit**: T034's capture, a model, and a task that
+does not exist yet.
+
+Gates: `flutter analyze` clean, **810 tests** (806 → 810).

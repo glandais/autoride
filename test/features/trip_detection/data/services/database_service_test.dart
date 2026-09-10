@@ -93,6 +93,7 @@ void main() {
           'user_confirmed',
           'status',
           'pause_duration',
+          'suspected_vehicle',
         }),
       );
 
@@ -110,6 +111,7 @@ void main() {
       expect(notNull['max_speed'], isFalse);
       expect(notNull['status'], isTrue);
       expect(notNull['pause_duration'], isTrue);
+      expect(notNull['suspected_vehicle'], isTrue);
 
       // A row written without a status is a finished trip, so history keeps
       // showing it after the upgrade.
@@ -120,6 +122,9 @@ void main() {
       // A trip written before pauses were persisted reports no stops, not a
       // wrong number (L-073).
       expect(defaults['pause_duration'], equals('0'));
+      // A trip written before the flag existed was never judged, and reads as
+      // unflagged rather than as flagged-false-on-purpose (L-106).
+      expect(defaults['suspected_vehicle'], equals('0'));
     });
 
     test('creates the route_points table with the shipped columns', () async {
@@ -311,8 +316,8 @@ void main() {
       );
     }
 
-    test('the shipped schema version is 3', () {
-      expect(AppConstants.databaseVersion, equals(3));
+    test('the shipped schema version is 4', () {
+      expect(AppConstants.databaseVersion, equals(4));
     });
 
     test(
@@ -335,7 +340,7 @@ void main() {
 
         final after = await legacy.rawQuery('PRAGMA table_info(trips)');
         expect(after.map((c) => c['name']), contains('status'));
-        expect(after, hasLength(12));
+        expect(after, hasLength(13));
 
         final rows = await legacy.query(
           'trips',
@@ -375,11 +380,11 @@ void main() {
       expect(rows, hasLength(1));
 
       final columns = await db.rawQuery('PRAGMA table_info(trips)');
-      expect(columns, hasLength(12));
+      expect(columns, hasLength(13));
     });
 
     /// Builds the v2 schema by hand, for the same reason `openV1Database`
-    /// exists: the shipped `onCreate` now emits v3. Verbatim copy of the v2
+    /// exists: the shipped `onCreate` now emits v4. Verbatim copy of the v2
     /// DDL as of `4559820`.
     Future<Database> openV2Database() async {
       return databaseFactory.openDatabase(
@@ -400,6 +405,51 @@ void main() {
                 confidence_score REAL NOT NULL,
                 user_confirmed INTEGER DEFAULT 0,
                 status TEXT NOT NULL DEFAULT 'completed'
+              )
+            ''');
+            await db.execute('''
+              CREATE TABLE route_points (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                trip_id INTEGER NOT NULL,
+                latitude REAL NOT NULL,
+                longitude REAL NOT NULL,
+                altitude REAL,
+                timestamp INTEGER NOT NULL,
+                accuracy REAL,
+                speed REAL,
+                FOREIGN KEY (trip_id) REFERENCES trips(id) ON DELETE CASCADE
+              )
+            ''');
+            await db.execute('CREATE INDEX idx_trip_status ON trips(status)');
+          },
+          onConfigure: service.onConfigure,
+        ),
+      );
+    }
+
+    /// Builds the v3 schema by hand, for the same reason `openV2Database`
+    /// exists: the shipped `onCreate` now emits v4. Verbatim copy of the v3
+    /// DDL as of `948dff8`.
+    Future<Database> openV3Database() async {
+      return databaseFactory.openDatabase(
+        inMemoryDatabasePath,
+        options: OpenDatabaseOptions(
+          version: 3,
+          onCreate: (db, version) async {
+            await db.execute('''
+              CREATE TABLE trips (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                start_time INTEGER NOT NULL,
+                end_time INTEGER NOT NULL,
+                distance REAL NOT NULL,
+                duration INTEGER NOT NULL,
+                avg_speed REAL,
+                max_speed REAL,
+                detected_activity TEXT NOT NULL,
+                confidence_score REAL NOT NULL,
+                user_confirmed INTEGER DEFAULT 0,
+                status TEXT NOT NULL DEFAULT 'completed',
+                pause_duration INTEGER NOT NULL DEFAULT 0
               )
             ''');
             await db.execute('''
@@ -465,7 +515,47 @@ void main() {
       },
     );
 
-    test('v1 -> v3 in one hop applies both steps', () async {
+    test('v3 -> v4 adds suspected_vehicle and leaves existing rows unflagged '
+        '(L-106)', () async {
+      final legacy = await openV3Database();
+      addTearDown(legacy.close);
+
+      final legacyId = await legacy.insert('trips', _tripMap());
+
+      final before = await legacy.rawQuery('PRAGMA table_info(trips)');
+      expect(
+        before.map((c) => c['name']),
+        isNot(contains('suspected_vehicle')),
+        reason: 'precondition: the v3 schema has no suspected_vehicle column',
+      );
+
+      await service.onUpgrade(legacy, 3, AppConstants.databaseVersion);
+
+      final after = await legacy.rawQuery('PRAGMA table_info(trips)');
+      final flagColumn = after.firstWhere(
+        (c) => c['name'] == 'suspected_vehicle',
+      );
+      expect(flagColumn['notnull'], equals(1));
+      expect(flagColumn['dflt_value'], equals('0'));
+
+      final rows = await legacy.query(
+        'trips',
+        where: 'id = ?',
+        whereArgs: [legacyId],
+      );
+      expect(
+        Trip.fromMap(rows.first, const []).suspectedVehicle,
+        isFalse,
+        reason: 'a row written before the flag existed was never judged',
+      );
+      expect(
+        rows.first['pause_duration'],
+        equals(0),
+        reason: 'the v3 column survives the v4 migration untouched',
+      );
+    });
+
+    test('v1 -> v4 in one hop applies every step', () async {
       final legacy = await openV1Database();
       addTearDown(legacy.close);
 
@@ -480,6 +570,7 @@ void main() {
       final trip = Trip.fromMap(rows.first, const []);
       expect(trip.status, equals(TripStatus.completed));
       expect(trip.pauseDuration, equals(0));
+      expect(trip.suspectedVehicle, isFalse);
     });
 
     test(
@@ -509,6 +600,43 @@ void main() {
         expect(readBack.pausedDuration, equals(const Duration(seconds: 600)));
         expect(readBack.totalDuration, equals(const Duration(seconds: 3600)));
         expect(readBack.totalDuration, equals(readBack.tripDuration));
+      },
+    );
+
+    test(
+      'round-trips suspectedVehicle through the shipped schema (L-106)',
+      () async {
+        // SQLite has no bool: the flag is an INTEGER 0/1 like `user_confirmed`.
+        final flagged = Trip(
+          startTime: DateTime.fromMillisecondsSinceEpoch(1700000000000),
+          endTime: DateTime.fromMillisecondsSinceEpoch(1700003600000),
+          distance: 64480.0,
+          duration: 6576,
+          detectedActivity: ActivityType.cycling,
+          confidenceScore: 0.9,
+          avgSpeed: 35.5,
+          maxSpeed: 59.6,
+          suspectedVehicle: true,
+        );
+
+        final id = await db.insert('trips', flagged.toMap());
+        final rows = await db.query('trips', where: 'id = ?', whereArgs: [id]);
+
+        expect(rows.first['suspected_vehicle'], equals(1));
+        expect(Trip.fromMap(rows.first, const []).suspectedVehicle, isTrue);
+
+        // And the default is honestly false, not null.
+        final plainId = await db.insert(
+          'trips',
+          flagged.copyWith(suspectedVehicle: false).toMap(),
+        );
+        final plain = await db.query(
+          'trips',
+          where: 'id = ?',
+          whereArgs: [plainId],
+        );
+        expect(rows.first['suspected_vehicle'], equals(1));
+        expect(Trip.fromMap(plain.first, const []).suspectedVehicle, isFalse);
       },
     );
   });

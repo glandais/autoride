@@ -1,84 +1,64 @@
 import '../../domain/models/location_data.dart';
 import '../../../../core/constants/app_constants.dart';
 
-/// Watches a recording for the one thing that separates a car from a bicycle.
+/// Accumulates the speed evidence of a recording, so a ride that was probably
+/// made in a car can be **flagged** (T053, L-106).
 ///
-/// **Why speed, and only speed.** The motion window the trip-start fit uses
-/// (T050) cannot tell the two apart, and that is measured, not assumed: over
-/// the 2026-09-07 log, replaying the fit across the `win` statistics of a real
-/// ride and of a drive to the shops gives a mean motion score of **0.331 and
-/// 0.298**, with 23.0 % and 22.6 % of windows above the confidence threshold.
-/// Every percentile of the acceleration spread matches to two digits. A car
-/// with a phone in it shakes exactly like a bicycle with a phone on it, so no
-/// accelerometer threshold can ever refuse one without refusing the other.
+/// **This class decides nothing any more.** It answers one question —
+/// [looksLikeVehicle] — and the only thing that reads it is
+/// `Trip.suspectedVehicle`, which paints a badge in History. It cannot end a
+/// recording and it cannot discard one.
 ///
-/// What differs is how fast it goes, and for how long.
+/// **Why it lost that power.** T051 gave it a live arm because the motion fit
+/// cannot tell a car from a bicycle: replayed over the 2026-09-07 log, a real
+/// ride and a drive to the shops score **0.331 and 0.298**, with every
+/// percentile of the acceleration spread matching to two digits. Speed looked
+/// like the axis that separated them. It is not:
+///
+/// | recording | measured | >= 35 km/h | share | max |
+/// |---|---|---|---|---|
+/// | the 2026-09-07 drive | 37 | 10 | 27.0 % | **39.3** |
+/// | 2026-09-09 morning commute | 42 | 6 | 14.3 % | 39.9 |
+/// | sporting ride #1 | 354 | 98 | **27.7 %** | 46.7 |
+/// | sporting ride #2 | 2 800 | 1 554 | **55.5 %** | **59.9** |
+///
+/// The drive has the **lowest maximum in the corpus**, and its share is
+/// indistinguishable from a real ride's. A town car is slow with bursts; a
+/// sporting cyclist is fast continuously. On 2026-09-09 the live arm deleted
+/// **71.8 km** of real rides, one of them cut into seven fragments first, and
+/// the Karoo files recorded alongside say the app had measured every metre of
+/// them correctly.
+///
+/// So the thresholds below over-flag a fast rider by construction, and that is
+/// accepted: the cost of a badge is not the cost of a ride. **They are not to
+/// be recalibrated** — the mode of travel will be classified from the inertial
+/// unit (the T034 capture feeding a model), not from a speed.
 ///
 /// **Why only *provider-measured* speeds count.** The derived speed T048 adds
 /// (`dsp`) is computed from the displacement between two fixes, so it inherits
-/// their accuracy: on the same log, every reading above 40 km/h during the
-/// *bicycle* ride is a derived one from a fix accurate to 23–38 m — 55.7, 54.6,
-/// 52.4 km/h on a night ride that averaged 16.8. The car's evidence is the
-/// opposite kind: `sp` reported by the OS itself, accurate to 3.5 m, five
-/// consecutive fixes at 38.0 / 38.0 / 37.9 / 39.3 / 39.2. Feeding derived
-/// speeds to this rule would discard real rides on GPS noise, which is the one
-/// outcome worse than recording a drive.
-///
-/// So a fix is *evidence* here only when it carries a measured speed
-/// ([LocationData.hasReportedSpeed]) and is accurate enough for that speed to
-/// be believed — the same predicate the start path uses.
-///
-/// **Two arms, two thresholds (T052, L-102).** [isVehicleNow] is the live one:
-/// enough of the last few pieces of evidence above [AppConstants
-/// .vehicleLiveSpeedKmh], over a span long enough not to be one burst of noise.
-/// [looksLikeVehicle] is the end-of-ride one, over everything the trip saw
-/// against [AppConstants.vehicleSpeedKmh] — it catches a drive whose speed
-/// bursts arrived too far apart for the rolling window, and it is what the
-/// discard decision reads.
-///
-/// The thresholds differ because the arms cost differently when wrong. On
-/// 2026-09-09 the live arm ended a real commute on a 39.9 km/h descent, and the
-/// drive it was calibrated against never exceeded 39.3: **the two are not
-/// separable on peak speed or on sustain**, only on the share of a whole
-/// recording, which is what the end-of-ride arm measures. The live arm is now
-/// held back to a speed no cyclist holds on a public road, so it stops a
-/// motorway drive early and leaves town driving to the end-of-ride arm — where
-/// being wrong costs a verdict, not a ride in progress.
-///
-/// This also repairs the end-of-ride arm's evidence. Truncating that commute at
-/// the veto left it reading 4 fast fixes of 11 measured — 36 % — because the
-/// slow remainder never got counted; recombined with the ride that resumed 12 s
-/// later it reads 6 of 42, **14.3 %**, against the drive's 27.0 %.
+/// their accuracy: on the 2026-09-06 log, every reading above 40 km/h during
+/// the *bicycle* ride is a derived one from a fix accurate to 23-38 m — 55.7,
+/// 54.6, 52.4 km/h on a night ride that averaged 16.8. Feeding those here would
+/// flag real rides on GPS noise. So a fix is evidence only when it carries a
+/// measured speed ([LocationData.hasReportedSpeed]) and is accurate enough for
+/// that speed to be believed — the same predicate the start path uses.
 ///
 /// Deliberately plain Dart, like [StationaryWindow] and `PreTripLocationBuffer`:
 /// mutable scratch state owned by `TripRecorderService`, directly unit-testable.
 class VehicleSpeedWatch {
-  final List<_SpeedSample> _recent = <_SpeedSample>[];
-
   int _measured = 0;
   int _above = 0;
-  bool _fired = false;
 
   /// Fixes that carried a believable measured speed, over the whole recording.
+  /// Reported as `vmf` on every trip ending.
   int get measuredFixes => _measured;
 
-  /// How many of those were above [AppConstants.vehicleSpeedKmh] — the
-  /// end-of-ride threshold, and what `vfx` reports on every trip ending.
+  /// How many of those were at or above [AppConstants.vehicleSpeedKmh].
+  /// Reported as `vfx` on every trip ending.
   int get vehicleFixes => _above;
-
-  /// Whether the live arm has already fired during this recording.
-  bool get hasFired => _fired;
 
   /// Offer [fix] to the watch. Fixes with no believable measured speed are not
   /// evidence either way and are ignored, not counted as slow.
-  ///
-  /// The window is spanned by the fixes' **own** timestamps, unlike
-  /// `PreTripLocationBuffer`, which ages by reception time so a replayed cache
-  /// cannot evict a window. The question here is different: over what period
-  /// were these speeds *measured*. A fix that carries a measured speed and an
-  /// accuracy under `speedTrustMaxAccuracyMeters` is a real GNSS fix, so its
-  /// timestamp is satellite-disciplined — and a burst served from a cache
-  /// shares old timestamps, which shrinks the span and is refused.
   void add(LocationData fix) {
     if (!fix.hasReportedSpeed) return;
     if (!fix.accuracy.isFinite ||
@@ -88,50 +68,11 @@ class VehicleSpeedWatch {
 
     _measured++;
     if (fix.speedKmh >= AppConstants.vehicleSpeedKmh) _above++;
-
-    _recent.add(
-      _SpeedSample(
-        fix.timestamp,
-        fix.speedKmh >= AppConstants.vehicleLiveSpeedKmh,
-      ),
-    );
-    if (_recent.length > AppConstants.vehicleSpeedWindowFixes) {
-      _recent.removeRange(
-        0,
-        _recent.length - AppConstants.vehicleSpeedWindowFixes,
-      );
-    }
-
-    if (isVehicleNow) _fired = true;
   }
 
-  /// Whether the last few pieces of evidence say "this is a vehicle" *now*.
+  /// Whether the recording as a whole was probably made in a vehicle.
   ///
-  /// Three conditions, and all three are needed:
-  ///
-  /// * at least [AppConstants.vehicleSpeedMinFixes] of the retained fixes are
-  ///   above [AppConstants.vehicleLiveSpeedKmh] — one is a GPS artefact, four
-  ///   is a road;
-  /// * they span at least [AppConstants.vehicleSustainSeconds] of wall clock,
-  ///   so a burst of fixes 200 ms apart cannot satisfy the count on its own;
-  /// * the window is full enough to have a majority in it at all.
-  bool get isVehicleNow {
-    if (_recent.length < AppConstants.vehicleSpeedMinFixes) return false;
-
-    final fast = _recent.where((s) => s.fast).toList(growable: false);
-    if (fast.length < AppConstants.vehicleSpeedMinFixes) return false;
-
-    final span = fast.last.at.difference(fast.first.at);
-    return span >= AppConstants.vehicleSustainSeconds;
-  }
-
-  /// Whether the recording as a whole was made in a vehicle.
-  ///
-  /// The live arm having fired is sufficient — since T052 it only fires above
-  /// [AppConstants.vehicleLiveSpeedKmh], which is overwhelming evidence and is
-  /// exactly what this short circuit assumes; at 35 km/h it was not, and that
-  /// is L-102. Otherwise the whole-trip shape has to say it:
-  /// enough fast fixes *and* a large enough share of the evidence, because a
+  /// Enough fast fixes *and* a large enough share of the evidence, because a
   /// long ride accumulates four artefacts eventually while a short drive does
   /// not have many fixes to begin with.
   ///
@@ -139,25 +80,12 @@ class VehicleSpeedWatch {
   /// whose provider reports 0 throughout (L-088), and on the 2026-09-06 iPhone
   /// ride — answers **false**: no evidence is not evidence.
   bool get looksLikeVehicle {
-    if (_fired) return true;
     if (_above < AppConstants.vehicleSpeedMinFixes) return false;
     return _above >= _measured * AppConstants.vehicleSpeedMinShare;
   }
 
   void reset() {
-    _recent.clear();
     _measured = 0;
     _above = 0;
-    _fired = false;
   }
-}
-
-class _SpeedSample {
-  const _SpeedSample(this.at, this.fast);
-
-  final DateTime at;
-
-  /// Above [AppConstants.vehicleLiveSpeedKmh] — the live arm's threshold, not
-  /// the end-of-ride one. `_above` counts the other.
-  final bool fast;
 }

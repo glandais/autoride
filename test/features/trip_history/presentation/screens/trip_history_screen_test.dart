@@ -8,12 +8,14 @@ import 'package:autoride/features/trip_history/domain/models/trip_filter.dart';
 import 'package:autoride/features/trip_history/presentation/providers/trip_filter_provider.dart';
 import 'package:autoride/features/trip_history/presentation/providers/trip_history_provider.dart';
 import 'package:autoride/features/trip_history/presentation/screens/trip_history_screen.dart';
+import 'package:autoride/features/trip_history/presentation/widgets/trip_list_item.dart';
 import 'package:autoride/shared/widgets/empty_state.dart';
 
 Trip _trip({
   required int id,
   ActivityType activity = ActivityType.cycling,
   bool confirmed = false,
+  bool suspectedVehicle = false,
 }) {
   final start = DateTime.now().subtract(Duration(hours: id));
   return Trip(
@@ -25,6 +27,7 @@ Trip _trip({
     detectedActivity: activity,
     confidenceScore: 0.9,
     userConfirmed: confirmed,
+    suspectedVehicle: suspectedVehicle,
   );
 }
 
@@ -55,6 +58,27 @@ void main() {
     );
     await tester.pumpAndSettle();
   }
+
+  testWidgets('a suspected vehicle is badged, not hidden (T053, L-106)', (
+    tester,
+  ) async {
+    await pumpScreen(tester, [
+      _trip(id: 1, suspectedVehicle: true),
+      _trip(id: 2),
+    ]);
+
+    // The flagged trip is in the list like any other — it is a badge, not a
+    // filter — and it carries a second badge beside its activity one.
+    expect(find.byType(TripListItem), findsNWidgets(2));
+    expect(find.text('Vehicle?'), findsOneWidget);
+    expect(find.byIcon(Icons.directions_car), findsOneWidget);
+  });
+
+  testWidgets('an ordinary trip carries no vehicle badge', (tester) async {
+    await pumpScreen(tester, [_trip(id: 1)]);
+
+    expect(find.text('Vehicle?'), findsNothing);
+  });
 
   testWidgets('the filter button opens the dialog', (tester) async {
     await pumpScreen(tester, [_trip(id: 1)]);

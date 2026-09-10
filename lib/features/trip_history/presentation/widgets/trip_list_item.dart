@@ -35,10 +35,29 @@ class TripListItem extends StatelessWidget {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  StatusBadge(
-                    label: trip.detectedActivity.label,
-                    color: _getActivityColor(trip.detectedActivity),
-                    icon: _getActivityIcon(trip.detectedActivity),
+                  // Two badges rather than one when the recording's measured
+                  // speeds looked like a car's (T053, L-106). It is a flag, so
+                  // it sits beside the activity rather than replacing it — the
+                  // ride is kept and the rider decides. `Wrap` because the pair
+                  // does not fit a narrow screen on one line.
+                  Expanded(
+                    child: Wrap(
+                      spacing: AppSpacing.xs,
+                      runSpacing: AppSpacing.xs,
+                      children: [
+                        StatusBadge(
+                          label: trip.detectedActivity.label,
+                          color: _getActivityColor(trip.detectedActivity),
+                          icon: _getActivityIcon(trip.detectedActivity),
+                        ),
+                        if (trip.suspectedVehicle)
+                          const StatusBadge(
+                            label: 'Vehicle?',
+                            color: AppColors.error,
+                            icon: Icons.directions_car,
+                          ),
+                      ],
+                    ),
                   ),
                   Text(
                     _formatTime(trip.startTime),

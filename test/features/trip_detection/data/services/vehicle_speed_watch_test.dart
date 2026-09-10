@@ -22,12 +22,11 @@ LocationData _fix({
   );
 }
 
-/// Feed a `(speed, second)` trace and report whether the live arm ever fired.
-bool _replay(VehicleSpeedWatch watch, List<List<double>> trace) {
+/// Feed a `(speed, second)` trace.
+void _replay(VehicleSpeedWatch watch, List<List<double>> trace) {
   for (final point in trace) {
     watch.add(_fix(speedKmh: point[0], atSeconds: point[1].round()));
   }
-  return watch.hasFired;
 }
 
 void main() {
@@ -98,36 +97,17 @@ void main() {
       [24.1, 1548],
     ];
 
-    test('the drive to the shops is refused at the end, not live', () {
+    test('the drive to the shops is flagged, and only flagged', () {
       final watch = VehicleSpeedWatch();
+      _replay(watch, carTrip);
 
-      // T052, L-102: the live arm no longer answers at town speeds. This drive
-      // peaks at 39.3 km/h, and so does a bicycle descent — see the group
-      // below. Nothing here is fast enough for the live threshold.
-      expect(_replay(watch, carTrip), isFalse);
-
-      // The end-of-ride arm still refuses it, and on its own evidence: ten of
-      // the thirty-seven measured fixes are at or above 35 km/h — 27.0 %, over
-      // the quarter it needs.
+      // Ten of the thirty-seven measured fixes are at or above 35 km/h —
+      // 27.0 %, over the quarter it takes to raise the flag. Nothing about
+      // that flag ends or deletes the recording (T053, L-106).
       expect(watch.looksLikeVehicle, isTrue);
       expect(watch.measuredFixes, 37);
       expect(watch.vehicleFixes, 10);
     });
-
-    test(
-      'the live arm answers on a road, at four fixes over its own threshold',
-      () {
-        final watch = VehicleSpeedWatch();
-
-        // Three fast fixes: not yet.
-        expect(_replay(watch, motorwaySample.sublist(0, 3)), isFalse);
-
-        // The fourth closes a six-second span above `vehicleLiveSpeedKmh`.
-        watch.add(_fix(speedKmh: 54.0, atSeconds: 6));
-        expect(watch.hasFired, isTrue);
-        expect(watch.looksLikeVehicle, isTrue);
-      },
-    );
 
     /// The 2026-09-09 morning commute, as `[speed, second]` — the descent that
     /// L-102 is about, taken from `autoride-audit-20260909-1802.ndjson.gz`.
@@ -152,15 +132,22 @@ void main() {
       [19.3, 27],
     ];
 
-    test('the descent does not end the ride (T052, L-102)', () {
+    test('the descent read alone would flag — which is why it is not', () {
       final watch = VehicleSpeedWatch();
+      _replay(watch, descent);
 
-      // Under 1.0.0+14 this fired at the fourth fix above 35 and deleted
-      // 1 561 m of a real commute.
-      expect(_replay(watch, descent), isFalse);
+      // Six of thirteen, 46 %: taken by itself this burst answers *yes*, and
+      // under 1.0.0+14 the live arm acted on exactly that and deleted 1 561 m
+      // of a real commute. The evidence is only meaningful over a whole
+      // recording — see the next test, where the same descent inside its own
+      // commute reads 14.3 %. This is why nothing may end a ride early: doing
+      // so truncates the denominator and manufactures the verdict.
+      expect(watch.looksLikeVehicle, isTrue);
+      expect(watch.vehicleFixes, 6);
+      expect(watch.measuredFixes, 13);
     });
 
-    test('the commute that contained it is not a vehicle either', () {
+    test('the commute that contained it is not flagged', () {
       final watch = VehicleSpeedWatch();
 
       // The descent, then the rest of the ride — 42 measured fixes in all, of
@@ -175,7 +162,6 @@ void main() {
         watch.add(_fix(speedKmh: 18.0 + (i % 7), atSeconds: 40 + i * 30));
       }
 
-      expect(watch.hasFired, isFalse);
       expect(watch.measuredFixes, 42);
       expect(watch.vehicleFixes, 6);
       expect(
@@ -192,7 +178,6 @@ void main() {
         watch.add(_fix(speedKmh: bikeRide[i], atSeconds: i * 10));
       }
 
-      expect(watch.hasFired, isFalse);
       expect(watch.looksLikeVehicle, isFalse);
       expect(watch.measuredFixes, bikeRide.length);
       expect(watch.vehicleFixes, 0);
@@ -227,36 +212,7 @@ void main() {
       }
 
       expect(watch.measuredFixes, 0);
-      expect(watch.hasFired, isFalse);
-    });
-
-    test('a burst of fast fixes inside a second does not fire it', () {
-      // The count alone would be satisfied by four fixes 200 ms apart, which is
-      // one GPS hiccup rather than a road.
-      final watch = VehicleSpeedWatch();
-
-      for (var i = 0; i < AppConstants.vehicleSpeedWindowFixes; i++) {
-        final at = _t0.add(Duration(milliseconds: i * 200));
-        watch.add(
-          LocationData(
-            latitude: 48.8566,
-            longitude: 2.3522,
-            accuracy: 3.5,
-            altitude: 35.0,
-            speed: 50.0 / 3.6,
-            heading: 90.0,
-            timestamp: at,
-          ),
-        );
-      }
-
-      expect(watch.hasFired, isFalse);
-      // …and the same six fixes spread over the sustain window do fire it.
-      expect(
-        watch.looksLikeVehicle,
-        isTrue,
-        reason: 'the share arm still sees them',
-      );
+      expect(watch.looksLikeVehicle, isFalse);
     });
 
     test('one artefact in a long ride is not a vehicle', () {
@@ -267,34 +223,35 @@ void main() {
         watch.add(_fix(speedKmh: speed, atSeconds: i * 10));
       }
 
-      expect(watch.hasFired, isFalse);
       expect(watch.looksLikeVehicle, isFalse);
+    });
+
+    test('a sporting ride is flagged, and that is the accepted cost', () {
+      // 2026-09-09, ground truth from a Karoo: 64.5 km at a 35.5 km/h mean
+      // with 56 % of its samples at or above 35. The flag fires on a real
+      // ride, and the ride is kept anyway — which is the whole point of T053.
+      final watch = VehicleSpeedWatch();
+
+      for (var i = 0; i < 100; i++) {
+        watch.add(_fix(speedKmh: i % 2 == 0 ? 38.0 : 31.0, atSeconds: i * 10));
+      }
+
+      expect(watch.looksLikeVehicle, isTrue);
+      expect(watch.vehicleFixes / watch.measuredFixes, greaterThan(0.25));
     });
 
     test('reset forgets the recording', () {
       final watch = VehicleSpeedWatch();
-      _replay(watch, motorwaySample);
-      expect(watch.hasFired, isTrue);
+      for (var i = 0; i < 10; i++) {
+        watch.add(_fix(speedKmh: 45.0, atSeconds: i * 5));
+      }
+      expect(watch.looksLikeVehicle, isTrue);
 
       watch.reset();
 
-      expect(watch.hasFired, isFalse);
       expect(watch.looksLikeVehicle, isFalse);
       expect(watch.measuredFixes, 0);
       expect(watch.vehicleFixes, 0);
     });
   });
 }
-
-/// Four fixes above `vehicleLiveSpeedKmh`, spanning more than the sustain
-/// window — the shortest trace that fires the live arm since T052.
-///
-/// Deliberately not the drive's own 38-39.3 km/h burst: those are *town* car
-/// speeds, and a bicycle descent reaches 39.9 (L-102). The live arm's job is
-/// the road, where nothing on two wheels follows.
-const motorwaySample = <List<double>>[
-  [52.0, 0],
-  [51.0, 2],
-  [55.0, 4],
-  [54.0, 6],
-];

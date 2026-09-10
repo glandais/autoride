@@ -184,7 +184,8 @@ class AppConstants {
   // 2. **They cannot separate a car from a bicycle**, and nothing on this axis
   //    can: the two right-hand rows of the first table match to two digits, and
   //    replaying the fit over both gives mean scores of 0.331 and 0.298. That is
-  //    what `vehicleSpeedKmh` and `VehicleSpeedWatch` are for.
+  //    what `vehicleSpeedKmh` and `VehicleSpeedWatch` flag (T053: flag, not
+  //    refuse).
 
   /// Standard deviation of accelerometer magnitude (m/s²) below which a window
   /// is not cycling at all.
@@ -249,79 +250,60 @@ class AppConstants {
   // | the drive, burst 2 | 5 | 8 s | 37.7 | 3.5-4.7 m |
   //
   // The cyclist is faster than the car and holds it longer. **No pair
-  // (`vehicleSpeedKmh`, `vehicleSustainSeconds`) refuses the drive and keeps
-  // the descent** — the live arm was not miscalibrated, it was measuring a
-  // quantity on which the two do not differ. The 2026-09-06 ride reached 38.4
-  // measured and survived only on `vehicleSpeedMinFixes`; that was luck.
+  // (`vehicleSpeedKmh`, sustain) refuses the drive and keeps the descent** —
+  // the live arm was not miscalibrated, it was measuring a quantity on which
+  // the two do not differ. T052 answered by raising the live arm to 50, on the
+  // reasoning that no cyclist holds 50.
   //
-  // What does differ is the **share** of a recording's measured evidence that
-  // is fast, over the whole ride:
+  // **2026-09-09 killed that reasoning, and the axis with it (T053, L-106).**
+  // Three sporting rides, recorded in parallel on a Karoo so the numbers are
+  // ground truth rather than inference. The app tracked all three to within
+  // 0.6-4 % of the FIT and then deleted two of them, 71.8 km, the 64.5 km one
+  // after cutting it into seven fragments:
   //
-  // | recording | measured | >= 35 | share |
-  // |---|---|---|---|
-  // | 2026-09-09 evening commute | 38 | 0 | 0.0 % |
-  // | 2026-09-06 evening ride | 43 | 2 | 4.7 % |
-  // | 2026-09-09 morning commute | 42 | 6 | **14.3 %** |
-  // | 2026-09-07 drive to the shops | 37 | 10 | **27.0 %** |
+  // | recording | measured | >= 35 | share | max measured |
+  // |---|---|---|---|---|
+  // | 2026-09-09 evening commute | 38 | 0 | 0.0 % | 28.1 |
+  // | 2026-09-06 evening ride | 43 | 2 | 4.7 % | 38.4 |
+  // | night ride (kept) | 381 | 35 | 9.2 % | 46.6 |
+  // | 2026-09-09 morning commute | 42 | 6 | 14.3 % | 39.9 |
+  // | **2026-09-07 drive to the shops** | 37 | 10 | **27.0 %** | **39.3** |
+  // | sporting ride #1 | 354 | 98 | **27.7 %** | 46.7 |
+  // | sporting ride #2 (7 fragments) | 2 800 | 1 554 | **55.5 %** | **59.9** |
   //
-  // `vehicleSpeedMinShare` (0.25) already sits in that gap. So `vehicleSpeedKmh`
-  // stays 35 and keeps feeding the **end-of-ride** arm, which was right about
-  // that morning and never got to answer — truncating the ride at the veto left
-  // it reading `vfx 4 / vmf 11` = 36 %, so the live arm destroyed the evidence
-  // the end-of-ride arm needed.
+  // The car has the **lowest maximum in the corpus** — every ride out-peaks it
+  // — and its share is indistinguishable from a real ride's, 27.0 against
+  // 27.7. The big ride puts 1.8 % of its samples above 50. There is no
+  // ordering of these recordings by measured speed that puts the drive on one
+  // side and the rides on the other: the axis is not mis-thresholded, it is
+  // **inverted**, because a town car is slow with bursts and a sporting
+  // cyclist is fast continuously.
+  //
+  // So the veto no longer decides anything. What survives below is what
+  // produces `Trip.suspectedVehicle` — a **flag**, shown as a badge in History,
+  // which a rider can act on and which deletes nothing. `vehicleSpeedKmh` and
+  // `vehicleSpeedMinShare` will over-flag a fast rider, and that is now the
+  // cost of a badge rather than the cost of a ride.
+  //
+  // **Do not recalibrate these two again.** The speed axis is closed by
+  // evidence and by decision: what will tell a bicycle from a car is the
+  // inertial unit — the T034 training capture feeding a classifier — not a
+  // threshold. `vehicleLiveSpeedKmh`, `vehicleSpeedWindowFixes`,
+  // `vehicleSustainSeconds` and `vehicleCooldownPeriodSeconds` were deleted
+  // with the live arm rather than left as dead weight.
 
-  /// Measured speed at or above which a fix is evidence of a motor vehicle,
-  /// for the end-of-ride share arm.
+  /// Measured speed at or above which a fix is evidence of a motor vehicle.
   static const double vehicleSpeedKmh = 35.0;
 
-  /// Measured speed at or above which the **live** arm may end a recording
-  /// outright (T052, L-102).
-  ///
-  /// Higher than [vehicleSpeedKmh] because the live arm decides on a handful of
-  /// fixes and cannot be wrong cheaply: it deletes a ride in progress. At 50
-  /// neither the 2026-09-09 descent (39.9) nor the 2026-09-07 town drive (39.3)
-  /// fires, which is the point — the drive is still refused, at the end, on its
-  /// 27 % share, and no real ride is lost in the middle.
-  ///
-  /// The live arm keeps its purpose: a road or motorway drive is stopped in
-  /// seconds instead of recorded for half an hour.
-  ///
-  /// **This value is a guard, not a calibration.** No measured speed above 39.9
-  /// exists anywhere in the corpus, so 50 separates nothing that has been
-  /// observed — it is sized to sit above what a cyclist can hold on a public
-  /// road and below a car that is actually travelling. Treat it as untested
-  /// until a log fires it.
-  static const double vehicleLiveSpeedKmh = 50.0;
-
-  /// How many recent pieces of evidence the live arm looks at.
-  static const int vehicleSpeedWindowFixes = 6;
-
-  /// …and how many of them must be above [vehicleLiveSpeedKmh]. Also the floor
-  /// on the end-of-ride arm, where it counts fixes above [vehicleSpeedKmh]:
-  /// fewer than this is an artefact, not a road.
+  /// Floor on the number of fast fixes before a recording may be flagged at
+  /// all: fewer than this is an artefact, not a road.
   static const int vehicleSpeedMinFixes = 4;
 
-  /// The fast fixes of the live arm must span at least this much wall clock, so
-  /// that a burst of fixes 200 ms apart cannot satisfy the count alone.
-  static const Duration vehicleSustainSeconds = Duration(seconds: 5);
-
-  /// Share of a recording's measured fixes that must be above the threshold for
-  /// the end-of-ride arm. A long ride accumulates four artefacts eventually;
-  /// a quarter of the evidence is a journey, not a glitch.
+  /// Share of a recording's measured fixes that must be above
+  /// [vehicleSpeedKmh] for it to be flagged. A long ride accumulates four
+  /// artefacts eventually; a quarter of the evidence is a journey, not a
+  /// glitch.
   static const double vehicleSpeedMinShare = 0.25;
-
-  /// How long the start detector stays blind after a ride was discarded as a
-  /// vehicle.
-  ///
-  /// `tripStartCooldownPeriodSeconds` (30 s) is sized for a false start, where
-  /// whatever fooled the detector lasts seconds. A drive lasts half an hour, and
-  /// at 30 s the rest of it would be a string of started-and-discarded trips,
-  /// each with its own "trip started" notification. Five minutes is the
-  /// compromise: at most a handful per drive, and the veto only fires while the
-  /// vehicle is moving — a rider who parks and gets on a bicycle is not blind
-  /// from the moment they stop, but from the last time the car was doing
-  /// 35 km/h.
-  static const int vehicleCooldownPeriodSeconds = 300;
 
   // Stationary thresholds (T007)
   //
@@ -726,7 +708,10 @@ class AppConstants {
   // v3 (L-073): `trips.pause_duration` (seconds spent stopped), so `duration`
   // can stay the moving time and the stopped time is still reconstructible
   // after the fact — for history display and for the startup recovery.
-  static const int databaseVersion = 3;
+  // v4 (L-106): `trips.suspected_vehicle` — the vehicle veto records evidence
+  // instead of deleting the ride, after it deleted 71.8 km of real sporting
+  // rides on 2026-09-09.
+  static const int databaseVersion = 4;
 
   // Audit Log (T043) — the opt-in diagnostic journal
   //

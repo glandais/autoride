@@ -229,8 +229,9 @@ class _StartDetectorScript {
   int resetCalls = 0;
   int cooldownCalls = 0;
 
-  /// The period the last cooldown was armed with — `null` for the default
-  /// (a false start), `vehicleCooldownPeriodSeconds` for a vehicle (T051).
+  /// The period the last cooldown was armed with. Always `null` since T053:
+  /// the vehicle cooldown was the only caller that passed one, and it went
+  /// with the veto (L-106).
   Duration? cooldownPeriod;
 }
 
@@ -1825,16 +1826,18 @@ void main() {
       expect(startDetector.cooldownCalls, 0);
     });
 
-    test('a ride discarded as a vehicle arms the long cooldown (L-100)', () async {
-      // The 2026-09-07 drive to the shops. A car's motion is a bicycle's, so
-      // the detector will start again within seconds of the veto and keep doing
-      // so for the length of the drive — thirty seconds of blindness would turn
-      // one drive into a string of started-and-discarded trips, each with its
-      // own notification.
+    test('a long recording arms no cooldown, whatever its speeds', () async {
+      // T051 armed a 300 s back-off after a `vehicle` discard. There is no
+      // `vehicle` discard any more (T053, L-106) — a car is kept and flagged —
+      // so a long recording that ends leaves the detector free, exactly as a
+      // ride does. The old arm was also never reached on the path that needed
+      // it: the live arm ended the recording from inside the recorder and
+      // bypassed this method, which is why one 64.5 km sporting ride became
+      // seven fragments 21-26 s apart (L-107).
       recorder
         ..discardOnStop = true
         ..durationOnStop = AppConstants.minTripDurationSeconds * 11
-        ..discardReasonOnStop = 'vehicle';
+        ..discardReasonOnStop = 'still';
       await begin();
 
       for (
@@ -1848,11 +1851,7 @@ void main() {
       await pushMotion(10);
 
       expect(recorder.stopCalls, 1);
-      expect(startDetector.cooldownCalls, 1);
-      expect(
-        startDetector.cooldownPeriod,
-        const Duration(seconds: AppConstants.vehicleCooldownPeriodSeconds),
-      );
+      expect(startDetector.cooldownCalls, 0);
     });
 
     test('a false start still arms the short one', () async {

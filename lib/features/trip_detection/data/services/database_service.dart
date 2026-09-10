@@ -45,6 +45,14 @@ const String _addTripStatusColumn =
 const String _addTripPauseDurationColumn =
     'ALTER TABLE trips ADD COLUMN pause_duration INTEGER NOT NULL DEFAULT 0';
 
+/// v3 -> v4 migration step (L-106). The vehicle veto stopped deleting rides and
+/// started flagging them, so the flag needs somewhere to live. Rows written
+/// before the column existed were never flagged — a drive recorded then was
+/// either deleted outright or is sitting in history unmarked — and the default
+/// says exactly that: no evidence, no flag.
+const String _addTripSuspectedVehicleColumn =
+    'ALTER TABLE trips ADD COLUMN suspected_vehicle INTEGER NOT NULL DEFAULT 0';
+
 /// Database service for AutoRide
 /// Handles database initialization, schema creation, and migrations
 class DatabaseService {
@@ -109,7 +117,8 @@ class DatabaseService {
         confidence_score REAL NOT NULL,
         user_confirmed INTEGER DEFAULT 0,
         status TEXT NOT NULL DEFAULT '$_defaultTripStatus',
-        pause_duration INTEGER NOT NULL DEFAULT 0
+        pause_duration INTEGER NOT NULL DEFAULT 0,
+        suspected_vehicle INTEGER NOT NULL DEFAULT 0
       )
     ''');
 
@@ -173,6 +182,18 @@ class DatabaseService {
     // which reads as "no stops recorded" rather than as a wrong number.
     if (oldVersion < 3) {
       await db.execute(_addTripPauseDurationColumn);
+    }
+
+    // v3 -> v4: the suspected-vehicle flag (L-106).
+    //
+    // T051 refused a recording outright when its measured speeds looked like a
+    // car's. On 2026-09-09 that deleted 71.8 km of real sporting rides, and the
+    // FIT files recorded alongside showed the app had measured every metre of
+    // them correctly — a town car has the *lowest* peak speed in the whole
+    // corpus. The evidence is kept and shown now instead of acted on, which is
+    // what this column holds.
+    if (oldVersion < 4) {
+      await db.execute(_addTripSuspectedVehicleColumn);
     }
   }
 

@@ -1103,7 +1103,7 @@ void main() {
     });
   });
 
-  group('TripRecorderService - a ride made in a car (L-100)', () {
+  group('TripRecorderService - a ride made in a car (L-100, L-106)', () {
     /// A fix carrying a *measured* speed the app is allowed to believe, moving
     /// far enough each time to clear the recording filters. [index] spaces both
     /// the position and the timestamp, at two seconds a step — the cadence iOS
@@ -1131,17 +1131,13 @@ void main() {
       );
     }
 
-    test('the drive to the shops is refused at the end (T052, L-102)', () async {
-      // 2026-09-07: a 27-minute drive recorded as a 3.1 km cycling trip at
-      // 6.9 km/h. The motion fit could not have refused it — a car shakes like
-      // a bicycle — and none of the three older discard arms could either: it
-      // lasted, it had 74 points, and it went somewhere.
-      //
-      // Under T051 the live arm ended it at the fourth fix above 35 km/h. It no
-      // longer does: a bicycle descent reaches 39.9 and the drive peaks at
-      // 39.3, so nothing at town speeds may end a ride in progress (L-102).
-      // The verdict is taken at the stop instead, on the share of the whole
-      // recording — 10 of 37 measured fixes here, well over the quarter.
+    test('the drive to the shops is kept and flagged (T053, L-106)', () async {
+      // 2026-09-07: a 27-minute drive recorded as a 3.1 km cycling trip. T051
+      // refused it outright; T052 moved the refusal to the ending. Neither can
+      // stand — this drive has the **lowest measured maximum in the corpus**
+      // (39.3 km/h) and a 27.0 % fast-fix share indistinguishable from a real
+      // sporting ride's 27.7 %, and acting on that deleted 71.8 km of real
+      // rides on 2026-09-09. It is kept now, and marked.
       final recorder = await readRecorder();
       fakeRepository.backdateStartBy = const Duration(minutes: 11);
       await startTrip(recorder, confidenceScore: 0.9);
@@ -1158,17 +1154,17 @@ void main() {
       expect(
         container.read(tripStateMachineProvider).hasActiveTrip,
         isTrue,
-        reason: 'town speeds no longer end a ride where it stands',
+        reason: 'nothing ends a ride on its speed any more',
       );
-      expect(fakeRepository.deletedTripIds, isEmpty);
 
       final finalTrip = (await recorder.stopRecording())!;
-      expect(recorder.lastDiscardReason, 'vehicle');
-      expect(finalTrip.status, TripStatus.discarded);
-      expect(fakeRepository.deletedTripIds, equals([1]));
+      expect(finalTrip.suspectedVehicle, isTrue);
+      expect(finalTrip.status, TripStatus.completed);
+      expect(recorder.lastDiscardReason, isNull);
+      expect(fakeRepository.deletedTripIds, isEmpty);
     });
 
-    test('a descent at 39.9 km/h keeps the ride (T052, L-102)', () async {
+    test('a descent at 39.9 km/h keeps the ride unflagged (L-102)', () async {
       // The 2026-09-09 morning commute. Six measured fixes at or above 35 over
       // ten seconds, peaking at 39.9 — faster than the drive above, and held
       // longer. Under 1.0.0+14 this deleted 1 561 m of a real ride.
@@ -1191,36 +1187,43 @@ void main() {
         await pushFix(carFix(index++, speed));
       }
       // …and the rest of the commute, which is what puts the fast fixes in the
-      // minority the end-of-ride arm reads.
+      // minority the share arm reads.
       for (var i = 0; i < 30; i++) {
         await pushFix(carFix(index++, 18.0 + (i % 7)));
       }
       await pumpEventQueue();
 
-      expect(container.read(tripStateMachineProvider).hasActiveTrip, isTrue);
-
       final finalTrip = (await recorder.stopRecording())!;
+      expect(finalTrip.suspectedVehicle, isFalse);
       expect(recorder.lastDiscardReason, isNull);
       expect(finalTrip.status, TripStatus.completed);
       expect(fakeRepository.deletedTripIds, isEmpty);
     });
 
-    test('a road drive still ends where it stands', () async {
-      // The live arm keeps its purpose above `vehicleLiveSpeedKmh`: a drive
-      // that is actually travelling is stopped in seconds rather than recorded
-      // for half an hour.
+    test('a sporting ride is flagged and kept whole (T053, L-106)', () async {
+      // 2026-09-09, ground truth from a Karoo: 64.5 km at a 35.5 km/h mean,
+      // 59.6 km/h peak, 56 % of its samples at or above 35. Eight recordings
+      // like this were deleted and one ride was cut into seven fragments. The
+      // flag fires — that is the accepted cost — and the ride survives.
       final recorder = await readRecorder();
       fakeRepository.backdateStartBy = const Duration(minutes: 11);
       await startTrip(recorder, confidenceScore: 0.9);
 
-      var index = 0;
-      for (final speed in <double>[52.0, 51.0, 55.0, 54.0]) {
-        await pushFix(carFix(index++, speed));
+      for (var i = 0; i < 40; i++) {
+        await pushFix(carFix(i, i.isEven ? 38.0 : 31.0));
       }
       await pumpEventQueue();
 
-      expect(fakeRepository.deletedTripIds, equals([1]));
-      expect(recorder.lastDiscardReason, 'vehicle');
+      expect(
+        container.read(tripStateMachineProvider).hasActiveTrip,
+        isTrue,
+        reason: 'the ride is never cut short, whatever its speeds',
+      );
+
+      final finalTrip = (await recorder.stopRecording())!;
+      expect(finalTrip.suspectedVehicle, isTrue);
+      expect(finalTrip.status, TripStatus.completed);
+      expect(fakeRepository.deletedTripIds, isEmpty);
     });
 
     test('a ride whose provider reports no speed is kept', () async {

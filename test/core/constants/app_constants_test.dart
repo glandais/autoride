@@ -1,5 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:autoride/core/constants/app_constants.dart';
+import 'package:autoride/features/trip_detection/domain/models/trip.dart';
+import 'package:autoride/features/trip_detection/domain/models/activity_confidence.dart';
 
 /// Threshold-consistency checks. Moved out of
 /// `cycling_pattern_detector_test.dart`, which was named for a service it never
@@ -67,28 +69,40 @@ void main() {
       expect(0.5 * 1.0, lessThan(AppConstants.tripStartConfidenceThreshold));
     });
 
-    test('the vehicle veto sits above a bicycle and below a car (T051)', () {
-      // 2026-09-07, provider-measured speeds only: the night ride's fastest is
-      // 31.6 km/h, the drive's cruise is five consecutive fixes at 38.0-39.3.
-      // The threshold has to fit between them, and it must NOT be
-      // `maxCyclingSpeedKmh` — the drive never came near 60, which is why a
-      // "no bicycle goes this fast" rule catches nothing real.
+    test('the suspected-vehicle flag decides nothing (T053)', () {
+      // T051 refused a recording on these numbers. It cannot: the 2026-09-07
+      // town drive has the **lowest** measured maximum in the whole corpus
+      // (39.3 km/h) and a 27.0 % fast-fix share indistinguishable from a real
+      // sporting ride's 27.7 %, while a 64.5 km ride reads 55.5 %. So the two
+      // constants below now paint a badge, and there is no third one for a
+      // live arm, a sustain window or a cooldown — those were deleted with it.
       expect(AppConstants.vehicleSpeedKmh, greaterThan(31.6));
       expect(AppConstants.vehicleSpeedKmh, lessThan(38.0));
       expect(
-        AppConstants.vehicleSpeedKmh,
-        lessThan(AppConstants.maxCyclingSpeedKmh),
+        AppConstants.vehicleSpeedMinShare,
+        allOf(greaterThan(0.0), lessThan(1.0)),
       );
-      // The live arm needs a majority of its window, not one artefact.
-      expect(
-        AppConstants.vehicleSpeedMinFixes,
-        greaterThan(AppConstants.vehicleSpeedWindowFixes / 2),
+      // A handful of artefacts in a long ride is not a road.
+      expect(AppConstants.vehicleSpeedMinFixes, greaterThan(1));
+    });
+
+    test('a recording is never discarded for being fast (T053, L-106)', () {
+      // The regression that cost 71.8 km. `discardReason` has three arms and
+      // none of them reads a speed; the flag rides alongside on the same trip.
+      final fast = Trip(
+        startTime: DateTime(2026, 9, 9, 20, 40),
+        endTime: DateTime(2026, 9, 9, 22, 30),
+        distance: 64480,
+        duration: 6576,
+        detectedActivity: ActivityType.cycling,
+        confidenceScore: 0.9,
+        avgSpeed: 35.5,
+        maxSpeed: 59.6,
+        suspectedVehicle: true,
       );
-      // And a drive must not be turned into a string of discarded trips.
-      expect(
-        AppConstants.vehicleCooldownPeriodSeconds,
-        greaterThan(AppConstants.tripStartCooldownPeriodSeconds),
-      );
+
+      expect(fast.discardReason(6530, netDisplacementMeters: 12000), isNull);
+      expect(fast.suspectedVehicle, isTrue);
     });
 
     test('should have valid frequency thresholds', () {

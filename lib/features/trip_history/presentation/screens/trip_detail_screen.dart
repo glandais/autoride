@@ -299,6 +299,16 @@ class _MetadataSection extends StatelessWidget {
               ? AppColors.success
               : AppColors.warning,
         ),
+        // Shown only when it fired, because "no" is the answer for almost
+        // every ride and a row that always reads "no" is noise. The flag is
+        // advisory: speed cannot actually tell a car from a fast cyclist
+        // (T053, L-106), so the wording asks rather than asserts.
+        if (trip.suspectedVehicle)
+          const _MetadataRow(
+            label: 'Speed profile',
+            value: 'Looks like a vehicle',
+            valueColor: AppColors.error,
+          ),
       ],
     );
   }
