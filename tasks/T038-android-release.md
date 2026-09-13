@@ -59,9 +59,10 @@ below.
 - The default JDK on the dev machine is 25; Gradle 8.14 + AGP 9.3.0 are not validated against
   it and fail in confusing, non-"unsupported JDK" ways. `publish_beta.sh` pins `JAVA_HOME` to
   temurin-21 explicitly.
-- `tflite_flutter` is declared in `pubspec.yaml` but unused in `lib/` (T016) — no R8 keep rules
-  were written for it; writing rules for code R8 can't see yet produces unjustifiable dead
-  config.
+- `tflite_flutter` was declared in `pubspec.yaml` but unused in `lib/` (T016), so no R8 keep
+  rules were written for it — writing rules for code R8 can't see yet produces unjustifiable
+  dead config. The dependency itself was removed on 2026-09-13; when T016 lands, whichever
+  inference runtime it brings will need its keep rules written then.
 
 ---
 

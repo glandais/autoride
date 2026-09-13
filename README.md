@@ -27,8 +27,9 @@ AutoRide is a privacy-focused mobile app that uses motion sensing to automatical
 - **Adaptive learning** - Improve accuracy over time with user feedback
 - **Confidence scoring** - Show how certain the app is about detected activities
 
-None of the above ships today: there is no on-device model and no TensorFlow Lite code path.
-The current build scores cycling from accelerometer/gyroscope thresholds only.
+None of the above ships today: there is no on-device model, no inference runtime in the
+dependencies, and no code path for either. The current build scores cycling from
+accelerometer/gyroscope thresholds only.
 
 ### Trip Management
 - **Detailed trip history** - View all your past rides with routes, distance, and duration
@@ -236,7 +237,9 @@ See [CLAUDE.md](CLAUDE.md) for detailed development guidelines and best practice
 - **flutter_background_service** - Reliable background task execution
 
 ### Machine Learning *(planned — T016–T019)*
-- **tflite_flutter** - Declared in `pubspec.yaml`, but not imported anywhere in `lib/` yet
+- **No runtime dependency** - `tflite_flutter` sat in `pubspec.yaml` from T001 (2025-11-22) without
+  ever being imported and has been removed; the classifier task will add whichever runtime it
+  actually needs
 - **Custom HAR model** - Not built; no model asset exists in the repository
 
 ### Data Modeling
@@ -499,7 +502,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 - **Flutter Team** - For the amazing framework
 - **Riverpod Community** - For state management best practices
-- **TensorFlow Team** - For on-device ML capabilities
 - **Contributors** - Everyone who helps improve AutoRide
 
 ---
