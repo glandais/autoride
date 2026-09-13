@@ -6,7 +6,7 @@ description: What AutoRide stores on your device, what leaves it, and how to del
 # AutoRide — Privacy Policy
 
 **Effective date:** 2026-07-25
-**Last updated:** 2026-09-03
+**Last updated:** 2026-09-13
 **Applies to:** AutoRide for iOS and Android (`io.github.glandais.autoride`)
 **Contact:** gabriel.landais@gmail.com
 
@@ -53,6 +53,9 @@ Stored in a local SQLite database (`autoride.db`) in the app's private storage:
 | Average and maximum speed | Computed from GPS |
 | Detected activity and confidence score | The classification result (e.g. cycling) and how confident the detection was |
 | Confirmation flag | Whether you confirmed or corrected the detection |
+| Time spent stopped | How much of the trip was pauses, subtracted from the duration above |
+| Recording status | Whether the trip is in progress, finished, or was rejected as too short |
+| "Probably a vehicle" flag | Set when the speeds recorded look like a motor vehicle rather than a bike. It is a badge shown in your history, not a verdict: the ride is kept either way and you decide |
 
 ### 2.2 Route points
 
@@ -285,14 +288,28 @@ Material changes — in particular, any change that would cause data to leave yo
 be reflected here with a new "Last updated" date before the feature ships, and the app's store
 listings and privacy declarations will be updated in the same release.
 
+**2026-09-13** — no new data and nothing new leaving the device. The diagnostic log's size cap
+rose from about 20 MB to about 100 MB, so a full log now reaches back days of riding rather than
+hours (§6). §2.1 was completed to list three columns of a trip record it had omitted: the time
+spent stopped, the recording status, and the "probably a vehicle" flag that history shows as a
+badge.
+
+**2026-09-03** — a new, off-by-default feature you start yourself: recording labelled raw
+accelerometer and gyroscope data, so detection can be improved against real journeys instead of
+guesses (§2.6). It takes two deliberate steps to record anything, it holds no positions, it
+expires on its own (§6), you can erase it in one tap (§7.1), and — like everything else here —
+the file it produces goes nowhere unless you export and send it yourself (§3.3). Nothing is
+uploaded.
+
 **2026-09-02** — two changes, both of them things you start yourself: exporting a ride as a `.fit`
 activity file, and an optional, off-by-default diagnostic log you can export and send. §2.5 and
 §3.3 describe them, §6 covers how long the log is kept and §7.1 how to erase it. Neither sends
 anything on its own.
 
-One feature remains planned but **not present**: opt-in contribution of anonymised sensor data to
-improve activity detection. If it ships, this policy will be updated first, and it will be off
-unless you explicitly turn it on.
+One feature remains planned but **not present**: any *upload* of the data described in §2.6, or of
+anything else, to the developer or anyone else. The recording of §2.6 stays on your device; if a
+contribution feature ever ships, this policy will be updated first, and it will be off unless you
+explicitly turn it on.
 
 ## 11. Contact
 

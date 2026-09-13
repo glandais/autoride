@@ -28,9 +28,9 @@ Foundation's servers, which necessarily reveals your IP address and the area of 
 looking at to that third party. If you never open a map, the app makes no network requests at
 all. This is explained in full in [§3 of the Privacy Policy](legal/privacy-policy.md).
 
-Separately, you can *choose* to export a file — a ride as a `.fit` activity, or the optional
-diagnostic log — and send it through your device's own share sheet; nothing leaves until you pick
-a destination, as described in
+Separately, you can *choose* to export a file — a ride as a `.fit` activity, the optional
+diagnostic log, or the optional recording of labelled motion-sensor data — and send it through
+your device's own share sheet; nothing leaves until you pick a destination, as described in
 [§3.3 of the Privacy Policy](legal/privacy-policy.md).
 
 Uninstalling the app deletes everything it stored.
