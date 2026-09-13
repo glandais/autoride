@@ -1572,7 +1572,7 @@ it is the number under which the phone died.
 | ID | Dim | Where | Finding | Status | Evidence |
 |---|---|---|---|---|---|
 | L-108 | detection | `trip_start_detector.dart`, `AppConstants.detectionConsecutiveReadings` (3) / `detectionWindowSeconds` (5) | **The windowed fit is a max-statistic over hours of rest: three seconds of handling a phone is a start, and eleven hours of an evening supplies them 22 times** | **Open** → T054 | Every false start has the same shape — ~18 s of `asd ≈ 0.03–0.4`, then a five-second burst. 22:12:28→33 reads `asd` 2.667 / 2.415 / 2.454 / 2.599 / **3.512** with `gav` 1.538 / 2.902 / 2.862 / 2.850 / 1.306, `c` 0.834 → 1.000, `n` 3, start. The distributions say why this is not fixable by a threshold: over the evening at rest `win.sd` runs **p50 0.47 / p90 2.13 / p99 5.22** and `win.gy` **p50 0.59 / p90 1.40 / p99 2.15**, against the real 7.5 km ride's `sd` p50 **1.71** and the 35.7 km ride's **3.46**. The medians separate cleanly; the **tails of rest cover the median of riding**. 31 700 s of evening puts >300 s above the p99 — three *consecutive* seconds there is not a rare event, it is a certainty several times an hour. T050 fixed the per-sample coin toss (L-079); it did not fix the corroboration length, and 3-in-5 s is the same coin toss at a lower frequency. |
-| L-109 | detection | `trip_start_detector.dart` / `trip_detection_coordinator.dart` — the GPS gate vs. the start decision | **The speed half of the start confidence never votes. `vt` is false on 26 of 26 starts and on 97.8 % of all evaluations, so `k.wSpd` 0.4 is dead weight and `k.conf` 0.7 is in truth a motion-only threshold** | **Open** → T054 | 247 of 11 209 `start` lines carry `vt:true` (2.2 %), and **not one of them is a line that started a trip**. The cause is structural, not a freshness constant: at the instant of decision the gate is *closed* — at 22:12:22, eleven seconds before trip 133 opened, the log reads `gate {a:"sched", why:"stationary"}` — so there is no fix for `k.spAge` (10 s) to judge. Through the whole 420 s of that phantom trip **no `fix` arrived at all**; the first one after it, at 22:19:37, carries `ac` 14.246 — the same frozen value repeated since 19:15, a cached location. This is not a GPS fault: on the ride itself `sp` is healthy (1 253 fixes > 0 at 25.7 km/h mean on trip 123; 361 at 20.3 km/h on trip 148). **The one axis that separates a pocket from a bicycle is unavailable at exactly the moment it would decide, and is fully available five minutes later.** Chicken and egg: no GPS until motion is detected, and motion alone cannot tell the two apart (L-100). |
+| L-109 | detection | `trip_start_detector.dart` / `trip_detection_coordinator.dart` — the GPS gate vs. the start decision | **The speed half of the start confidence never votes. `vt` is false on 26 of 26 starts and on 97.8 % of all evaluations, so `k.wSpd` 0.4 is dead weight and `k.conf` 0.7 is in truth a motion-only threshold** | **Open** → T054 | 247 of the file's **55 269** `start` lines carry `vt:true` — **0.45 %** — and not one of them is a line that started a trip. Of the 11 209 that had a fix at all, 2.2 %. The cause is structural, not a freshness constant: at the instant of decision the gate is *closed* — at 22:12:22, eleven seconds before trip 133 opened, the log reads `gate {a:"sched", why:"stationary"}` — so there is no fix for `k.spAge` (10 s) to judge. Through the whole 420 s of that phantom trip **no `fix` arrived at all**; the first one after it, at 22:19:37, carries `ac` 14.246 — the same frozen value repeated since 19:15, a cached location. This is not a GPS fault: on the ride itself `sp` is healthy (1 253 fixes > 0 at 25.7 km/h mean on trip 123; 361 at 20.3 km/h on trip 148). **The one axis that separates a pocket from a bicycle is unavailable at exactly the moment it would decide, and is fully available five minutes later.** Chicken and egg: no GPS until motion is detected, and motion alone cannot tell the two apart (L-100). |
 
 ### Medium
 
@@ -1619,3 +1619,38 @@ answerable** — trip 123's missing 22 minutes sit just outside the purge line.
 
 Gates: `flutter analyze` clean, **810 tests** (unchanged — no test pinned either bound; both are
 injected in the retention tests so they can run on kilobytes).
+
+### Replay (2026-09-13) — L-108 is priced, and L-104 is the only axis left
+
+T054 §4 asked for an offline replay before any device time. Run over **seven pooled `sv:3`
+corpora** (2026-09-07 → 09-13, builds +13 → +16, every start-path constant identical across
+them — verified, which is what makes pooling legitimate): **299 890 evaluations, 83.6 h of
+evaluated time, 21 real journeys, 72 phantom recordings**, 27× the corpus §4 imagined. Harness
+in `scripts/t054-replay/`, ground truth mechanical (`net` ≥ 100 m or `dist` ≥ 500 m = the
+recording went somewhere), so a re-run needs no hand labelling.
+
+**The first answer was an artefact, and the shape of the artefact is worth recording.** A log
+written by a 3-second rule truncates every positive run at 3 seconds: the trip opens and the
+detector stops being evaluated, so seconds 4..N were never written. Scored naively, `streak 5s`
+read **0.6 false starts per 24 h against 15.6** — a 97 % cut which is simply the absence of the
+evidence against it. Followed into the recording each truncated run opened — `win` is emitted at
+1 Hz throughout, and its `sd`/`gy` are the same statistics over 1.5 s instead of 1 s, validated
+at the seam at median 2.97 against the `asd` 2.92 that fired it — the same rule reads **42 against
+52**, a 19 % cut. *Any* replay of a detector against a log its own thresholds produced has this
+hazard; the continuation is the fix.
+
+| ID | Dim | Where | Finding | Status | Evidence |
+|---|---|---|---|---|---|
+| L-114 | detection | `trip_start_detector.dart` — the premise of T054 §3.1 | **A bicycle does not hold the motion threshold either. Riding is a 23 % duty cycle whose median burst is two seconds — the same shape as standing still, three times as dense — so no corroboration *length* separates them** | **Open** → T054 §3.1, rewritten | Over 7.6 h of real journeys against 10.3 h of phantom recordings: duty above 0.7 **23.4 % vs 7.0 %**; burst length median **2 s vs 2 s**, p90 **11 s vs 9 s**, p99 46 s vs 25 s, max 85 s vs 37 s. The length distributions barely separate; only the density does. Consequently `streak 30s` starts **11 of 21** real journeys, `streak 15s` 16 of 21 — requiring ten consecutive seconds discards 96 % of genuine riding seconds. The best rules that keep all 21 journeys (`duty ≥ 28 %/60 s`, `duty ≥ 18 %/120 s`) cut false starts by **38-45 %** for **1-2 minutes of median added latency**. **L-108 is therefore not fixable at this layer** — it is reducible by about 40 %, which on the §13 corpus is ~1.5 h of GPS a day and worth taking, and is not a fix. |
+
+**What this does to the queue.** The latency the duty cycle costs is only acceptable if the
+pre-trip back-date pays it back, and the back-date is dead on iOS (**L-110**). So L-110 stops
+being a companion fix and becomes the **prerequisite**: ship the derived-speed tail cut, verify a
+`bdate` on a device, then take the duty cycle. Nothing should be written for L-108 before that.
+
+**And L-100 gains its fourth face.** Motion cannot separate a bicycle from a car (§10), from a
+walk (§11), from a phone being picked up (§13), and now — measured rather than argued — **not from
+anything at all by how long the motion lasts**. The separation that exists in `asd`/`gav` is a 3.3×
+difference in density between whole recordings, and it degrades to 40 % at the instant a decision
+has to be taken. The classifier is the inertial unit, T034's capture, and this is the strongest
+evidence yet that it is not optional.

@@ -1,6 +1,7 @@
 # T054 — Five seconds of a pocket is not a ride: the corroboration window, and the axis that never votes
 
-Date opened: 2026-09-13. Status: ⏳ **diagnosis only — nothing written.**
+Date opened: 2026-09-13. Status: ⏳ **diagnosis, plus the §4 replay, which refutes §3.1.**
+Nothing written in `lib/`; the harness is `scripts/t054-replay/`.
 Owner findings: **L-108**, **L-109**, **L-110**, **L-111**, **L-112** (`tasks/LEDGER.md` §13).
 Depends on T050 (the windowed fit this task extends) and T053 (the build that produced the log).
 Sibling of **T049**, which it supersedes in scope: T049 answered a kitchen with a sliding streak
@@ -69,8 +70,8 @@ T050 closed L-079, the per-sample coin toss. `tripStartMinConsecutiveDetections`
 
 ### 2.2 The speed half of the confidence has never voted (L-109)
 
-`vt:false` on **26 of 26** starts; `vt:true` on **247 of 11 209** evaluations (2.2 %), **none** of
-which started a trip. So `c = mot` always, `tripStartSpeedWeight` (0.4) is dead weight, and
+`vt:false` on **26 of 26** starts; `vt:true` on **247 of 55 269** evaluations — **0.45 %**, or 2.2 %
+of the 11 209 that had a fix at all — **none** of which started a trip. So `c = mot` always, `tripStartSpeedWeight` (0.4) is dead weight, and
 `tripStartConfidenceThreshold` (0.7) is in force as a *motion-only* threshold — which is not what
 0.7 was chosen to mean.
 
@@ -104,27 +105,91 @@ pause 17:46:20 → resume 17:47:02 (42 s), pause 17:48:14 → `maxPause` at 17:5
 applied to resume, and a rider standing over a bike supplies it repeatedly. **Fix it in one place
 or fix it twice.**
 
+## 2bis. What the replay says — and it refutes §3.1
+
+Run 2026-09-13 over **seven pooled `sv:3` corpora** (2026-09-07 → 09-13, builds
+1.0.0+13 → +16, every start-path constant identical across them): **299 890 evaluations,
+83.6 h of evaluated time, 21 real journeys and 72 phantom recordings.** That is 27× the
+corpus §4 assumed. Harness and method: `scripts/t054-replay/`.
+
+### The method trap, first, because it inverts the answer
+
+**A log written by a 3-second rule truncates every positive run at 3 seconds.** The instant
+the streak reaches 3 the trip opens and the start detector stops being evaluated, so seconds
+4..N were never written. The first run of this replay scored `streak 5s` at **0.6 false
+starts per 24 h against the baseline's 20.1** — a 97 % cut, and pure artefact: the evidence
+that would have convicted it had been blacked out.
+
+The seconds are recoverable from `win`, which the *stop* path emits at 1 Hz throughout a
+recording, and whose `sd`/`gy` are the same `StationaryWindow` statistics (1.5 s rather than
+1 s; validated at the seam — median 2.97 against the `asd` 2.92 that fired it). Following
+every truncated run into the recording it opened, `streak 5s` scores **42 against 52**.
+
+### The result
+
+| rule | journeys started | median added latency | p90 | false starts / 24 h |
+|---|---|---|---|---|
+| **streak 3s** (today) | **21/21** | — | — | **15.6** |
+| streak 5s | 21/21 | 5 s | 58 s | 12.6 |
+| streak 8s | 21/21 | 24 s | 278 s | 8.4 |
+| streak 10s | 20/21 | 90 s | 390 s | 6.3 |
+| streak 15s | 16/21 | 179 s | 465 s | 4.2 |
+| streak 30s | 11/21 | 440 s | 518 s | 1.2 |
+| duty 28 %/60 s | 21/21 | 59 s | 212 s | 9.6 |
+| duty 18 %/120 s | 21/21 | 117 s | 163 s | 8.7 |
+| duty 28 %/300 s | 16/21 | 300 s | 609 s | 1.5 |
+
+**No candidate keeps the departures and loses the false starts.** The best rules that still
+start all 21 journeys cut false starts by **38–45 %**, for one to two minutes of median added
+latency. Halving them costs rides.
+
+### Why — the premise was wrong
+
+§3.1 assumed "the burst is 5 s; a ride is minutes". Measured on `win`, over 7.6 h of real
+journeys against 10.3 h of phantom recordings:
+
+| | duty cycle above 0.7 | median burst | p90 | p99 | max |
+|---|---|---|---|---|---|
+| real journeys | **23.4 %** | 2 s | 11 s | 46 s | 85 s |
+| phantom recordings | **7.0 %** | 2 s | 9 s | 25 s | 37 s |
+
+**A bicycle does not hold the threshold either.** Riding is 23 % duty with a *median
+two-second burst* — the same shape as standing still, three times as dense. Requiring ten
+consecutive seconds throws away 96 % of genuine riding seconds, which is exactly why
+`streak 30s` finds eleven journeys out of twenty-one.
+
+So the discriminant that exists in these two features is the **density**, not the length —
+L-104, offered in ledger §11 and still unimplemented, is the right instinct. But 23.4 %
+against 7.0 % is a 3.3× separation between *whole recordings*, and at the decision instant,
+on a 30–120 s window, it buys the 38–45 % above and no more.
+
+**This does not make the work pointless, it re-prices it.** A 40 % cut in phantom recordings
+is ~1.5 h of GPS a day on the §13 corpus. It is worth having, it is not a fix, and it must
+not be sold as one.
+
 ## 3. What to change
 
 Nothing here is written. The order is by evidence, not by ease.
 
-### 3.1 Lengthen the corroboration, and score the duty cycle rather than the peak (L-108)
+### 3.1 Score the density, not the length — and expect 40 %, not a fix (L-108, L-104)
 
-The burst is 5 s; a ride is minutes. Two candidate shapes, and the log can arbitrate between them
-offline before either ships:
+**The longer-streak option is dead** (§2bis): a ride's own bursts have a median length of two
+seconds, so any rule that asks for a long run refuses the rider before it refuses the pocket.
 
-* **Longer streak.** Raise `tripStartMinConsecutiveDetections` so a start needs on the order of
-  20–30 consecutive positive seconds rather than 3. Cost: a genuine departure is confirmed that
-  much later — but §2.3 means the back-date is supposed to pay that back, and does not yet, so
-  **3.3 is a prerequisite, not an optional companion**.
-* **Duty cycle instead of a max** — L-104, offered in §11 and still unimplemented. Score the
-  *fraction* of the last N seconds above a floor, not the value of the best window. This is what
-  the two corpora keep pointing at: median `win.sd` 0.47 at rest against 1.71 and 3.46 riding, with
-  overlapping tails. A fraction ignores the tail by construction; a peak is the tail.
+What is left is the duty cycle, and the replay prices it honestly. Two settings keep every one
+of the 21 journeys:
 
-**Measure both over this log before choosing.** Replaying the 11 209 `start` evaluations against a
-candidate is a script, not a device run, and the answer wanted is: does it keep the four real
-starts and lose the 22 phantoms?
+* **duty ≥ 28 % over 60 s** — 9.6 false starts a day against 15.6, median added latency 59 s.
+* **duty ≥ 18 % over 120 s** — 8.7 a day, median 117 s, and a *tighter* p90 (163 s) than the
+  60 s rule's 212 s, which is the argument for the longer window.
+
+Either is a **~40 % cut for one to two minutes of latency**, and that latency is only acceptable
+if it is back-dated away — so **3.3 stops being a companion fix and becomes the prerequisite**.
+Ship 3.3 first, verify a `bdate` appears on a device, then take the duty cycle.
+
+Re-run `scripts/t054-replay/` on any new corpus before moving either number. Two things the
+harness will tell you that a device run will not: whether the candidate still starts every
+journey, and whether the apparent win is the truncation artefact §2bis describes.
 
 ### 3.2 Make the speed weight honest (L-109)
 
@@ -170,15 +235,14 @@ log is **not established** and should not be asserted without measuring it.
 
 ## 4. Acceptance
 
-An **offline replay first** — this task is unusual in that most of it is decidable from the corpus
-already on disk, and a device run that has not been preceded by a replay is a wasted evening:
+~~An offline replay first~~ — **done, 2026-09-13, see §2bis.** It was worth doing and it changed
+the task: the corpus is seven logs and 83.6 h rather than the one log §4 first named, the
+longer-streak candidate is refuted, and the duty cycle is priced at ~40 % rather than assumed to
+be a fix. The 2026-09-03 kitchen logs turned out to be `sv:2` and cannot be replayed at all — the
+windowed fit did not exist when they were written.
 
-1. Replay the 11 209 `start` evaluations of `autoride-audit-20260913-1805.ndjson.gz` against the
-   candidate from 3.1. Pass = **4 real starts kept, 22 phantoms lost**. Report the margin, not just
-   the verdict.
-2. Replay against `autoride-audit-20260910-0329.ndjson.gz` (§12, three sporting rides) and the
-   2026-09-03 kitchen logs. A candidate that passes one corpus and fails another is not a
-   candidate.
+What remains for a re-run: `scripts/t054-replay/extract.sh` over whatever corpus exists then,
+and the pass to beat is **21/21 journeys at 15.6 false starts a day**.
 
 Then, on a device:
 
