@@ -236,9 +236,11 @@ class _StatsTile extends ConsumerWidget {
         ? '${(stats.sizeBytes / 1024).round()} KB'
         : '${(stats.sizeBytes / (1024 * 1024)).toStringAsFixed(1)} MB';
 
-    // The covered span, not "7 days": at verbose level the size and row bounds
-    // bite long before the age one does, so a full log reaches back hours, not
-    // days. Saying so is the honest version of the retention promise.
+    // The covered span, not "7 days": at verbose level the size bound can
+    // still bite before the age one does, so a full log reaches back some
+    // number of days rather than the full seven. Saying so is the honest
+    // version of the retention promise, and it is why this is measured from
+    // the oldest row instead of quoting a constant.
     final oldest = stats.oldestAt;
     final since = oldest == null ? '' : ' · since ${_formatDate(oldest)}';
 

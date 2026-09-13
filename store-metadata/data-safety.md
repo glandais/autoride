@@ -41,7 +41,7 @@ and the `capture_sessions` table for T034.
 
 **The diagnostic log is off unless the user turns it on** (`UserSettings.auditLogEnabled`,
 default `false`); until then no audit database file is created at all. It self-expires after 7
-days / 200 000 entries / ~20 MB, whichever comes first, and Settings → Diagnostic log → Clear log
+days / 1 200 000 entries / ~100 MB, whichever comes first, and Settings → Diagnostic log → Clear log
 deletes the file. It never leaves the device on its own — see §3.4.
 
 **The training capture is a second, independent opt-in.** It requires

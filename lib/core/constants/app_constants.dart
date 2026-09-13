@@ -725,12 +725,23 @@ class AppConstants {
   static const String auditDatabaseName = 'autoride_audit.db';
   static const int auditDatabaseVersion = 2;
 
-  // Retention: whichever bound is reached first. The byte bound is not
-  // redundant with the row bound — at ~130 bytes per line, 200 000 rows is
-  // ~26 MB, above the 20 MB the log is allowed to occupy.
+  // Retention: whichever bound is reached first.
+  //
+  // The budget is the **byte** bound; the row bound is a backstop against a
+  // pathological run of very short lines and is deliberately set well above
+  // it. It used to be the other way round by accident: the comment here said
+  // ~130 bytes a line, which would have made 200 000 rows ~26 MB and the byte
+  // bound the binding one, but a real verbose file measures **87 bytes a
+  // line** (201 146 lines / 17 475 707 bytes, 2026-09-13). 200 000 rows was
+  // therefore 17.4 MB — under the 20 MB budget — so the row bound bit first,
+  // every time, and the byte bound never fired at all. Every one of the seven
+  // purges in that 26 h file reads `why: "rows"` (L-113).
+  //
+  // `_classBytes` sums `LENGTH(line)`, so these bytes are the NDJSON bytes an
+  // export writes, not the file's page count.
   static const Duration auditRetention = Duration(days: 7);
-  static const int auditMaxEvents = 200000;
-  static const int auditMaxBytes = 20 * 1024 * 1024;
+  static const int auditMaxEvents = 1200000;
+  static const int auditMaxBytes = 100 * 1024 * 1024;
 
   // A batch is ~26 KB, which commits in a few ms under WAL. Ten times smaller
   // would multiply commits for no latency gain; ten times larger would put
@@ -790,8 +801,8 @@ class AppConstants {
   static const Duration captureRetention = Duration(days: 30);
 
   // The array window. One row per second holds a second of samples, which is
-  // 3 600 rows/h — under 2 % of `auditMaxEvents` — where one row per sample at
-  // 50 Hz would be 180 000 and exhaust both journal bounds in about an hour.
+  // 3 600 rows/h — well under 1 % of `auditMaxEvents` — where one row per
+  // sample at 50 Hz would be 180 000 and exhaust both journal bounds fast.
   static const Duration captureBatchDuration = Duration(seconds: 1);
 
   // Backstop on the array length, for an OS that over-delivers against the

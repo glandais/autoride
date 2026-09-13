@@ -83,7 +83,7 @@ class SqliteAuditSink implements AuditSink {
   final Timer Function(Duration, void Function()) _startPeriodicTimer;
 
   /// The three retention bounds. Injectable only so a test can reach the byte
-  /// bound without writing 20 MB; production always gets the [AppConstants]
+  /// bound without writing 100 MB; production always gets the [AppConstants]
   /// values.
   final int _maxBytes;
   final int _maxEvents;
@@ -329,14 +329,16 @@ class SqliteAuditSink implements AuditSink {
     );
     await _reportPurge(db, byRows, 'rows');
 
-    // The byte bound is not implied by the row bound: ~130 bytes a line makes
-    // 200 000 rows ~26 MB, past the 20 MB the log may occupy.
+    // The byte bound is the budget; the row bound above is the backstop. At a
+    // measured 87 bytes a line the two are set so this one bites first — see
+    // `AppConstants.auditMaxBytes` for why that is the opposite of what the
+    // original comment here assumed (L-113).
     //
     // Measured as the sum of the stored lines rather than as the file's page
     // count, which is what this used to do. Since T034 the file also holds
     // capture rows, and a page count cannot be attributed to either class — a
     // 200 MB corpus would have made the journal delete itself line by line for
-    // ever without the file ever shrinking below 20 MB.
+    // ever without the file ever shrinking below its bound.
     var guard = 0;
     var byBytes = 0;
     while (await _classBytes(db, capture: false) > _maxBytes) {

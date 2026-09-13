@@ -211,7 +211,7 @@ class TripStopDetector extends _$TripStopDetector {
   /// Throttled for the reason `sens` next door always was: this runs on every
   /// motion sample, and unthrottled it produced 80 103 lines — over half the
   /// 2026-09-02 Pixel file — for 26 minutes of recording, which is what pushed
-  /// that file's own header out through the 20 MB retention bound (L-085). The
+  /// that file's own header out through the retention bound (L-085). The
   /// verdict itself is a windowed average over
   /// [AppConstants.stationaryWindowDuration], so consecutive samples say the
   /// same thing; only its *transitions* carry information, and those are never

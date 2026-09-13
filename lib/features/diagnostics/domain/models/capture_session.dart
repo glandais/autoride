@@ -62,7 +62,7 @@ extension CaptureSessionExtensions on CaptureSession {
 /// What the settings screen shows about the captured corpus.
 ///
 /// Separate from `AuditLogStats` because the two are budgeted separately: the
-/// journal is bounded at 20 MB and 7 days, capture at 256 MB and 30 days, and
+/// journal is bounded at 100 MB and 7 days, capture at 256 MB and 30 days, and
 /// a single "recorded" figure covering both would make either bound impossible
 /// to reason about from the screen.
 @freezed

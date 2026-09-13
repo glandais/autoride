@@ -1277,7 +1277,7 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
   /// held 33 036 `stop` lines with inter-event gaps of 1–12 ms, and together
   /// with `win` and `res` they were 90 % of the file — enough for a verbose
   /// session to purge its own header, `sess start` and `perm` lines through the
-  /// 20 MB retention bound inside two hours (L-085). Same throttle as
+  /// retention bound inside two hours (L-085). Same throttle as
   /// [_emitStartEval], and the same two exceptions: a decision the detector did
   /// not already emit is what the reader is looking for, and a change in
   /// `cs`/`cm` is the transition that explains how the detector got there. Both

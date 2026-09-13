@@ -222,9 +222,9 @@ Settings persist until you reset them or uninstall.
 
 The diagnostic log (§2.5) is the one exception, and the only data in the app that expires on its
 own: entries are removed once they are older than 7 days, and the log is capped in size (about
-20 MB) and in number of entries, whichever limit is reached first. At the "Verbose" setting the
-size limit is normally what bites, so a full log reaches back some hours of riding rather than
-seven days. The Settings screen shows the period actually covered.
+100 MB) and in number of entries, whichever limit is reached first. At the "Verbose" setting the
+size limit is normally what bites, so a full log reaches back some days of riding rather than a
+full seven. The Settings screen shows the period actually covered.
 
 Recorded training sessions (§2.6) expire on their own too, on their own limits: 30 days, or a
 total of about 256 MB, whichever is reached first. When the size limit is what bites, complete
