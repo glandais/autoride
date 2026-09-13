@@ -21,7 +21,6 @@ dependencies:
   flutter_riverpod: ^3.4.3       # State management with code generation
   freezed_annotation: ^3.0.0     # Immutable models
   geolocator: ^14.0.2            # GPS location tracking
-  google_fonts: ^8.2.1           # Typography with Google Fonts (Roboto)
   json_annotation: ^4.12.0       # Annotations for JSON serialization codegen
   latlong2: ^0.10.1               # Coordinate handling for flutter_map
   package_info_plus: ^10.2.1     # App version/build number for the Settings About row
@@ -72,3 +71,19 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+
+  # Roboto is bundled, not fetched. The app used `google_fonts`, whose
+  # `allowRuntimeFetching` defaults to true: with no font in the assets it
+  # downloaded Roboto from fonts.gstatic.com on first launch, disclosing the
+  # user's IP address to Google — which the privacy policy says never happens.
+  # Apache-2.0, copied from the Flutter SDK's material_fonts artifact; the
+  # licence travels with the files in assets/fonts/LICENSE.txt.
+  fonts:
+    - family: Roboto
+      fonts:
+        - asset: assets/fonts/Roboto-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/Roboto-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Roboto-Bold.ttf
+          weight: 700
