@@ -1,14 +1,24 @@
 {%- comment -%}
 Override of jekyll-theme-primer's default layout.
 
-Copied verbatim from pages-themes/primer `_layouts/default.html`, with one block removed: the
-footer that rendered "This site is open source. Improve this page." with a link to
+Copied from pages-themes/primer `_layouts/default.html`, with one block removed and one added.
+
+REMOVED: the footer that rendered "This site is open source. Improve this page." with a link to
 github.com/.../edit/develop/docs/legal/<file>.md
 
 That footer is gated on `site.github.license`, so it appeared the moment a LICENSE file was added
 to the repository. Harmless — the link only opens GitHub's editor, which requires authentication
 and write access — but an "edit this page" button on a privacy policy or terms-of-use page reads
 badly to anyone who lands there from a store listing.
+
+ADDED: the mermaid block at the end of <body>. github.com renders ```mermaid fences natively;
+Jekyll does not, so without this the diagrams of how-it-works.md would show as source text on the
+published site. The markdown stays one source rendering correctly in both places, which is the
+rule stated in _config.yml.
+
+The script is loaded ONLY on a page that actually contains a diagram — the legal pages must not
+disclose their readers' IP addresses to a CDN to render nothing. (anchor-js below is the theme's
+own and predates this.)
 
 Keep this file in sync if the upstream theme changes:
 https://github.com/pages-themes/primer/blob/master/_layouts/default.html
@@ -34,5 +44,26 @@ https://github.com/pages-themes/primer/blob/master/_layouts/default.html
     </div>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/anchor-js/4.1.0/anchor.min.js" integrity="sha256-lZaRhKri35AyJSypXXs4o6OPFTbTmUoltBbDCbdzegg=" crossorigin="anonymous"></script>
     <script>anchors.add();</script>
+    <script type="module">
+      // Kramdown renders a ```mermaid fence as <div class="language-mermaid">…<code>, with the
+      // diagram source as plain text inside it. Swap those for the <pre class="mermaid"> that
+      // mermaid expects, but only once the library has actually loaded: if the CDN is blocked or
+      // unreachable the original block stays, and the reader sees the diagram source rather than
+      // an empty space.
+      const blocks = document.querySelectorAll('div.language-mermaid');
+      if (blocks.length) {
+        const { default: mermaid } = await import(
+          'https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.esm.min.mjs'
+        );
+        mermaid.initialize({ startOnLoad: false, theme: 'neutral' });
+        for (const block of blocks) {
+          const pre = document.createElement('pre');
+          pre.className = 'mermaid';
+          pre.textContent = block.textContent.trim();
+          block.replaceWith(pre);
+        }
+        await mermaid.run();
+      }
+    </script>
   </body>
 </html>

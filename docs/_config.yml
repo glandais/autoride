@@ -1,4 +1,4 @@
-# GitHub Pages configuration for the AutoRide legal documents site.
+# GitHub Pages configuration for the AutoRide site (legal documents, plus how the app works).
 #
 # Published at https://glandais.github.io/autoride/ from this directory (branch `develop`,
 # folder `/docs`). The only reason this site exists is to give the App Store and Google Play a
@@ -11,8 +11,8 @@
 
 title: AutoRide
 description: >-
-  Legal documents for AutoRide, an app that automatically detects and records bike trips.
-  All trip data stays on the user's device.
+  How AutoRide works, and its legal documents. AutoRide automatically detects and records bike
+  trips; all trip data stays on the user's device.
 
 url: https://glandais.github.io
 baseurl: /autoride
@@ -32,7 +32,7 @@ relative_links:
   enabled: true
   collections: false
 
-# Keep the site to what it is: three pages. Nothing else in the repository is published.
+# Keep the site to what it is: four pages. Nothing else in the repository is published.
 exclude:
   - Gemfile
   - Gemfile.lock

@@ -7,11 +7,13 @@ title: AutoRide — Legal
 **Automatic bike trip detection.** AutoRide recognises when you start cycling and records the
 ride, without you touching your phone.
 
-This site hosts AutoRide's legal documents. It exists so that the App Store and Google Play have
-a stable public URL for them.
+This site hosts AutoRide's legal documents, and an account of how the app actually works. It
+exists so that the App Store and Google Play have a stable public URL for the first.
 
-## Documents
+## Pages
 
+- **[How it works](how-it-works.md)** — the real mechanism: what the sensors measure, what decides
+  a ride has started, what ends one, what gets thrown away, and what the app cannot do yet
 - **[Privacy Policy](legal/privacy-policy.md)** — what the app stores, what leaves your device,
   and how to delete everything
 - **[Terms of Use](legal/terms-of-service.md)** — licence, safety, and the limits of what the
