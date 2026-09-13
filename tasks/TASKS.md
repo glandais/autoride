@@ -2,7 +2,11 @@
 
 **Purpose**: High-level task tracking for AutoRide development. This file tracks overall progress and references detailed task documents in the `tasks/` folder.
 
-**Important**: This file contains only task summaries. Detailed implementation guides are created on-demand in separate `.md` files within this directory.
+**Important**: This file contains only task summaries.
+
+- Finished tasks: one short card each in [`ARCHIVE.md`](ARCHIVE.md) — the durable decisions and pitfalls, not the steps. The original pre-implementation guides live in git history.
+- Open tasks (⏳ ☐): a `T0NN-*.md` file here when one exists, holding the work that remains.
+- Field investigations: [`LEDGER.md`](LEDGER.md) and the `T041`–`T054` notes.
 
 ---
 
@@ -27,19 +31,16 @@
 
 ### 1.1 Project Infrastructure
 - ✅ **T001**: Project Setup & Dependencies
-  - *Detail*: `tasks/T001-project-setup.md`
   - *Scope*: Add dependencies, configure pubspec.yaml, project structure
   - *Dependencies*: None
   - *Estimate*: 1-2 hours
 
 - ✅ **T002**: Feature-First Directory Structure
-  - *Detail*: `tasks/T002-directory-structure.md`
   - *Scope*: Create core/, features/, shared/ directories with initial files
   - *Dependencies*: T001
   - *Estimate*: 30 min
 
 - ✅ **T003**: Riverpod Code Generation Setup
-  - *Detail*: `tasks/T003-riverpod-setup.md`
   - *Scope*: Configure build_runner, create first provider example
   - *Dependencies*: T001
   - *Estimate*: 1 hour
@@ -50,19 +51,16 @@
 
 ### 2.1 Location Tracking
 - ✅ **T004**: Basic Location Service
-  - *Detail*: `tasks/T004-location-service.md`
   - *Scope*: Implement geolocator integration, location provider, permission check
   - *Dependencies*: T001, T003
   - *Estimate*: 2-3 hours
 
 - ✅ **T005**: Background Location Tracking
-  - *Detail*: `tasks/T005-background-location.md`
   - *Scope*: Configure flutter_background_service, foreground service, platform setup
   - *Dependencies*: T004
   - *Estimate*: 3-4 hours
 
 - ⏳ **T006**: Battery-Optimized Location Strategy
-  - *Detail*: `tasks/T006-battery-optimization.md`
   - *Scope*: Adaptive accuracy, distance filtering, motion-gated GPS
   - *Dependencies*: T005, T007
   - *Estimate*: 2-3 hours
@@ -70,13 +68,11 @@
 
 ### 2.2 Motion Detection
 - ✅ **T007**: Sensor Integration (Accelerometer/Gyroscope)
-  - *Detail*: `tasks/T007-sensor-integration.md`
   - *Scope*: sensors_plus setup, motion data provider, basic movement detection
   - *Dependencies*: T003
   - *Estimate*: 2-3 hours
 
 - ✅ **T008**: Cycling Motion Pattern Detection
-  - *Detail*: `tasks/T008-cycling-detection.md`
   - *Scope*: Implement cycling-specific motion patterns, threshold tuning
   - *Dependencies*: T007
   - *Estimate*: 3-4 hours
@@ -87,19 +83,16 @@
 
 ### 3.1 Database & Persistence
 - ✅ **T009**: SQLite Database Schema
-  - *Detail*: `tasks/T009-database-schema.md`
   - *Scope*: Create trips/route_points tables, repository pattern
   - *Dependencies*: T001
   - *Estimate*: 2 hours
 
 - ✅ **T010**: Trip Repository Implementation
-  - *Detail*: `tasks/T010-trip-repository.md`
   - *Scope*: CRUD operations, trip history queries, Riverpod integration
   - *Dependencies*: T009, T003
   - *Estimate*: 2-3 hours
 
 - ✅ **T011**: Settings & Preferences
-  - *Detail*: `tasks/T011-settings-management.md`
   - *Scope*: SharedPreferences setup, settings provider, user preferences
   - *Dependencies*: T003
   - *Estimate*: 1-2 hours
@@ -110,13 +103,11 @@
 
 ### 4.1 Core Detection
 - ✅ **T012**: Trip State Machine
-  - *Detail*: `tasks/T012-trip-state-machine.md`
   - *Scope*: Idle/Detecting/Active/Paused states, state transitions
   - *Dependencies*: T007, T008
   - *Estimate*: 2-3 hours
 
 - ⏳ **T013**: Automatic Trip Start Detection
-  - *Detail*: `tasks/T013-trip-start-detection.md`
   - *Scope*: Combine motion + GPS for automatic trip start
   - *Dependencies*: T004, T008, T012
   - *Estimate*: 3-4 hours
@@ -124,14 +115,12 @@
   - *Status*: implemented in T041 part 3 (`da3ad62`) — `AutoDetectionController` starts the coordinator from the new `automaticDetectionEnabled` setting + permissions; manual start button added; auto-pause/stop reachable during a trip. Awaiting `tasks/T041-device-validation.md` before ✅
 
 - ✅ **T014**: Automatic Trip Stop Detection
-  - *Detail*: `tasks/T014-trip-stop-detection.md`
   - *Scope*: Detect trip end (stationary threshold, timeout logic)
   - *Dependencies*: T013
   - *Estimate*: 2-3 hours
   - *Completed*: 2025-11-22
 
 - ✅ **T015**: Trip Data Recording
-  - *Detail*: `tasks/T015-trip-recording.md`
   - *Scope*: Record route points, calculate distance/duration/speed
   - *Dependencies*: T010, T013
   - *Estimate*: 2-3 hours
@@ -143,25 +132,21 @@
 
 ### 5.1 ML Infrastructure
 - ☐ **T016**: TensorFlow Lite Integration
-  - *Detail*: `tasks/T016-tflite-setup.md` (create on request)
   - *Scope*: Add tflite_flutter, model asset setup, interpreter initialization
   - *Dependencies*: T001
   - *Estimate*: 2 hours
 
 - ☐ **T017**: Activity Classifier Implementation
-  - *Detail*: `tasks/T017-activity-classifier.md` (create on request)
   - *Scope*: Preprocessing, inference, prediction parsing
   - *Dependencies*: T016, T007
   - *Estimate*: 3-4 hours
 
 - ☐ **T018**: HAR Model Training Pipeline (Python)
-  - *Detail*: `tasks/T018-model-training.md` (create on request)
   - *Scope*: Data collection, model training, TFLite conversion
   - *Dependencies*: T017
   - *Estimate*: 8-12 hours (separate Python project)
 
 - ☐ **T019**: Activity Classification Integration
-  - *Detail*: `tasks/T019-classification-integration.md` (create on request)
   - *Scope*: Integrate classifier into trip detection flow
   - *Dependencies*: T017, T013
   - *Estimate*: 2-3 hours
@@ -172,35 +157,30 @@
 
 ### 6.1 Core UI Screens
 - ✅ **T020**: App Theme & Design System
-  - *Detail*: `tasks/T020-theme-design.md`
   - *Scope*: Color scheme, typography, shared widgets
   - *Dependencies*: T001
   - *Estimate*: 2-3 hours
   - *Completed*: 2025-11-22
 
 - ✅ **T021**: Onboarding Flow
-  - *Detail*: `tasks/T021_onboarding_flow.md`
   - *Scope*: Welcome screens, permission requests, initial setup
   - *Dependencies*: T020
   - *Estimate*: 3-4 hours
   - *Completed*: 2025-11-22
 
 - ✅ **T022**: Trip Tracking Screen (Active Trip)
-  - *Detail*: `tasks/T022-tracking-screen.md`
   - *Scope*: Real-time stats, map view, start/stop controls
   - *Dependencies*: T015, T020
   - *Estimate*: 4-5 hours
   - *Completed*: 2025-11-22
 
 - ✅ **T023**: Trip History Screen
-  - *Detail*: `tasks/T023_trip_history_screen.md`
   - *Scope*: List view, trip details, route map
   - *Dependencies*: T010, T020
   - *Estimate*: 3-4 hours
   - *Completed*: 2025-11-23
 
 - ✅ **T024**: Settings Screen
-  - *Detail*: `tasks/T024-settings-screen.md`
   - *Scope*: Preferences, permissions, data management
   - *Dependencies*: T011, T020
   - *Estimate*: 2-3 hours
@@ -208,7 +188,6 @@
 
 ### 6.2 UI Polish
 - ✅ **T025**: Notifications & Foreground Service UI
-  - *Detail*: `tasks/T025-notifications.md`
   - *Scope*: Trip progress notification, service controls
   - *Dependencies*: T005, T022
   - *Estimate*: 2 hours
@@ -216,7 +195,6 @@
   - *Completed*: 2025-11-23
 
 - ✅ **T026**: Loading States & Error Handling
-  - *Detail*: `tasks/T026-loading-errors.md`
   - *Scope*: Loading indicators, error messages, retry logic
   - *Dependencies*: T020
   - *Estimate*: 2 hours
@@ -229,14 +207,12 @@
 
 ### 7.1 Permission Management
 - ✅ **T027**: Permission Handler Implementation
-  - *Detail*: `tasks/T027-permission-handler.md`
   - *Scope*: Progressive permission requests, rationale dialogs
   - *Dependencies*: T003
   - *Estimate*: 2-3 hours
   - *Completed*: 2025-11-23
 
 - ✅ **T028**: Platform-Specific Configuration
-  - *Detail*: `tasks/T028-platform-config.md`
   - *Scope*: AndroidManifest.xml, Info.plist, capabilities, platform info service
   - *Dependencies*: T027
   - *Estimate*: 1-2 hours
@@ -248,34 +224,29 @@
 
 ### 8.1 Automated Testing
 - ✅ **T029**: Unit Tests (Business Logic)
-  - *Detail*: `tasks/T029-unit-tests.md` (create on request)
   - *Scope*: Repository, state machine, calculations
   - *Dependencies*: T010, T012
   - *Estimate*: 3-4 hours
   - *Completed*: 2026-09-01 (`a3dd31c`, on top of T041's coordinator/recorder tests) — suite recut: every test file exercises the unit it is named for, database tests run the production schema (duplicated DDL helper deleted), 331 tests total (ledger L-011 test side, L-014, L-015, L-026)
 
 - ⏳ **T030**: Widget Tests (UI Components)
-  - *Detail*: `tasks/T030-widget-tests.md` (create on request)
   - *Scope*: Screen tests with mocked providers
   - *Dependencies*: T022, T023, T024
   - *Estimate*: 3-4 hours
   - *Status*: started 2026-09-01 (`99eae4c`) — 25 widget tests with shared fakes in `test/helpers/widget/`: onboarding permission flow, tracking screen, HomeShell session guarantee (ledger L-013). Remaining: settings screen, trip history/detail, InitialRouteScreen, map interactions
 
 - ☐ **T031**: Integration Tests (E2E Flow)
-  - *Detail*: `tasks/T031-integration-tests.md` (create on request)
   - *Scope*: Complete trip detection flow
   - *Dependencies*: T015, T022
   - *Estimate*: 4-5 hours
 
 ### 8.2 Performance & Quality
 - ☐ **T032**: Battery Profiling & Optimization
-  - *Detail*: `tasks/T032-battery-profiling.md` (create on request)
   - *Scope*: Profile battery usage, optimize GPS/sensor sampling
   - *Dependencies*: T006, T015
   - *Estimate*: 3-4 hours
 
 - ✅ **T033**: Code Quality & Linting
-  - *Detail*: `tasks/T033-code-quality.md` (create on request)
   - *Scope*: flutter analyze, code formatting, linting rules
   - *Dependencies*: All implementation tasks
   - *Estimate*: 2 hours
@@ -295,7 +266,6 @@
   - *Estimate*: 3-4 hours — revised to 6-8 h by the plan
 
 - ☐ **T035**: Training Data Export
-  - *Detail*: `tasks/T035-data-export.md` (create on request)
   - *Scope*: Export to CSV/JSON for model retraining
   - *Dependencies*: T034
   - *Estimate*: 2 hours
@@ -306,13 +276,11 @@
 
 ### 10.1 Documentation & Assets
 - ✅ **T036**: App Icons & Splash Screen
-  - *Detail*: `tasks/T036-app-assets.md`
   - *Scope*: Master artwork + reproducible generation script, iOS icon set, Android legacy + adaptive icons, branded launch screen (incl. Android 12+ SplashScreen API)
   - *Dependencies*: T020
   - *Estimate*: 2-3 hours (actual ~2h)
 
 - ⏳ **T037**: Privacy Policy & Terms
-  - *Detail*: `tasks/T037-privacy-policy.md`
   - *Scope*: Privacy policy, terms of use, LICENSE, `store-metadata/data-safety.md` (source of truth for both stores' privacy declarations)
   - *Dependencies*: None — the former T034 dependency is resolved in `T037-privacy-policy.md` §1 (the policy documents today's behaviour; `data-safety.md` §7 lists what T034 will force to be re-declared)
   - *Estimate*: 2-3 hours (documents ✅ done) + ~2 hours for the 6 code changes in §5
@@ -320,7 +288,6 @@
 
 ### 10.2 Release Build
 - ⏳ **T038**: Android Release Configuration
-  - *Detail*: `tasks/T038-android-release.md`
   - *Scope*: `X.Y.Z+N` version scheme, keystore signing, ProGuard/R8, fastlane + Play internal track, `publish_beta.sh`
   - *Dependencies*: T033, T036
   - *Estimate*: 3-4 hours
@@ -334,7 +301,6 @@
     - Play service account — `~/.secrets/autoride-play.json` is a **symlink** to tribly's `pedalons-play-store-b3697e930223.json` (`fastlane-supply@pedalons-play-store.iam.gserviceaccount.com`). It holds account-level Administrator, so it already covers this app. Consequence to accept knowingly: one leaked key can publish both Pedalons and AutoRide.
 
 - ⏳ **T039**: iOS Release Configuration
-  - *Detail*: `tasks/T039-ios-release.md`
   - *Scope*: Signing, capabilities, export compliance, privacy manifest reconciliation, fastlane + TestFlight
   - *Dependencies*: **T038** (owns the version scheme and `publish_beta.sh`), T033, T036
   - *Estimate*: 3-4 hours
@@ -349,7 +315,6 @@
   - *Unvalidated*: the two new CI jobs have never run. Three assumptions to confirm on the first PR — SDK platform 37 installs on the runner, the capped heap survives AGP 9, and `macos-latest`'s default Xcode still builds against `IPHONEOS_DEPLOYMENT_TARGET = 15.0`.
 
 - ☐ **T040**: Beta Testing & Feedback
-  - *Detail*: `tasks/T040-beta-testing.md` (create on request)
   - *Scope*: TestFlight/Internal Testing, collect feedback
   - *Dependencies*: T038, T039
   - *Estimate*: Ongoing
@@ -380,7 +345,7 @@ are ledger §6 (L-079…L-086); the four tasks below group them into units that 
 acceptance test. **Diagnosis only at this stage — no solution has been chosen for any of them.**
 
 - ☐ **T044**: Trip Start Decision — one departure, one trip, and only a real one
-  - *Detail*: ledger L-079, L-080, L-081 (create `tasks/T044-trip-start-decision.md` on request)
+  - *Detail*: ledger L-079, L-080, L-081
   - *Partly done*: 2026-09-02 — **L-080 closed** by ledger remediation row 20. One departure can no longer become two trips: the recorder, the coordinator and the manual button each claim the start synchronously, before the first `await` of their start path, so the ~50 Hz samples (or the second tap) that arrive while `saveTrip` is in flight are rejected instead of writing a second row. The loser of a race gets a typed `TripAlreadyStartingError` and skips its teardown — `hasActiveTrip` reads false in exactly that window, so both error paths would have stopped the trip the *other* caller had just started. Tests 654 → 664. **Not device-validated** — the acceptance test is the next control run. L-079 and L-081 keep this task open.
   - *Scope*: the three defects between "the detector says go" and "a ride is in History". Walking scores as cycling when no GPS speed is there to correct it (L-079); one departure starts two trips because nothing is re-entrant between the go and the state transition, leaving an orphan `active` row (L-080); a trip with no route point is saved, and only ever ends through the watchdog or `maxPause` (L-081). One task because the three share the same evidence and the same acceptance test: repeat the shopping run and expect zero trips in History and zero `active` rows in the database.
   - *Dependencies*: T041 (the pipeline), T043 (the log that decides it)
@@ -609,43 +574,37 @@ recordings**, 3 h 44 of them, and the one 41 km ride it measured to within 66 m 
 
 ## How to Use This File
 
-### Starting a New Task
-1. Identify next pending task (☐)
-2. Request detailed task document:
-   ```
-   "Create detailed task for T001"
-   ```
-3. Detailed task `.md` file will be created in `tasks/` folder
-4. Update task status to ⏳ In Progress
-5. Follow detailed task guide
+### Starting a task
+1. Pick the next ☐ task and check its dependencies are ✅.
+2. Set it to ⏳ here.
+3. Write a `T0NN-*.md` file **only if the task needs one** — an open question to settle, a
+   measurement protocol, a design with alternatives worth recording. Most tasks do not: the
+   code, the tests and this entry's *Scope* line are enough. Do not write out the
+   implementation in advance; guides written before the code drift from it and then mislead.
 
-### Completing a Task
-1. Test implementation thoroughly
-2. Run `flutter analyze` and fix issues
-3. Update task status to ✅ Complete
-4. Commit changes with task ID:
-   ```bash
-   git commit -m "T001: Project setup and dependencies"
-   ```
-5. Update progress summary
+### Completing a task
+1. `./check.sh` — pub get, codegen, `flutter analyze`, `flutter test`. This is the definition
+   of green.
+2. Physical-device test for anything touching sensors or GPS.
+3. Set the task to ✅ and fold whatever is worth keeping into a card in
+   [`ARCHIVE.md`](ARCHIVE.md): why it existed, the decisions still in force, the traps found.
+   Then delete the `T0NN-*.md` file if it had one.
+4. Wait for the user to run `/commit` — commits are never made unprompted. Subject format
+   (gitmoji + conventional commit, task ID inside the subject) is in `CLAUDE.md`.
 
-### Blocking a Task
-1. Update task status to ⚠️ Blocked
-2. Add blocking reason in task notes
-3. Move to next unblocked task
-4. Resolve blocker and update status
+### Blocking a task
+Set ⚠️, record the blocking reason in the entry, move to the next unblocked task.
 
 ---
 
 ## Notes
 
-- Task estimates are approximate - adjust based on experience
-- Dependencies are critical - complete prerequisite tasks first
-- Create detailed task documents only when needed (on-demand)
-- Keep this file updated as single source of truth for progress
-- Review and update task list as project evolves
+- Dependencies are critical — complete prerequisite tasks first.
+- This file is the single source of truth for progress.
+- Field observations go to [`LEDGER.md`](LEDGER.md), which is append-only: a ride replayed or
+  a measurement taken is not reproducible from the code and must not be condensed away.
 
 ---
 
 **Last Updated**: 2026-09-13
-**Version**: 1.3
+**Version**: 1.4
