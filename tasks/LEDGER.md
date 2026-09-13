@@ -1512,3 +1512,110 @@ verdict. The classification work is the **inertial unit**: T034's capture, a mod
 does not exist yet.
 
 Gates: `flutter analyze` clean, **810 tests** (806 → 810).
+
+---
+
+## 13. Field findings — 2026-09-12/13, a 41 km ride and an evening at rest (build 1.0.0+16)
+
+**Source**: one verbose audit log, `autoride-audit-20260913-1805.ndjson.gz`, iPhone 14,3 /
+iOS 26.6.1, **1.0.0+16** — the first build carrying T053 — 201 145 lines covering
+**12/09 16:08:44 → 13/09 18:05:40** local (CEST), **and two Karoo FIT files**. Times local.
+Clock offset against GPS time: **36 ms** median over 2 170 fixes, so the two traces sit on one
+timescale and every cross-reference below is measurement, not inference.
+
+The log is bounded by rows, not by time: **seven `aud {a:"purge"}` lines**, 20 k rows each. In
+verbose it holds about 26 h, which is why the earlier of the two FIT files (12:07→12:19, 4.6 km)
+has no log left to read against it, and why the *start* of the long ride is gone.
+
+### The ride, against the Karoo
+
+| | Karoo FIT `…-1528` | AutoRide `trip 123` |
+|---|---|---|
+| Start | **15:28:25** | **15:50:59** (reconstructed from `dur`+`pau`) |
+| End | **17:41:18** | **17:52:44** |
+| Distance | 41 195 m | 35 735 m |
+
+The Karoo's cumulative distance at 15:50:59 is **5 526 m**; 41 195 − 5 526 = **35 669 m**, against
+AutoRide's 35 735 m — **66 m apart over 35 km**. The two traces are the same ride and the
+arithmetic closes: **the app missed the first 22 min 34 s and 5 526 m**, then ran **11 min 26 s**
+past the end. The last AutoRide fix (47.2157 / −1.5444) and the last Karoo point
+(47.21595 / −1.54415) are the same place.
+
+**T053 holds.** No `veh` line anywhere in 26 h, no `vehicle` discard, and the 35.7 km ride — mean
+25.7 km/h over 1 253 measured fixes — was kept. The behaviour §12 shipped is what the log shows.
+
+**T046 holds, completely.** 2 565 heartbeats, **not one with `dt > 35 s`**, `keepAlive` armed after
+every `gate close`, zero `err`, zero relaunch. iOS background survival is no longer a question this
+corpus can raise.
+
+**T052's deadline holds.** `prog` fired **19 times** and every fire landed on a recording that had
+gone nowhere. Without it the evening below would be a string of open recordings instead of a string
+of closed ones.
+
+### The evening: 22 phantom rides in eleven hours
+
+26 `trip {a:"start"}`, 27 endings (one trip opened before the window): **4 kept, 23 discarded** —
+11 `still`, 11 `pts` (nine of them `n:0`), 1 `dur`. Cumulative phantom recording time: **3 h 44**.
+Between **18:33 and 03:16** the app opened 22 recordings at a near-fixed cadence of seven minutes —
+`noProg` (420 s), which is what ended most of them. `st idle→detecting` fired **91 times**, 65 of
+which timed out without even reaching a start.
+
+The GPS gate was **open 8.1 h of the 26** (100 openings; 74 closed on `inactivityTimeout`, 27 on
+`session`), against roughly 3.2 h of actual riding. Battery: **55 % at 20:16 → 1 % at 11:06**, with
+no ride at all between 03:16 and 16:47 — 4.2 %/h across the phantom evening and **3.5 %/h across a
+night of doing nothing**. The file is verbose, so that number is not a clean drain measurement
+(T041 item 4 requires `lvl: "normal"`); it is an upper bound with the log's own cost inside it, and
+it is the number under which the phone died.
+
+### High
+
+| ID | Dim | Where | Finding | Status | Evidence |
+|---|---|---|---|---|---|
+| L-108 | detection | `trip_start_detector.dart`, `AppConstants.detectionConsecutiveReadings` (3) / `detectionWindowSeconds` (5) | **The windowed fit is a max-statistic over hours of rest: three seconds of handling a phone is a start, and eleven hours of an evening supplies them 22 times** | **Open** → T054 | Every false start has the same shape — ~18 s of `asd ≈ 0.03–0.4`, then a five-second burst. 22:12:28→33 reads `asd` 2.667 / 2.415 / 2.454 / 2.599 / **3.512** with `gav` 1.538 / 2.902 / 2.862 / 2.850 / 1.306, `c` 0.834 → 1.000, `n` 3, start. The distributions say why this is not fixable by a threshold: over the evening at rest `win.sd` runs **p50 0.47 / p90 2.13 / p99 5.22** and `win.gy` **p50 0.59 / p90 1.40 / p99 2.15**, against the real 7.5 km ride's `sd` p50 **1.71** and the 35.7 km ride's **3.46**. The medians separate cleanly; the **tails of rest cover the median of riding**. 31 700 s of evening puts >300 s above the p99 — three *consecutive* seconds there is not a rare event, it is a certainty several times an hour. T050 fixed the per-sample coin toss (L-079); it did not fix the corroboration length, and 3-in-5 s is the same coin toss at a lower frequency. |
+| L-109 | detection | `trip_start_detector.dart` / `trip_detection_coordinator.dart` — the GPS gate vs. the start decision | **The speed half of the start confidence never votes. `vt` is false on 26 of 26 starts and on 97.8 % of all evaluations, so `k.wSpd` 0.4 is dead weight and `k.conf` 0.7 is in truth a motion-only threshold** | **Open** → T054 | 247 of 11 209 `start` lines carry `vt:true` (2.2 %), and **not one of them is a line that started a trip**. The cause is structural, not a freshness constant: at the instant of decision the gate is *closed* — at 22:12:22, eleven seconds before trip 133 opened, the log reads `gate {a:"sched", why:"stationary"}` — so there is no fix for `k.spAge` (10 s) to judge. Through the whole 420 s of that phantom trip **no `fix` arrived at all**; the first one after it, at 22:19:37, carries `ac` 14.246 — the same frozen value repeated since 19:15, a cached location. This is not a GPS fault: on the ride itself `sp` is healthy (1 253 fixes > 0 at 25.7 km/h mean on trip 123; 361 at 20.3 km/h on trip 148). **The one axis that separates a pocket from a bicycle is unavailable at exactly the moment it would decide, and is fully available five minutes later.** Chicken and egg: no GPS until motion is detected, and motion alone cannot tell the two apart (L-100). |
+
+### Medium
+
+| ID | Dim | Where | Finding | Status | Evidence |
+|---|---|---|---|---|---|
+| L-110 | detection | the pre-trip buffer's riding-tail cut (T050 §3) | **The back-date is dead on iOS: no `bdate` in 26 h and 26 starts, because the tail cut tests `sp` and iOS reports `sp:0` right through a departure** | **Open** → T054 | Trip 148's start reads `buf {a:"tail", n:3, kp:0}` — the cut kept **none** of the three buffered fixes. Every fix from 16:40:20 to 16:51:05 carries `sp:0`; the first non-zero speed of that ride is a **`dsp`** at 16:51:05, four minutes after the trip opened. No buffered fix reaches `k.cycMin` (8 km/h) because none reports any speed, so the prefix is always empty and the trip always starts where the detector fired rather than where the riding did. This is the same provider behaviour §11 recorded (an iPhone reporting `sp` 0 through a start, one commute waiting 423 s), now shown to disable a whole feature. It is the most likely explanation of trip 123's missing 22 min — unprovable here, the fixes were purged. T041 **item 11 fails on this build**. |
+| L-111 | detection | `TripStateMachine` resume path, `k.resume` (5 s) | **A ride's end trails by 11 minutes because the pause flaps: five seconds of motion is a resume, and a rider standing over a bike supplies them** | **Open** → T054 | The Karoo stopped at 17:41:18; AutoRide kept trip 123 alive until 17:52:44 at the same coordinates. In between: pause 17:41:49 → resume 17:42:12 (23 s), pause 17:45:36 → resume 17:45:48 (**12 s**), pause 17:46:20 → resume 17:47:02 (42 s), then pause 17:48:14 and finally `maxPause` (300 s) at 17:52:44. Four resumes in seven minutes, none of them a rider riding. **This is L-108 seen from the other end** — the same 5 s of motion-only corroboration, applied to resume instead of start — and it is why the fix belongs in one place. |
+| L-113 | diagnostics | `AppConstants.auditMaxEvents` / `auditMaxBytes`, `sqlite_audit_sink.dart` `_purgeJournal` | **The journal's byte bound has never once fired. A line is 87 bytes, not the ~130 the comment assumed, so 200 000 rows was 17.4 MB and the row bound always bit first** | **Fixed 2026-09-13** (this change) | All seven `aud {a:"purge"}` lines in the 26 h file read `why: "rows"`, `n` ≈ 20 007 each — the row bound deleting exactly one `auditPurgeWriteInterval` of backlog every time. The file measures **17 475 707 bytes over 201 146 lines = 87 B/line**, and `_classBytes` sums `LENGTH(line)`, so that is directly the quantity `auditMaxBytes` bounds: 200 000 × 87 = **17.4 MB against a 20 MB budget**, i.e. unreachable. The code comment claiming the byte bound "is not implied by the row bound" had it exactly backwards, and the consequence is that **raising `auditMaxBytes` alone would have changed nothing at all**. Both bounds are now set so the byte one governs: **1 200 000 rows / 100 MB**. At the observed verbose rate (~7 700 lines/h) that is ~5.5 days of coverage, so the 7-day age bound and the size bound now roughly coincide instead of the row bound cutting at ~26 h. `docs/legal/privacy-policy.md`, `store-metadata/data-safety.md` and the Settings description carried the old figure and are updated with it. |
+
+### Low
+
+| ID | Dim | Where | Finding | Status | Evidence |
+|---|---|---|---|---|---|
+| L-112 | sensors | `AppConstants.sensorSamplingRateMedium` (40 Hz) vs iOS | **The medium power mode asks for 40 Hz and receives 24** | **Open** (note, not a defect to chase) | Measured over 2 565 heartbeats, `(mn+dr)/(dt/1000)` by requested rate: `hz` 50 → **49**, 25 → **24**, 20 → **19**, and `hz` **40 → 24** on 1 138 heartbeats, the mode in force for most of the log. iOS quantises the sampling period and 1/40 = 25 ms falls badly; the other three do not. The consequence is visible in the start lines — `wn` is 25 where 40 was asked for — which is a **40 % shorter window than the fit believes it has** while the battery is between 20 and 50 %. L-086 said to read the measured rate and never `k.hzN`; this is the first mode where the gap is large enough to matter to a decision. |
+
+### Confirmed, not new
+
+* **L-100 again, and from a new direction.** §10 said motion cannot separate a car from a bicycle;
+  §11 added walking; §12 closed the speed axis. This section adds that motion cannot separate a
+  bicycle from **a phone being picked up**, on the two scalars the detector actually reads. The
+  direction stands and is reinforced: the classifier is the **inertial unit** (T034's capture), and
+  no amount of threshold work on `asd`/`gav` will substitute for it.
+* **L-104 held in reserve is now measured twice.** §11 offered the motion **duty cycle** — the
+  fraction of a window above a floor, not its peak — as the discriminant that separates the corpus
+  cleanly. The distributions in L-108 are the same statement on a second corpus: `sd` p50 0.47 at
+  rest against 1.71 and 3.46 riding. It is the cheapest thing in the backlog that would work.
+* **T053 §12's stated cost did not arrive.** No `veh` flag on a 35.7 km ride at 25.7 km/h mean.
+  That is not evidence the flag is well-calibrated — §12 says it will over-fire on a sporting
+  ride — only that this ride did not reach it.
+
+### Remediation (2026-09-13) — the log's own budget (L-113)
+
+`auditMaxEvents` 200 000 → **1 200 000** and `auditMaxBytes` 20 MB → **100 MB**, in that order of
+importance: the byte bound was the one the maintainer meant to raise and the one that had never
+fired, so raising it alone would have been inert. The row bound is now a backstop set above the
+budget rather than the thing that silently governs. The stale ~130 B/line claim is corrected in
+both comments that carried it, and the figure is updated in `docs/legal/privacy-policy.md`,
+`store-metadata/data-safety.md` and the Settings description — all three had published the old
+number as a promise.
+
+What it buys, on this corpus's numbers: ~5.5 days of verbose coverage instead of ~26 h, so the
+7-day age bound becomes the bound that normally bites. **It would have made §13's first finding
+answerable** — trip 123's missing 22 minutes sit just outside the purge line.
+
+Gates: `flutter analyze` clean, **810 tests** (unchanged — no test pinned either bound; both are
+injected in the retention tests so they can run on kilobytes).

@@ -81,6 +81,13 @@ capture run exhausts *both* in roughly one hour, so a two-hour ride deletes its
 own first hour — header included, which is exactly the failure L-085 already
 recorded once. Raising only `auditMaxBytes` leaves the row bound biting first.
 
+> **Since 2026-09-13** those two are **1 200 000 rows / 100 MB** (L-113), and the
+> last sentence turned out to be the whole story of the journal's own retention:
+> at a measured 87 bytes a line the row bound had been biting first for the
+> journal too, and the byte bound had never fired at all. The argument of this
+> section — that capture needs its *own* budget rather than a bigger shared one —
+> is unaffected: capture still writes ~180 000 rows an hour on its own.
+
 ### 2.3 No ground truth
 
 A training corpus needs a label (bike / car / walk / still / other). The only
@@ -345,7 +352,7 @@ cost is paid once and off the hot path.
 * **Both byte bounds now measure stored content**, not the file's page count.
   Once the two classes share a file, a page count cannot be attributed to
   either — a 200 MB corpus would have made the journal delete itself for ever
-  without the file shrinking below 20 MB.
+  without the file shrinking below its own bound.
 * **The journal export excludes `lvl = 2`** and capture has its own
   `autoride-capture-*.ndjson.gz`. Otherwise every diagnostic export would have
   become a hundred-megabyte transfer of data nobody asked for.

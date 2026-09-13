@@ -307,6 +307,14 @@ mentions in comments (`app_constants.dart:344`, `activity_confidence.dart:59`). 
 covered by tests; its layer-3 `currentLocation` is never assigned, so `speedScore` is a
 hardcoded 0.5.
 
+**And it fires on a pocket (T054).** Over 26 h on 1.0.0+16 the windowed fit opened 26 trips and
+kept 4: an evening at rest produced 22 phantom recordings. The corroboration is three consecutive
+seconds and rest supplies three consecutive seconds — `win.sd` at rest reads p50 0.47 / p99 5.22
+against a real ride's p50 1.71–3.46, so the medians separate and the tails do not. The speed half
+of the confidence (`tripStartSpeedWeight` 0.4) has **never voted**: the GPS gate is closed at the
+instant of decision, so `vt` was false on 26 of 26 starts. Diagnosis: `tasks/T054-start-corroboration.md`
+and ledger §13.
+
 Full specification and wiring plan: `tasks/T041-device-validation.md` (appendix) and
 `tasks/LEDGER.md` L-011. The windowed fit that *did* ship, and the ride that forced it:
 `tasks/T050-windowed-motion-fit.md` and ledger §9; the vehicle veto and the corrected
