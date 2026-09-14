@@ -76,6 +76,15 @@ https://github.com/pages-themes/primer/blob/master/_layouts/default.html
           (block.tagName === 'CODE' ? block.parentElement : block).replaceWith(pre);
         }
         await mermaid.run();
+        // mermaid gives the svg width:100%, so a wide diagram shrinks to whatever column it
+        // is in — at phone width the first one was scaled to 453 px and its labels were
+        // unreadable. Floor each diagram at its natural width or 720 px, whichever is smaller,
+        // and let the <pre> scroll: swiping a legible diagram beats reading a thumbnail. A
+        // diagram narrower than that (the tall ones) is untouched.
+        for (const svg of document.querySelectorAll('pre.mermaid svg')) {
+          const natural = svg.viewBox?.baseVal?.width ?? 0;
+          if (natural > 0) svg.style.minWidth = `${Math.min(natural, 720)}px`;
+        }
       }
     </script>
   </body>
