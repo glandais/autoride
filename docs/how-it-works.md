@@ -73,7 +73,6 @@ stateDiagram-v2
   Open --> Closing: motion window says stationary
   Closing --> Open: movement again
   Closing --> Closed: 30 s continuously stationary
-  Open --> Open: a trip is being recorded (pinned open)
 ```
 
 A phone that is still counts as still only after a continuous 30 seconds — one movement re-arms it.
@@ -173,7 +172,7 @@ When a recording ends, it has to earn its place in your history. Recordings that
 **deleted**, not hidden.
 
 ```mermaid
-flowchart TD
+flowchart LR
   A["Recording ends"] --> B{"Lasted at least<br/>60 seconds?"}
   B -->|no| D["Deleted"]
   B -->|yes| C{"At least 2<br/>route points?"}

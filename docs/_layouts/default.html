@@ -44,23 +44,36 @@ https://github.com/pages-themes/primer/blob/master/_layouts/default.html
     </div>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/anchor-js/4.1.0/anchor.min.js" integrity="sha256-lZaRhKri35AyJSypXXs4o6OPFTbTmUoltBbDCbdzegg=" crossorigin="anonymous"></script>
     <script>anchors.add();</script>
+    <style>
+      /* A diagram is a picture, not a code listing: drop the theme's code-block frame, centre it,
+         and let a wide one scroll instead of overflowing the column. */
+      pre.mermaid { background: none; padding: 0; text-align: center; overflow-x: auto; }
+      pre.mermaid svg { max-width: 100%; height: auto; }
+    </style>
     <script type="module">
-      // Kramdown renders a ```mermaid fence as <div class="language-mermaid">…<code>, with the
-      // diagram source as plain text inside it. Swap those for the <pre class="mermaid"> that
-      // mermaid expects, but only once the library has actually loaded: if the CDN is blocked or
-      // unreachable the original block stays, and the reader sees the diagram source rather than
-      // an empty space.
-      const blocks = document.querySelectorAll('div.language-mermaid');
+      // GitHub Pages renders a ```mermaid fence as <pre><code class="language-mermaid">, the
+      // diagram source sitting inside as plain text (Rouge has no mermaid lexer, so there is no
+      // highlight wrapper — the div.language-mermaid form the first version of this looked for
+      // never appears; it is kept in the selector only in case a future Rouge adds one).
+      // Swap those for the <pre class="mermaid"> mermaid expects, but only once the library has
+      // actually loaded: if the CDN is blocked or unreachable the original block stays and the
+      // reader sees the diagram source rather than an empty space.
+      const blocks = document.querySelectorAll(
+        'div.language-mermaid, pre > code.language-mermaid'
+      );
       if (blocks.length) {
         const { default: mermaid } = await import(
           'https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.esm.min.mjs'
         );
         mermaid.initialize({ startOnLoad: false, theme: 'neutral' });
         for (const block of blocks) {
+          const source = block.textContent.trim();
           const pre = document.createElement('pre');
           pre.className = 'mermaid';
-          pre.textContent = block.textContent.trim();
-          block.replaceWith(pre);
+          pre.textContent = source;
+          // The <code> form replaces its <pre> parent, not itself: leaving the parent behind
+          // would keep the code block's grey frame around the diagram.
+          (block.tagName === 'CODE' ? block.parentElement : block).replaceWith(pre);
         }
         await mermaid.run();
       }
