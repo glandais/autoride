@@ -26,12 +26,12 @@ dependencies:
   package_info_plus: ^10.2.1     # App version/build number for the Settings About row
   path: ^1.9.0                   # Path manipulation for database paths
   path_provider: ^2.1.5          # Temp directory for exported .fit files
-  permission_handler: ^13.0.1    # Runtime permission handling
+  permission_handler: ^13.0.2    # Runtime permission handling
   riverpod_annotation: ^4.0.6    # Riverpod annotations
   sensors_plus: ^7.1.0           # Accelerometer & gyroscope
   share_plus: ^13.3.0            # Share/save the exported .fit file via the OS sheet
   shared_preferences: ^2.2.0     # User settings storage
-  sqflite: ^2.3.0                # SQLite database for trips
+  sqflite: ^2.4.4                # SQLite database for trips
   url_launcher: ^6.3.2         # Open the hosted privacy policy / terms in the browser
 
 dev_dependencies:
@@ -58,7 +58,7 @@ dev_dependencies:
 
   # Testing seam: the plugin's own platform interface, swapped for a fake in
   # PermissionHandlerService's tests (permission_handler does not re-export it).
-  permission_handler_platform_interface: ^4.4.0
+  permission_handler_platform_interface: ^4.4.1
 
   plugin_platform_interface: ^2.1.8
 
@@ -66,7 +66,7 @@ dev_dependencies:
   riverpod_generator: ^4.0.8     # Riverpod code generation
 
   # Testing
-  sqflite_common_ffi: ^2.3.0     # SQLite testing on desktop platforms
+  sqflite_common_ffi: ^2.4.3     # SQLite testing on desktop platforms
 
 flutter:
   uses-material-design: true
