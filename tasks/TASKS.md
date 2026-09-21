@@ -7,6 +7,7 @@
 - Finished tasks: one short card each in [`ARCHIVE.md`](ARCHIVE.md) — the durable decisions and pitfalls, not the steps. The original pre-implementation guides live in git history.
 - Open tasks (⏳ ☐): a `T0NN-*.md` file here when one exists, holding the work that remains.
 - Field investigations: [`LEDGER.md`](LEDGER.md) and the `T041`–`T054` notes.
+- What a public store release is waiting on: [`RELEASE_LEDGER.md`](RELEASE_LEDGER.md).
 
 ---
 
