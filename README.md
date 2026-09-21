@@ -35,7 +35,7 @@ accelerometer/gyroscope thresholds only.
 - **Detailed trip history** - View all your past rides with routes, distance, and duration
 - **Route mapping** - See your exact path on an interactive map
 - **Statistics** - Track total distance, time spent cycling, and more
-- **Export data** - Download your trip data for analysis
+- **Export a ride** - Share a single trip as a Garmin FIT file through the system share sheet
 
 ### Privacy First
 - **Local storage** - All trip data stored on your device

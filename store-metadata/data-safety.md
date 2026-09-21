@@ -1,7 +1,8 @@
 # AutoRide — Data Collection Declarations (source of truth)
 
 **Last verified against the code:** 2026-09-02
-**Verified at commit:** `cc1c088` (branch `wip`); §1-§3 re-verified 2026-09-02 for T042/T043
+**Verified at commit:** `cc1c088` (branch `wip`); §1-§3 re-verified 2026-09-02 for T042/T043;
+§3.1 and §10 re-verified 2026-09-21 at `c980801` (branch `develop`)
 **Play Console answers filed:** 2026-07-25 (T038) — app `io.github.glandais.autoride`, ID
 `4975962567441094743`. §5 reflects what is actually filed, including the approximate-location
 decision recorded there.
@@ -84,8 +85,8 @@ Verified 2026-07-25. This is why §3.1 removes the `DeviceID` entry from the iOS
 `https://tile.openstreetmap.org/{z}/{x}/{y}.png`, requested by `flutter_map` when a map is
 displayed.
 
-- `trip_map_view.dart:106` (live tracking screen)
-- `trip_route_map.dart:134` (trip detail route)
+- `trip_map_view.dart:108` (live tracking screen)
+- `trip_route_map.dart:127` (trip detail route)
 
 Each request discloses to the OpenStreetMap Foundation: the client **IP address**, the **tile
 coordinates** (which reveal the map area being viewed, i.e. approximately where the user has
@@ -93,16 +94,18 @@ been), and a **User-Agent**. No trip data, route history, or identifier is attac
 
 If no map view is opened, the app makes **zero** network requests.
 
-> **Open defect:** `userAgentPackageName` is `'com.autoride.app'` in both files — not the real
-> application ID `io.github.glandais.autoride`. The OSMF tile usage policy requires a valid
-> identifying User-Agent, so this is both a factual error and a policy-compliance issue. Fix
-> tracked in `tasks/T037-privacy-policy.md`.
+**Fixed (verified 2026-09-21):** `userAgentPackageName` is the real application ID
+`io.github.glandais.autoride` in both files — `trip_map_view.dart:109` and
+`trip_route_map.dart:128` — as the OSMF tile usage policy requires. It was `'com.autoride.app'`
+until T037 §5.4.
 
 ### 3.2 What is absent
 
 No analytics SDK. No crash reporting. No advertising SDK. No AutoRide backend, account, login, or
-sync. Confirmed by §8's egress grep: the two tile URLs above are the only outbound endpoints in
-`lib/`.
+sync. Confirmed by §8's egress grep: the two tile URLs above are the only endpoints the app itself
+fetches from `lib/`. The grep also lists three `AppConstants` links — `privacyPolicyUrl`,
+`termsOfUseUrl`, `osmCopyrightUrl` — which the app never requests: `openLegalUrl` hands them to the
+external browser on a user tap.
 
 ### 3.3 Files the user exports (T042, T043)
 
@@ -149,9 +152,10 @@ declaration denies is exactly the kind of drift this file exists to prevent.
 
 `NSPrivacyTracking` = `false`. `NSPrivacyTrackingDomains` = empty.
 
-**Required change:** remove the `NSPrivacyCollectedDataTypeDeviceID` entry currently in the
-manifest. Nothing in the app reads a device identifier (§2). Leaving it forces a matching — and
-false — answer in the App Store Connect form.
+**Done (verified 2026-09-21):** the `NSPrivacyCollectedDataTypeDeviceID` entry was removed by
+T037 §5.5; `PrivacyInfo.xcprivacy` now declares Location only, with a comment recording why
+DeviceID is absent. Nothing in the app reads a device identifier (§2), so declaring it would have
+forced a matching — and false — answer in the App Store Connect form.
 
 ### 4.2 Required-reason API declarations
 
@@ -249,7 +253,8 @@ the background, and say what for.
 `background_permission_screen.dart` already sits in the right place in the flow and explains the
 feature, but its current copy ("Enable background location to automatically detect and record
 trips even when the app is closed") reads as a feature pitch rather than a collection
-disclosure. Required copy, to be added as a distinct disclosure block on that screen:
+disclosure. Required copy, as a distinct disclosure block on that screen — **shipped** (T037 §5.3,
+`background_permission_screen.dart:176`, re-verified 2026-09-21):
 
 > **AutoRide collects location data to detect and record your bike trips, even when the app is
 > closed or not in use.**
@@ -287,7 +292,8 @@ Adding any of these means updating all five artefacts in §0 **in the same commi
 ## 8. How to re-verify (run this before any submission)
 
 ```bash
-# 1. Network egress. Expect ONLY the two tile.openstreetmap.org URLs from §3.1.
+# 1. Network egress. Expect ONLY the two tile.openstreetmap.org URLs from §3.1, plus the three
+#    AppConstants links of §3.2 that are handed to the external browser, never fetched.
 grep -rn "http://\|https://\|Uri\.\|HttpClient\|Dio\|package:http" lib --include="*.dart" \
   | grep -v "\.g\.dart\|\.freezed\.dart"
 
@@ -354,15 +360,23 @@ them, it does not copy them.
 
 ## 10. Known inconsistencies to resolve before submission
 
-Tracked in `tasks/T037-privacy-policy.md`:
+Tracked in `tasks/T037-privacy-policy.md`. Each item re-verified against the code on 2026-09-21;
+a fixed item keeps its entry with the evidence, so the list stays readable against older commits.
 
-1. **Settings UI claims data transmission that does not happen** — "Data collection" and "Usage
-   statistics" toggles (`privacy_settings_section.dart:24-49`) imply the app sends sensor data and
-   usage stats. It sends neither. This contradicts §3.2 and the privacy policy.
-2. **Privacy policy link is a stub** — `privacy_settings_section.dart:56-66` shows a "coming soon"
-   snackbar. Play requires an accessible policy.
-3. **`DeviceID` over-declared** in the iOS manifest (§4.1).
-4. **OSM User-Agent is wrong** (§3.1).
-5. **iOS backup asymmetry** (§7.5).
-6. **Hardcoded version string** — `data_management_section.dart:117-118` hardcodes
-   "AutoRide v1.0.0 (build 1)", which becomes false at the first release build.
+1. ~~**Settings UI claims data transmission that does not happen**~~ — **fixed.** The "Usage
+   statistics" toggle is gone and the "Data collection" one now gates a real on-device behaviour
+   (the T034 training capture), with copy saying so:
+   `privacy_settings_section.dart:12-22` (the rule, in the class doc) and
+   `privacy_settings_section.dart:62-81` (the toggle and its copy).
+2. ~~**Privacy policy link is a stub**~~ — **fixed.** Both legal links open in the browser:
+   `privacy_settings_section.dart:89` (privacy policy) and `:98` (terms of use), via
+   `openLegalUrl`. Still to confirm on a physical device — see `tasks/T037-privacy-policy.md`.
+3. ~~**`DeviceID` over-declared** in the iOS manifest~~ — **fixed.** `PrivacyInfo.xcprivacy`
+   declares Location only; see §4.1.
+4. ~~**OSM User-Agent is wrong**~~ — **fixed.** `trip_map_view.dart:109` and
+   `trip_route_map.dart:128` both send `io.github.glandais.autoride`; see §3.1.
+5. **iOS backup asymmetry** (§7.5) — **still open.** No `NSURLIsExcludedFromBackupKey` is set
+   anywhere in the project.
+6. ~~**Hardcoded version string**~~ — **fixed.** `data_management_section.dart:24` builds the
+   string from `PackageInfo.fromPlatform()` (`data_management_section.dart:3` imports
+   `package_info_plus`).

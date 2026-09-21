@@ -2,8 +2,8 @@
 
 **Status (2026-09-13)**: ⏳ In progress. The legal documents, the data-safety source of truth, GitHub
 Pages hosting, and code changes §5.1–§5.5 all shipped and are verified in the repo (see Delivered
-below). Still open: device verification of the two `launchUrl` links, the §5.6 README product
-decision, the §5.7 iOS backup-exclusion half (the version-string half of §5.7 has since shipped —
+below). Still open: device verification of the two `launchUrl` links and the §5.7 iOS
+backup-exclusion half (§5.6 was resolved on 2026-09-21; the version-string half of §5.7 has since shipped —
 `data_management_section.dart` now reads `PackageInfo.fromPlatform()` rather than a hardcoded
 string), legal review before public release, and flipping `TASKS.md` to ✅.
 
@@ -88,17 +88,21 @@ added to `AndroidManifest.xml` because Android's package-visibility rules constr
 (which the code does not use), not launching itself — but this should be confirmed on a physical
 Android 11+ device and on iOS before submission.
 
-### 5.6 One remaining README claim, left for the product owner
+### 5.6 README "Export data" claim — resolved 2026-09-21
 
-`README.md:30` lists "**Export data** - Download your trip data for analysis" as a feature under
-Trip Management. It is not implemented (T035). The surrounding context — "App is currently in
+*As found:* `README.md:30` listed "**Export data** - Download your trip data for analysis" as a feature under
+Trip Management. It was not implemented (T035). The surrounding context — "App is currently in
 development" — makes the features list read as partly
 aspirational, so this was left alone rather than silently rewritten: which features to advertise
 before they ship is a product decision, not a privacy one. The privacy-relevant claims were the
 ones corrected (§2.4 item 4 of the original audit).
 
-Worth resolving before the store listings are written, because App Review does reject listings
-that advertise absent functionality.
+It was worth resolving before the store listings were written, because App Review does reject
+listings that advertise absent functionality.
+
+**Resolved 2026-09-21.** The line now reads "Export a ride — Share a single trip as a Garmin FIT
+file through the system share sheet", which is exactly what `lib/features/trip_export/` does; the
+generic "download your trip data for analysis" of T035 is no longer advertised.
 
 ### 5.7 Two smaller cleanups
 
@@ -161,7 +165,8 @@ Then, before submission:
 - [x] §5.4 — OSM User-Agent corrected in both map widgets
 - [x] §5.5 — `DeviceID` removed from `PrivacyInfo.xcprivacy`
 - [ ] Links verified on a physical Android 11+ device and on iOS
-- [ ] §5.6 — README "Export data" feature claim resolved (product decision)
+- [x] §5.6 — README "Export data" feature claim resolved (2026-09-21: reworded to the FIT export
+      that ships)
 - [ ] §5.7 — iOS backup exclusion decided (version string is now de-hardcoded)
 - [x] `TASKS.md` dependency for T037 changed from T034 to none
 - [ ] Legal review before the **public** release (not required for TestFlight/internal)

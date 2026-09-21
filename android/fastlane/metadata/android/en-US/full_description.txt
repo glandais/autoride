@@ -21,6 +21,6 @@ WHAT YOU GET
 
 PERMISSIONS
 
-Location, including background location, is what makes automatic recording possible: AutoRide has to be able to record a ride you started without opening the app. Physical activity is used to recognise cycling. Notifications are used for the recording notification. If you decline background location, AutoRide still works — you just start and stop trips yourself.
+Location, including background location, is what makes automatic recording possible: AutoRide has to be able to record a ride you started without opening the app. Notifications are used for the recording notification. If you decline background location, AutoRide still works — you just start and stop trips yourself.
 
 Privacy policy: https://glandais.github.io/autoride/legal/privacy-policy.html
