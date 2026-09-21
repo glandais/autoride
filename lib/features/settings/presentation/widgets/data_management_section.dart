@@ -140,6 +140,29 @@ class DataManagementSection extends ConsumerWidget {
               ),
           trailing: const SizedBox.shrink(),
         ),
+
+        const Divider(height: 1),
+
+        // Open-source licences
+        SettingTile(
+          title: 'Open-source licenses',
+          subtitle: 'Licenses of the bundled font and packages',
+          trailing: const Icon(Icons.chevron_right, size: 16),
+          onTap: () async {
+            // Read on tap rather than from `appVersionLabelProvider`: the page
+            // prints the name itself, so it wants the bare version, not the
+            // "AutoRide v…" label the row above shows.
+            final info = await PackageInfo.fromPlatform();
+            if (!context.mounted) return;
+
+            showLicensePage(
+              context: context,
+              applicationName: 'AutoRide',
+              applicationVersion:
+                  'v${info.version} (build ${info.buildNumber})',
+            );
+          },
+        ),
       ],
     );
   }

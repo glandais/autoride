@@ -77,6 +77,11 @@ flutter:
   # user's IP address to Google — which the privacy policy says never happens.
   # Apache-2.0, copied from the Flutter SDK's material_fonts artifact; the
   # licence travels with the files in assets/fonts/LICENSE.txt.
+  # The licence text is not a font, so `fonts:` does not bundle it: it needs an
+  # asset entry of its own for the licence page to read it at runtime.
+  assets:
+    - assets/fonts/LICENSE.txt
+
   fonts:
     - family: Roboto
       fonts:

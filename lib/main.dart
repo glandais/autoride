@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'core/licenses/bundled_font_license.dart';
 import 'core/navigation/app_navigator.dart';
 import 'core/permissions/providers/background_location_status.dart';
 import 'core/permissions/widgets/background_location_banner.dart';
@@ -23,6 +24,11 @@ import 'features/trip_history/presentation/screens/trip_history_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Here rather than in a frame callback: a background relaunch (T046) may
+  // never produce one, and the registration is a lazy closure, so it costs
+  // nothing on a launch that never opens the licence page.
+  registerBundledFontLicenses();
 
   // Validate platform configuration (debug mode only)
   await PlatformConfigValidator.printConfigStatus();
