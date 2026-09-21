@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:autoride/features/trip_detection/domain/models/trip.dart';
+import 'package:autoride/core/constants/app_constants.dart';
 import 'package:autoride/core/theme/app_colors.dart';
+import 'package:autoride/core/utils/legal_links.dart';
 
 /// Static map widget displaying a trip route with start/end markers
 ///
@@ -214,9 +216,8 @@ class _TripRouteMapState extends State<TripRouteMap> {
             attributions: [
               TextSourceAttribution(
                 'OpenStreetMap contributors',
-                onTap: () {
-                  debugPrint('OpenStreetMap attribution tapped');
-                },
+                onTap: () =>
+                    openLegalUrl(context, AppConstants.osmCopyrightUrl),
               ),
             ],
           ),

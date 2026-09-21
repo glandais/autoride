@@ -3,7 +3,9 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:autoride/features/trip_detection/domain/models/trip.dart';
 import 'package:autoride/features/trip_detection/domain/models/location_data.dart';
+import 'package:autoride/core/constants/app_constants.dart';
 import 'package:autoride/core/theme/app_colors.dart';
+import 'package:autoride/core/utils/legal_links.dart';
 
 /// Map view widget for displaying trip route and current location
 ///
@@ -173,10 +175,7 @@ class _TripMapViewState extends State<TripMapView> {
           attributions: [
             TextSourceAttribution(
               'OpenStreetMap contributors',
-              onTap: () {
-                // Could open OSM copyright page if url_launcher is added
-                debugPrint('OpenStreetMap attribution tapped');
-              },
+              onTap: () => openLegalUrl(context, AppConstants.osmCopyrightUrl),
             ),
           ],
         ),

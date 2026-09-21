@@ -861,4 +861,9 @@ class AppConstants {
       'https://glandais.github.io/autoride/legal/privacy-policy.html';
   static const String termsOfUseUrl =
       'https://glandais.github.io/autoride/legal/terms-of-service.html';
+
+  // Target of the "OpenStreetMap contributors" attribution shown on every map. The OSM tile
+  // usage policy requires the credit to be visible and to link back to this page.
+  static const String osmCopyrightUrl =
+      'https://www.openstreetmap.org/copyright';
 }
