@@ -650,7 +650,13 @@ void main() {
       expect(identical(provided, db), isTrue);
 
       container.dispose();
-      await pumpEventQueue();
+      // onDispose fires close() without awaiting it, and the ffi factory
+      // closes on a background isolate: pumping the local event queue does
+      // not wait for that round trip, and on a loaded CI runner it lost the
+      // race. Poll, bounded, until the close lands.
+      for (var i = 0; i < 200 && provided.isOpen; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
 
       expect(provided.isOpen, isFalse);
 
