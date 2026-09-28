@@ -48,7 +48,7 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
 
-  freezed: ^4.0.1                # Freezed code generation
+  freezed: ^4.0.2                # Freezed code generation
   json_serializable: ^6.14.1     # JSON serialization code generation
 
   # Testing seams for the audit-log export: the temporary directory is faked
