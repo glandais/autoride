@@ -88,11 +88,23 @@ class IosBackgroundSession extends _$IosBackgroundSession {
     await _invoke('setKeepAlive', <String, Object?>{'on': on});
   }
 
+  /// The native side answers with `lr` = user|background and the raw
+  /// observations behind it (`st`, `sc`, `w`) — see `consumeLaunchReason` in
+  /// `AutoRideBackgroundSession.swift`. It may take up to 3 s on a background
+  /// launch, which is why nothing awaits this.
   Future<void> _reportLaunchReason() async {
-    final reason = await _invokeWithResult<String>('consumeLaunchReason');
+    final answer = await _invokeWithResult<Map<Object?, Object?>>(
+      'consumeLaunchReason',
+    );
     AuditLog.emit(
       AuditEvent.iosBackground,
-      () => <String, Object?>{'a': 'bootstrap', 'lr': reason ?? 'unknown'},
+      () => <String, Object?>{
+        'a': 'bootstrap',
+        'lr': answer?['lr'] ?? 'unknown',
+        if (answer != null)
+          for (final key in const ['st', 'sc', 'w'])
+            if (answer[key] != null) key: answer[key],
+      },
       critical: true,
     );
   }

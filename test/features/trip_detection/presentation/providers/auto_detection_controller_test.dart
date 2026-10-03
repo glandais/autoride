@@ -854,7 +854,9 @@ void main() {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(IosBackgroundSession.channel, (call) async {
             nativeCalls.add(call.method);
-            return call.method == 'consumeLaunchReason' ? 'normal' : null;
+            return call.method == 'consumeLaunchReason'
+                ? const <String, Object?>{'lr': 'user'}
+                : null;
           });
     });
 

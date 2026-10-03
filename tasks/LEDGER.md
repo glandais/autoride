@@ -1654,3 +1654,18 @@ anything at all by how long the motion lasts**. The separation that exists in `a
 difference in density between whole recordings, and it degrades to 40 % at the instant a decision
 has to be taken. The classifier is the inertial unit, T034's capture, and this is the strongest
 evidence yet that it is not optional.
+
+## 14. Field findings — 2026-09-27 → 10-03, six days on 1.0.0+18
+
+**Source**: one verbose audit log, `autoride-audit-20261003-1626.ndjson.gz`, iPhone 14,3 / iOS 27.0,
+**1.0.0+18**, 1 197 017 lines covering **27/09 10:59 → 03/10 16:26** local (CEST), cross-referenced
+against a `WhereIWas` audit export from the same phone (CoreMotion activity, visits, its own state
+machine) from 30/09 00:43. Times local. Only L-115 is recorded here so far; the detection findings
+of this log (103 starts / 12 kept, six car journeys kept as rides, charging as car evidence) are
+not yet written up.
+
+### High
+
+| ID | Dim | Where | Finding | Status | Evidence |
+|---|---|---|---|---|---|
+| L-115 | platform | `ios/Runner/AppDelegate.swift` → `AutoRideBackgroundSession.bootstrap` (T046) | **`bootstrap {lr:"location"}` — T046's only proof that a kill or a reboot was survived — could never be written. The reason was read from `launchOptions[.location]`, and UIKit passes `launchOptions = nil` to an app that supports scenes, which this one has since 2026-04-10** | **Fixed 2026-10-03** (this change), awaiting T046 run 0 and run 3 | Apple, `application(_:didFinishLaunchingWithOptions:)`: *"If the app supports scenes, this is `nil`."* (`UIApplication.LaunchOptionsKey.location` is moreover deprecated.) `UIApplicationSceneManifest` + `FlutterSceneDelegate` came in with `b8dbba4` (2026-04-10); T046 (`5e2ff58`, 2026-09-03) was written five months later against a key that was already dead. **The survival itself works** — re-arming reads `UserDefaults[armedKey]`, not `launchOptions` — and this log holds what is very probably its first observed success, mislabelled: the process went quiet at 01/10 19:39:51 (battery 10 %), and a launch header appears at **20:06:27 with `lr:"normal"`**, one second after WhereIWas journalled a **visit departure** (automotive/high) at 20:06:26, with `sess start`, a 2.6 m `coarse` delivery and `fgs start` in the same second and **no `app` foreground transition at all** until the user opened the app for the export on 03/10 16:26. A hand launch would have produced `resumed`/`paused`. The `else if launchedForLocation { stopMonitoring() }` branch was dead code for the same reason. **Fix**: the reason is decided when Dart asks for it, from the scenes — `user` if one is (or comes) in the foreground within 3 s, `background` otherwise — and the raw `st` (application state), `sc` (connected scenes) and `w` (ms waited) are journalled beside it so the first device run checks the verdict instead of trusting it. `background` is not `location`: `UIBackgroundModes` also declares `fetch`, so a background refresh reads the same; the `visit`/`coarse` lines around it say which. On a log from ≤ 1.0.0+18, `lr:"normal"` means *unknown*; read a relaunch off the absence of foreground transitions (skill §5). |

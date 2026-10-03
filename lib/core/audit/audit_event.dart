@@ -222,10 +222,15 @@ abstract final class AuditEvent {
 
   /// iOS background session (T046). `a` names what happened:
   ///
-  ///   * `bootstrap` — the native side ran at launch, with `lr` = location|
-  ///     normal. A `bootstrap {lr:"location"}` **is** the proof that iOS
-  ///     relaunched a terminated process for a significant-change or visit
-  ///     event; nothing else in the log can say it.
+  ///   * `bootstrap` — the native side ran at launch, with `lr` = user|
+  ///     background, decided from whether a scene came to the foreground, and
+  ///     the raw observations: `st` (application state), `sc` (connected
+  ///     scenes), `w` (ms waited for a scene). A `bootstrap {lr:"background"}`
+  ///     is the proof that iOS launched a terminated process without the user
+  ///     — a significant-change or visit event, or a `fetch` refresh; the
+  ///     `visit` / `coarse` lines beside it say which. Builds up to 1.0.0+18
+  ///     wrote `lr` = location|normal from `launchOptions`, which UIKit leaves
+  ///     `nil` in a scene app: their `normal` means "unknown" (L-115).
   ///   * `arm` / `disarm` — significant-change + visit monitoring, the only two
   ///     APIs that bring a killed app back. Armed exactly while automatic
   ///     detection is on, so `disarm` is what stops iOS relaunching us.

@@ -1,6 +1,7 @@
 import CoreLocation
 import Flutter
 import Foundation
+import UIKit
 
 /// The one thing that keeps the iOS process alive, and the only thing that can
 /// bring it back from the dead.
@@ -48,9 +49,15 @@ final class AutoRideBackgroundSession: NSObject {
   private let manager = CLLocationManager()
   private var channel: FlutterMethodChannel?
 
-  /// Set once during launch, read once by Dart. `nil` after it has been
-  /// consumed, so a resume cannot be mistaken for a relaunch.
-  private var pendingLaunchReason: String?
+  /// True from launch until Dart has asked how the process was launched, so a
+  /// resume cannot be mistaken for a relaunch.
+  private var launchReasonPending = false
+
+  /// How long `consumeLaunchReason` waits for a scene to come to the
+  /// foreground before calling the launch a background one. A user launch
+  /// connects its scene within a few hundred milliseconds; a background launch
+  /// never does, and has ~10 s of runtime, so 3 s costs it nothing.
+  private static let foregroundGrace: TimeInterval = 3
 
   private var isMonitoring = false
   private var isKeepAliveRunning = false
@@ -79,8 +86,8 @@ final class AutoRideBackgroundSession: NSObject {
   /// manager that is already monitoring by the time launch returns, and a
   /// background launch gets only a few seconds of runtime. Re-arming later —
   /// from Dart, after Riverpod has built — is too late.
-  func bootstrap(launchedForLocation: Bool) {
-    pendingLaunchReason = launchedForLocation ? "location" : "normal"
+  func bootstrap() {
+    launchReasonPending = true
 
     if UserDefaults.standard.bool(forKey: Self.armedKey) {
       startMonitoring()
@@ -88,11 +95,73 @@ final class AutoRideBackgroundSession: NSObject {
       // motion, not location), so idle is the correct initial state and it is
       // also what holds the process up long enough for Dart to boot.
       setKeepAlive(true)
-    } else if launchedForLocation {
-      // A stale registration: the user turned detection off, but the system
-      // still had us on file. Tell it to stop.
+    } else {
+      // Detection is off. If the system still has us on file for
+      // significant-change or visit monitoring — the stale registration that
+      // may be what relaunched us — tell it to stop. Harmless otherwise.
       stopMonitoring()
     }
+  }
+
+  // MARK: - Launch reason
+
+  /// Answers once per process with `lr` = `user` | `background`, plus the raw
+  /// observations it was decided from (`st` = the application state, `sc` =
+  /// the number of connected scenes, `w` = ms spent waiting), so a device run
+  /// can check the verdict rather than trust it.
+  ///
+  /// A scene app gets no `launchOptions` (L-115), so the only reliable signal
+  /// is whether a scene ever comes to the foreground: UIKit connects one for a
+  /// user launch and none for a launch the system makes in the background.
+  /// `background` covers both background reasons this app declares — a
+  /// significant-change / visit event (T046) and a `fetch` refresh — and the
+  /// `visit` / `coarse` lines around it say which.
+  private func consumeLaunchReason(_ result: @escaping FlutterResult) {
+    guard launchReasonPending else { return result(nil) }
+    launchReasonPending = false
+
+    if hasForegroundScene() {
+      return result(launchReason("user", waitedMs: 0))
+    }
+
+    let started = Date()
+    var observer: NSObjectProtocol?
+    var answered = false
+    let finish: (String) -> Void = { [weak self] reason in
+      guard let self, !answered else { return }
+      answered = true
+      if let observer { NotificationCenter.default.removeObserver(observer) }
+      let waited = Int(Date().timeIntervalSince(started) * 1000)
+      result(self.launchReason(reason, waitedMs: waited))
+    }
+    observer = NotificationCenter.default.addObserver(
+      forName: UIScene.willEnterForegroundNotification, object: nil, queue: .main
+    ) { _ in finish("user") }
+    DispatchQueue.main.asyncAfter(deadline: .now() + Self.foregroundGrace) { [weak self] in
+      finish(self?.hasForegroundScene() == true ? "user" : "background")
+    }
+  }
+
+  private func hasForegroundScene() -> Bool {
+    UIApplication.shared.connectedScenes.contains {
+      $0.activationState == .foregroundActive || $0.activationState == .foregroundInactive
+    }
+  }
+
+  private func launchReason(_ reason: String, waitedMs: Int) -> [String: Any] {
+    let state: String
+    switch UIApplication.shared.applicationState {
+    case .active: state = "active"
+    case .inactive: state = "inactive"
+    case .background: state = "background"
+    @unknown default: state = "unknown"
+    }
+    return [
+      "lr": reason,
+      "st": state,
+      "sc": UIApplication.shared.connectedScenes.count,
+      "w": waitedMs,
+    ]
   }
 
   // MARK: - Dart-facing API
@@ -196,9 +265,7 @@ final class AutoRideBackgroundSession: NSObject {
         self.setKeepAlive((call.arguments as? [String: Any])?["on"] as? Bool ?? false)
         result(nil)
       case "consumeLaunchReason":
-        let reason = self.pendingLaunchReason
-        self.pendingLaunchReason = nil
-        result(reason)
+        self.consumeLaunchReason(result)
       default:
         result(FlutterMethodNotImplemented)
       }

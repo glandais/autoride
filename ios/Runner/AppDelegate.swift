@@ -13,9 +13,13 @@ import UIKit
     // returns, and a background launch gets very little runtime. Re-arming from
     // Dart, after the engine and Riverpod have built, would be too late.
     // See AutoRideBackgroundSession and ledger L-084 / T046.
-    AutoRideBackgroundSession.shared.bootstrap(
-      launchedForLocation: launchOptions?[.location] != nil
-    )
+    //
+    // `launchOptions` is deliberately not read: the app adopts scenes
+    // (`UIApplicationSceneManifest`), and for a scene app UIKit passes `nil`
+    // here on every launch, so `launchOptions?[.location]` was always false and
+    // no log could ever say `lr:"location"` (L-115). The launch reason is
+    // decided later, from the scenes, when Dart asks for it.
+    AutoRideBackgroundSession.shared.bootstrap()
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 

@@ -94,8 +94,17 @@ New event `ios` (see the `autoride-audit-log` skill). The three lines that matte
 ```
 ios {a:"keepAlive", on:true}     # right after a `gate close` — the process is being held up
 ios {a:"arm"}                    # relaunch monitoring is on; the iOS peer of `fgs start`
-ios {a:"bootstrap", lr:"location"}  # iOS relaunched a TERMINATED process. The only proof.
+ios {a:"bootstrap", lr:"background"}  # iOS launched a TERMINATED process without the user. The only proof.
 ```
+
+**Up to 1.0.0+18 that last line could never appear (L-115).** The launch reason was read from
+`launchOptions[.location]`, and UIKit passes `launchOptions = nil` to a scene app — which this app
+has been since 2026-04-10, five months before T046. Every launch was journalled `lr:"normal"`,
+background relaunches included. The reason is now decided from the scenes when Dart asks for it:
+`user` if one comes to the foreground within 3 s, `background` otherwise, with the raw `st`
+(application state), `sc` (connected scenes) and `w` (ms waited) beside it. `background` covers
+a significant-change / visit event *and* a `fetch` refresh (`UIBackgroundModes` declares both): a
+`visit` line or a WhereIWas visit departure at the same second says which.
 
 A `gate close` with no `keepAlive` after it, followed by a heartbeat carrying a large `dt`, is
 failure (a) happening.
@@ -122,9 +131,10 @@ T046 or T041 item 8 on iOS.
 
 | # | Run | Passes when |
 |---|---|---|
+| 0 | Launch-reason sanity — open the app by hand from a cold start | `ios {a:"bootstrap", lr:"user"}`, `w` small. Proves the scene test does not call a user launch `background`; run it before trusting run 3. |
 | 1 | Idle survival — app backgrounded, screen off, phone at rest 30 min | Heartbeats continuous, no `dt` above a couple of minutes, and an `ios {a:"keepAlive", on:true}` after the `gate close`. This is the run that failed for 2 h 31 on 2026-09-02. |
 | 2 | Departure after a long stop — ride off straight after run 1 | A trip auto-starts without the screen ever waking. **This is T041 item 8 proper.** |
-| 3 | Kill — `xcrun devicectl device process terminate`, then move > 500 m | A new launch header followed by `ios {a:"bootstrap", lr:"location"}`. |
+| 3 | Kill — `xcrun devicectl device process terminate`, then move > 500 m | A new launch header followed by `ios {a:"bootstrap", lr:"background"}` (on a build after 1.0.0+18 — L-115), with no `app` foreground transition after it. |
 | 4 | Reboot — restart, unlock once, do **not** open the app, move > 500 m | Same as run 3. |
 | 5 | Disarm — turn detection off in Settings, kill the app, move > 500 m | **No** relaunch at all. This is what proves `disarm` works; without it iOS keeps waking an app whose feature the user switched off. |
 | 6 | Battery — re-measure T041 item 4 over a full day | The permanently-held coarse session is precisely the risk this change adds. |

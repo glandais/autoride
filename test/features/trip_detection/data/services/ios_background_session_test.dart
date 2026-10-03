@@ -23,11 +23,16 @@ void main() {
 
   late List<MethodCall> calls;
   late _RecordingSink sink;
-  String? launchReason;
+  Map<String, Object?>? launchReason;
 
   setUp(() {
     calls = <MethodCall>[];
-    launchReason = 'normal';
+    launchReason = <String, Object?>{
+      'lr': 'user',
+      'st': 'active',
+      'sc': 1,
+      'w': 0,
+    };
     sink = _RecordingSink();
     AuditLog.install(sink, level: AuditLogLevel.verbose);
 
@@ -68,25 +73,45 @@ void main() {
     });
 
     test('a background relaunch is journalled as such', () async {
-      launchReason = 'location';
+      launchReason = <String, Object?>{
+        'lr': 'background',
+        'st': 'background',
+        'sc': 0,
+        'w': 3001,
+      };
       await session();
 
       // This line is the only evidence in the whole log that iOS brought a
-      // terminated process back for a significant-change or visit event. The
-      // device-validation protocol greps for exactly it.
+      // terminated process back without the user. The device-validation
+      // protocol greps for exactly it, and checks the verdict against the raw
+      // observations carried beside it (L-115).
       final bootstrap = sink
           .fieldsOf('ios')
           .firstWhere((line) => line['a'] == 'bootstrap');
-      expect(bootstrap['lr'], 'location');
+      expect(bootstrap['lr'], 'background');
+      expect(bootstrap['st'], 'background');
+      expect(bootstrap['sc'], 0);
+      expect(bootstrap['w'], 3001);
     });
 
-    test('a normal launch says so rather than staying silent', () async {
+    test('a user launch says so rather than staying silent', () async {
       await session();
 
       final bootstrap = sink
           .fieldsOf('ios')
           .firstWhere((line) => line['a'] == 'bootstrap');
-      expect(bootstrap['lr'], 'normal');
+      expect(bootstrap['lr'], 'user');
+    });
+
+    test('no answer from the native side is journalled as unknown', () async {
+      launchReason = null;
+      await session();
+
+      final bootstrap = sink
+          .fieldsOf('ios')
+          .firstWhere((line) => line['a'] == 'bootstrap');
+      expect(bootstrap['lr'], 'unknown');
+      expect(bootstrap.containsKey('st'), isFalse);
     });
   });
 
