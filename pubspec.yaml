@@ -10,9 +10,9 @@ environment:
   sdk: ^3.13.0
 
 dependencies:
-  battery_plus: ^7.1.1           # Battery level monitoring for power optimization
-  device_info_plus: ^13.2.0      # Platform info (Android API level, iOS version)
-  fit_dart_sdk: ^21.215.0        # Garmin FIT encoding for trip export
+  battery_plus: ^7.1.2           # Battery level monitoring for power optimization
+  device_info_plus: ^13.3.0      # Platform info (Android API level, iOS version)
+  fit_dart_sdk: ^21.217.0        # Garmin FIT encoding for trip export
   flutter:
     sdk: flutter
   flutter_background_service: ^5.0.0  # Background task execution
@@ -20,16 +20,16 @@ dependencies:
   flutter_map: ^8.3.2            # Map rendering with OpenStreetMap
   flutter_riverpod: ^3.4.3       # State management with code generation
   freezed_annotation: ^3.0.0     # Immutable models
-  geolocator: ^14.0.2            # GPS location tracking
+  geolocator: ^14.1.1            # GPS location tracking
   json_annotation: ^4.12.0       # Annotations for JSON serialization codegen
   latlong2: ^0.10.1               # Coordinate handling for flutter_map
-  package_info_plus: ^10.2.1     # App version/build number for the Settings About row
+  package_info_plus: ^10.2.2     # App version/build number for the Settings About row
   path: ^1.9.0                   # Path manipulation for database paths
   path_provider: ^2.1.5          # Temp directory for exported .fit files
   permission_handler: ^13.0.2    # Runtime permission handling
   riverpod_annotation: ^4.0.6    # Riverpod annotations
-  sensors_plus: ^7.1.0           # Accelerometer & gyroscope
-  share_plus: ^13.3.0            # Share/save the exported .fit file via the OS sheet
+  sensors_plus: ^7.1.1           # Accelerometer & gyroscope
+  share_plus: ^13.3.1            # Share/save the exported .fit file via the OS sheet
   shared_preferences: ^2.2.0     # User settings storage
   sqflite: ^2.4.4                # SQLite database for trips
   url_launcher: ^6.3.2         # Open the hosted privacy policy / terms in the browser
