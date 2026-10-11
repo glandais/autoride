@@ -8,7 +8,6 @@ import 'package:autoride/features/trip_detection/domain/models/activity_confiden
 import 'package:autoride/features/trip_detection/domain/models/trip.dart';
 import 'package:autoride/features/trip_detection/domain/models/trip_state.dart';
 import 'package:autoride/features/settings/data/services/settings_service.dart';
-import 'package:autoride/core/constants/app_constants.dart';
 
 /// One recorded call to [NotificationService.showTripStopNotification].
 class _StopNotification {
@@ -351,28 +350,6 @@ void main() {
         active: (_, _) => fail('Should be Idle'),
         paused: (tripId, startTime, pauseStartTime) => fail('Should be Idle'),
       );
-    });
-
-    test('should detect detection timeout', () async {
-      final stateMachine = container.read(tripStateMachineProvider.notifier);
-
-      stateMachine.startDetecting();
-
-      // Immediately should not be timed out
-      expect(stateMachine.hasDetectionTimedOut(), isFalse);
-
-      // Back-date the detection start past the timeout to exercise the
-      // expired branch (a clock can't be injected, so set state directly).
-      stateMachine.state = TripState.detecting(
-        detectionStartTime: DateTime.now().subtract(
-          const Duration(seconds: AppConstants.detectionTimeoutSeconds + 5),
-        ),
-      );
-      expect(stateMachine.hasDetectionTimedOut(), isTrue);
-
-      // Not in a detecting state -> never timed out.
-      stateMachine.state = const TripState.idle();
-      expect(stateMachine.hasDetectionTimedOut(), isFalse);
     });
 
     test('should preserve trip ID across state transitions', () async {

@@ -1,7 +1,8 @@
 # T054 — Five seconds of a pocket is not a ride: the corroboration window, and the axis that never votes
 
-Date opened: 2026-09-13. Status: ⏳ **diagnosis, plus the §4 replay, which refutes §3.1.**
-Nothing written in `lib/`; the harness is `scripts/t054-replay/`.
+Date opened: 2026-09-13. Status: ⏳ **§3.1 written 2026-10-11** (duty cycle 18 %/120 s, schema 4);
+**§3.3 needs no code** — its premise was wrong, see §3.3. §3.2, §3.4, §3.5 not started. Device runs
+outstanding. The harness is `scripts/t054-replay/`.
 Owner findings: **L-108**, **L-109**, **L-110**, **L-111**, **L-112** (`tasks/LEDGER.md` §13).
 Depends on T050 (the windowed fit this task extends) and T053 (the build that produced the log).
 Sibling of **T049**, which it supersedes in scope: T049 answered a kitchen with a sliding streak
@@ -167,11 +168,40 @@ on a 30–120 s window, it buys the 38–45 % above and no more.
 is ~1.5 h of GPS a day on the §13 corpus. It is worth having, it is not a fix, and it must
 not be sold as one.
 
+### Re-run, 2026-10-11, on six days of 1.0.0+19
+
+`autoride-audit-20261009-1827.ndjson.gz` alone (03/10 → 09/10, iPhone 14,3, iOS 27.0.1): 445 783
+evaluations, 120 h at rest, 21 recordings that went somewhere and 74 that did not. The journeys
+were then split with CoreMotion's own activity, recorded by a second app on the same phone (T055):
+12 bicycle rides, 2 town drives, 7 walks.
+
+| rule | rides started | median added latency | p90 | false starts / 24 h |
+|---|---|---|---|---|
+| streak 3s (the build) | 12/12 | — | — | **10.0** |
+| streak 10s | 12/12 | 37 s | 206 s | 4.6 |
+| duty 28 %/60 s | 12/12 | 56 s | 198 s | 6.4 |
+| **duty 18 %/120 s** | 12/12 | **110 s** | **124 s** | **6.0** |
+| streak 30s | 9/12 | 346 s | 665 s | 0 |
+
+The same shape as §2bis: ~40 % for the duty rules. And **every rule starts all seven walks and both
+drives** — a start corroboration cannot touch that half of the problem (§6, T055).
+
 ## 3. What to change
 
 Nothing here is written. The order is by evidence, not by ease.
 
 ### 3.1 Score the density, not the length — and expect 40 %, not a fix (L-108, L-104)
+
+**Written 2026-10-11: duty ≥ 18 % over 120 s** (`tripStartDutyWindow`, `tripStartDutyMinShare`).
+`TripStartDetector` keeps the last 120 s of evaluation intervals, scores each on the motion window
+of the second just elapsed, and starts once the window spans 120 s of continuous evaluation and
+18 % of it is above `tripStartConfidenceThreshold`. A gap over `tripStartDetectionWindowSeconds`
+empties it, as in the replay. The cooldown suppresses the decision, not the measurement. The fixed
+30 s `detectionTimeoutSeconds` went with the streak — it could not host a 120 s window — and
+`Detecting` now ends when the window's last positive second ages out, without resetting the
+detector. Audit schema 4: `start.n` is positive seconds in the window, `start.nw` its size,
+header `k.dutyMin`/`k.dutyS` replace `k.nDet`/`k.detTo`. Chosen over 28 %/60 s for its tighter
+p90 on both corpora (163 s and 124 s, against 212 s and 198 s).
 
 **The longer-streak option is dead** (§2bis): a ride's own bursts have a median length of two
 seconds, so any rule that asks for a long run refuses the rider before it refuses the pocket.
@@ -213,6 +243,25 @@ Either the weight votes or it goes. Three options, in order of increasing ambiti
 classifier. It is a decision about honesty and about which stage of the pipeline carries the test.
 
 ### 3.3 Give the tail cut a speed it can actually read (L-110)
+
+**Correction, 2026-10-11: there is nothing to give it.** The cut already reads a derived speed, and
+did on the build that produced §13: since T048 (`74dbb10`, an ancestor of 1.0.0+16) the coordinator
+buffers the fix *after* `GpsSpeedEstimator.refine`, so a `dsp` is what `ridingTailOf` sees. L-110's
+mechanism — "the cut tests `sp`" — is wrong. What trip 148 shows is a buffer in which **no fix had a
+speed of any kind**: none measured, and none derivable, because the rider had not moved yet.
+
+The 2026-10-09 log says the same thing seven times out of twelve. Real rides start within seconds
+of the gate opening, on fixes reading `sp 0` at 5–15 m accuracy, and the first fix at ≥ 8 km/h comes
+2–5 min **after** the start (537: 241 s, 562: 296 s, 598: 252 s); CoreMotion's first `cycling`
+comes later still. Those trips did not start late — they started early, during the walk to the
+bike, and there was nothing to back-date. Where the rider was already rolling (546, 581, 585, 599,
+611: first ≥ 8 km/h fix 1–23 s after the start), cycling-speed fixes were in the stream, and
+iOS 27 measures `sp` on 62 % of fixes (4 080 of 6 576).
+
+So the prerequisite §3.1 named is already in place: when the duty window delays a departure that
+was already rolling, the fixes of those 110 s carry a speed and the tail keeps them. What remains
+to verify is on a device — a ride with a `bdate`, `k` > 0, whose `ts` matches the FIT's first
+moving point (§4 item 4).
 
 The cut must accept a **derived** speed the way the start path learned to in T048. `dsp` exists on
 these fixes; `sp` does not. Until it does, no start is ever back-dated on an iPhone and every ride

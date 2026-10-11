@@ -465,11 +465,10 @@ class AppConstants {
 
   // Trip State Machine Configuration (T012)
   //
-  // How long the machine may sit in `Detecting` without confirming a ride. On
-  // expiry it returns to idle and the start detector's streak is dropped —
-  // nothing else: no cooldown, no stream teardown (L-075), so a real departure
-  // one second later is still caught.
-  static const int detectionTimeoutSeconds = 30;
+  // (`detectionTimeoutSeconds` — a fixed 30 s in `Detecting` — went with the
+  // consecutive streak in T054: a 30 s limit cannot host a 120 s duty window.
+  // `Detecting` now lasts exactly as long as the start window holds a positive
+  // second; see `tripStartDutyWindow`.)
   // (`stationaryThresholdSeconds` used to sit here with a TODO and no consumer;
   // removed in T041 — the stop detector gates the pause on
   // `minPauseDurationSeconds` + consecutive stationary detections.)
@@ -483,28 +482,41 @@ class AppConstants {
   // Confidence threshold to trigger trip start (0.0-1.0)
   static const double tripStartConfidenceThreshold = 0.7;
 
-  // Minimum consecutive detections before starting trip.
-  // A "detection" is one evaluation slot of `detectionEvaluationInterval`, NOT
-  // one 50 Hz sensor sample — otherwise 3 detections would mean ~60 ms and a
-  // single bump could start a trip.
-  static const int tripStartMinConsecutiveDetections = 3;
+  // Trip-start corroboration: a duty cycle, not a streak (T054 §3.1, L-108,
+  // L-114).
+  //
+  // A trip starts once, over the last `tripStartDutyWindow` of continuous
+  // evaluation, at least `tripStartDutyMinShare` of the evaluation intervals
+  // scored above `tripStartConfidenceThreshold`. One interval is one
+  // `detectionEvaluationInterval`, not one 50 Hz sample.
+  //
+  // It replaces "3 consecutive seconds", which rest supplies: a phone picked
+  // up, put in a pocket or carried in a bag produces ~18 s of quiet then a
+  // five-second burst, and over 26 h on 1.0.0+16 that opened 22 recordings in
+  // one evening at rest (L-108). Lengthening the streak was refuted by replay
+  // (L-114): riding is ~23 % of seconds above the threshold in bursts with a
+  // *two-second* median, so a long streak refuses the rider before the pocket.
+  // What separates them is the density — 23.4 % riding against 7.0 % at rest.
+  //
+  // 18 % over 120 s is the setting the replay priced, on two corpora
+  // (`scripts/t054-replay/`): every real departure still starts (21/21, then
+  // 12/12), false starts fall by ~40 % (15.6 → 8.7 and 10.0 → 6.0 a day), and
+  // the start comes ~110 s after the old rule's — which the pre-trip buffer's
+  // back-date pays back whenever the rider was already rolling. It is a cut,
+  // not a fix: no setting of these two numbers keeps the rides and loses the
+  // pockets (T054 §2bis).
+  //
+  // The window has to be *full* before it can fire, so after a session start,
+  // a reset or a gap the earliest possible start is one window later.
+  static const Duration tripStartDutyWindow = Duration(seconds: 120);
+  static const double tripStartDutyMinShare = 0.18;
 
-  // Staleness bound on the consecutive-detection streak (seconds).
+  // Staleness bound on the start window (seconds).
   //
-  // NOT a sliding window any more (L-093). The streak is now truly
-  // consecutive: it dies on the first evaluation interval that scores below
-  // `tripStartConfidenceThreshold`, so a positive detection is required in
-  // every second of it. This constant only answers the case where no sample
-  // arrives at all — a suspended process, a sensor stream that stalled — where
-  // there is no interval to score and an hour-old streak must not be resumed
-  // as if it were current.
-  //
-  // What it used to mean, and why that was the defect: `lastDetectionTime` was
-  // refreshed on every positive detection and the comparison truncated to whole
-  // seconds, so "3 detections" meant three spikes each within 5.99 s of the
-  // previous one — up to 18 s of wall clock with any number of near-zero
-  // samples in between. All ten false starts of the 2026-09-03 kitchen run are
-  // that signature.
+  // A gap longer than this between two evaluated intervals — a suspended
+  // process, a sensor stream that stalled — empties the window rather than
+  // letting seconds from before the gap vouch for seconds after it. The
+  // replay applies the same rule, so the numbers above hold only with it.
   static const int tripStartDetectionWindowSeconds = 5;
 
   // Detection evaluation cadence (shared by trip start and trip stop).

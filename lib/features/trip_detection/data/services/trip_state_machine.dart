@@ -2,7 +2,6 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../../domain/models/trip.dart';
 import '../../domain/models/trip_state.dart';
-import '../../../../core/constants/app_constants.dart';
 import 'notification_service.dart';
 
 part 'trip_state_machine.g.dart';
@@ -115,19 +114,5 @@ class TripStateMachine extends _$TripStateMachine {
     notifications.cancelForegroundNotification();
 
     state = const TripState.idle();
-  }
-
-  /// Check if detection phase has timed out
-  /// Returns true if in Detecting state for > detection timeout
-  bool hasDetectionTimedOut() {
-    return state.mapOrNull(
-          detecting: (detectingState) {
-            final elapsed = DateTime.now().difference(
-              detectingState.detectionStartTime,
-            );
-            return elapsed.inSeconds > AppConstants.detectionTimeoutSeconds;
-          },
-        ) ??
-        false;
   }
 }

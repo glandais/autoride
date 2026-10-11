@@ -18,8 +18,8 @@ class _BufferedFix {
 /// was recording yet.
 ///
 /// Why it exists: the coordinator opens the GPS gate on the first moving sample,
-/// but the trip is only confirmed a few seconds later — three consecutive
-/// detections, up to `detectionTimeoutSeconds` of `Detecting` — and the recorder
+/// but the trip is only confirmed later — once the start window is full and
+/// dense enough, about two minutes since T054 §3.1 — and the recorder
 /// then opens its *own* location subscription and starts counting distance from
 /// its second fix. Everything in between used to be thrown away, so every ride
 /// began 10-40 s and 50-200 m after the rider actually set off. This buffer is

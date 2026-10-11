@@ -22,7 +22,12 @@ abstract final class AuditSchema {
   ///   `mag`/`gyr` on the same line, so reconstructing `c` from those two — the
   ///   recipe every earlier reading of this log used — silently reproduces the
   ///   old arithmetic. Read `asd`/`gav` against `k.asd*`/`k.gav*` instead.
-  static const int version = 3;
+  /// * 4 — `start.n` is the positive seconds inside the start window, not a
+  ///   consecutive streak (T054 §3.1), and `start.nw` the seconds the window
+  ///   holds. Read against `k.nDet` (3) as before, an `n` of 20 looks like a
+  ///   start long overdue; it is 20 of `nw`, against `k.dutyMin`. `dto` now
+  ///   means the window's last positive second aged out, not a fixed 30 s.
+  static const int version = 4;
 
   /// The detection thresholds this build is running with, under short keys.
   ///
@@ -40,9 +45,11 @@ abstract final class AuditSchema {
     'gpsAge': AppConstants.stationaryGpsMaxAge.inSeconds,
     // Trip start
     'conf': AppConstants.tripStartConfidenceThreshold,
-    'nDet': AppConstants.tripStartMinConsecutiveDetections,
+    // The duty cycle that replaced the 3-second streak (T054 §3.1): the share
+    // of the window's seconds `n / nw` must reach, and the window, in seconds.
+    'dutyMin': AppConstants.tripStartDutyMinShare,
+    'dutyS': AppConstants.tripStartDutyWindow.inSeconds,
     'detWin': AppConstants.tripStartDetectionWindowSeconds,
-    'detTo': AppConstants.detectionTimeoutSeconds,
     'evalMs': AppConstants.detectionEvaluationInterval.inMilliseconds,
     'cool': AppConstants.tripStartCooldownPeriodSeconds,
     'wMot': AppConstants.tripStartMotionWeight,
@@ -107,6 +114,9 @@ abstract final class AuditSchema {
     'hzM': AppConstants.sensorSamplingRateMedium,
     'hzL': AppConstants.sensorSamplingRateLow,
     'hzC': AppConstants.sensorSamplingRateCritical,
+    // The interval Android's activity recognition is asked for (T055), in
+    // ms; iOS reports on change and takes none.
+    'actMs': AppConstants.activityRecognitionInterval.inMilliseconds,
     'dfCyc': AppConstants.distanceFilterCycling,
     'dfMov': AppConstants.distanceFilterMoving,
     'dfLow': AppConstants.distanceFilterLowPower,

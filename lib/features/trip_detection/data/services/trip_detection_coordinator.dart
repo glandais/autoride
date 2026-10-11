@@ -866,7 +866,11 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
       AuditEvent.startEval,
       () => <String, Object?>{
         'c': detectorState.confidence,
+        // Since schema 4 (T054 §3.1) `n` is the positive seconds inside the
+        // start window, and `nw` the seconds the window holds: the decision is
+        // `n / nw >= k.dutyMin` once the window spans `k.dutyS`.
         'n': counted,
+        'nw': detectorState.windowIntervals,
         'go': shouldStart,
         'mag': motion.accelerometer.magnitude,
         'gyr': motion.gyroscope.magnitude,
@@ -1100,15 +1104,13 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
         // notion of time for a test to be able to age a fix (L-089).
         .analyzeForTripStart(motion, _lastLocation, now: now());
 
-    // Enter `Detecting` only once the detector has counted at least one
-    // positive detection (L-075). It used to be entered on the *first motion
-    // sample of any kind*, so a phone merely being carried sat in `Detecting`
-    // permanently, hit `detectionTimeoutSeconds` every 30 s and paid the
-    // timeout's teardown each time. `startDetecting()` is idle-only, so this is
-    // idempotent — and it must also run on the sample that starts the trip,
-    // because `startTripWithId` transitions out of `Detecting` and nothing
-    // else.
-    final counted = ref.read(tripStartDetectorProvider).consecutiveDetections;
+    // Enter `Detecting` only once the start window holds at least one positive
+    // second (L-075). It used to be entered on the *first motion sample of any
+    // kind*, so a phone merely being carried sat in `Detecting` permanently.
+    // `startDetecting()` is idle-only, so this is idempotent — and it must also
+    // run on the sample that starts the trip, because `startTripWithId`
+    // transitions out of `Detecting` and nothing else.
+    final counted = ref.read(tripStartDetectorProvider).windowDetections;
 
     _emitStartEval(motion, counted: counted, shouldStart: shouldStart);
 
@@ -1412,10 +1414,9 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
         .stopRecording();
 
     // Reset both detectors. The START detector matters as much as the stop one:
-    // its `consecutiveDetections` streak survives a recording, so without this
-    // a single strong sample arriving within `tripStartDetectionWindowSeconds`
-    // of the last positive detection would start the *next* trip on that one
-    // sample, defeating the consecutive-detection rule entirely (L-074).
+    // its window survives a recording, so without this the seconds that
+    // started this trip would vouch for the *next* one (L-074). The price is
+    // one full `tripStartDutyWindow` before another automatic start.
     ref.read(tripStopDetectorProvider.notifier).reset();
     ref.read(tripStartDetectorProvider.notifier).reset();
 
@@ -1482,42 +1483,37 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
     await startListening();
   }
 
-  /// Give up on a `Detecting` phase that has run for
-  /// `AppConstants.detectionTimeoutSeconds` without confirming a ride.
+  /// Leave a `Detecting` phase once the start window holds no positive second
+  /// any more (T054 §3.1).
+  ///
+  /// It used to be a fixed 30 s, which could not host a 120 s duty window: the
+  /// phase would have timed out — and reset the detector — long before the
+  /// window could fill. `Detecting` now means exactly "there is evidence in
+  /// the window", and the window itself ages the evidence out.
   ///
   /// Nothing *happened* here: no trip was started, so there is nothing to back
-  /// off from. The timeout therefore costs exactly one streak reset and a
-  /// return to idle — detection stays live and the very next cycling-shaped
-  /// sample can start a trip (L-075).
-  ///
-  /// It used to do two more things, and both made the detector blind for up to
-  /// 30 s at a time: it armed `tripStartCooldownPeriodSeconds` of cooldown
-  /// (during which `analyzeForTripStart` returns `false` unconditionally), and
-  /// it tore the motion/GPS subscriptions down to restart them 100 ms later.
-  /// Combined with entering `Detecting` on any motion sample at all, that gave
-  /// a roughly 50 % detection duty cycle for anyone whose phone was moving —
-  /// walking to the bike, riding in a car — and a real departure landing inside
-  /// a cooldown was missed for up to half a minute. The cooldown now lives
-  /// where a false start really occurs: a started-then-discarded trip, in
-  /// [_finalizeAndStopTrip].
+  /// off from, and the detector is **not** reset — its window keeps the
+  /// seconds it has measured, so a departure that follows does not wait one
+  /// more window to be allowed to start (L-075).
   void _checkDetectionTimeout() {
-    final stateMachine = ref.read(tripStateMachineProvider.notifier);
+    final detecting = ref
+        .read(tripStateMachineProvider)
+        .mapOrNull(detecting: (state) => state);
+    if (detecting == null) return;
 
-    if (stateMachine.hasDetectionTimedOut()) {
-      AuditLog.emit(
-        AuditEvent.detectionTimeout,
-        () => <String, Object?>{
-          'el': AppConstants.detectionTimeoutSeconds,
-          'n': ref.read(tripStartDetectorProvider).consecutiveDetections,
-        },
-      );
+    final detector = ref.read(tripStartDetectorProvider.notifier);
+    if (detector.windowDetectionsAt(now()) > 0) return;
 
-      // Detection timed out - return to idle
-      stateMachine.stopTrip();
+    AuditLog.emit(
+      AuditEvent.detectionTimeout,
+      () => <String, Object?>{
+        'el': DateTime.now().difference(detecting.detectionStartTime).inSeconds,
+        'n': 0,
+      },
+    );
 
-      // Drop the (unconfirmed) streak so the next window starts clean.
-      ref.read(tripStartDetectorProvider.notifier).reset();
-    }
+    // Evidence gone - return to idle
+    ref.read(tripStateMachineProvider.notifier).stopTrip();
   }
 
   /// Clean up resources. [gateWhy] is what the GPS gate's `close` event will

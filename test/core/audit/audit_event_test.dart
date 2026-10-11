@@ -123,9 +123,9 @@ void main() {
           'gpsLoss',
           'gpsAge',
           'conf',
-          'nDet',
+          'dutyMin',
+          'dutyS',
           'detWin',
-          'detTo',
           'evalMs',
           'cool',
           'wMot',
@@ -181,7 +181,7 @@ void main() {
 
       final decoded = jsonDecode(line) as Map<String, dynamic>;
       final k = decoded['k'] as Map<String, dynamic>;
-      expect(decoded['sv'], 3);
+      expect(decoded['sv'], 4);
       expect(k['cycMin'], 8);
       expect(k['gpsLoss'], 600);
       expect(k['conf'], 0.7);

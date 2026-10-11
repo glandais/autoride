@@ -4,8 +4,10 @@ part 'trip_start_state.freezed.dart';
 
 /// Represents the state of trip start detection
 ///
-/// Tracks confidence levels, consecutive detections, and cooldown status
-/// to determine when a cycling trip should automatically start.
+/// Tracks the confidence, the duty-cycle window it is corroborated over
+/// (T054 §3.1), and the cooldown status that decide when a cycling trip should
+/// automatically start. The window's per-interval history lives in the
+/// detector; this state carries what it adds up to.
 @freezed
 sealed class TripStartState with _$TripStartState {
   const TripStartState._();
@@ -14,11 +16,20 @@ sealed class TripStartState with _$TripStartState {
     /// Current confidence score (0.0-1.0) that cycling is occurring
     required double confidence,
 
-    /// Number of consecutive positive detections
-    required int consecutiveDetections,
+    /// Evaluation intervals inside the start window that scored above the
+    /// threshold.
+    required int windowDetections,
 
-    /// Timestamp of the last detection
-    required DateTime? lastDetectionTime,
+    /// Evaluation intervals the start window holds, positive or not.
+    required int windowIntervals,
+
+    /// When the current stretch of continuous evaluation began — the window is
+    /// full, and may decide, once it is `tripStartDutyWindow` old. Null after a
+    /// reset, before the first interval.
+    required DateTime? coverageStart,
+
+    /// When the last evaluation interval was counted.
+    required DateTime? lastEvaluationTime,
 
     /// Whether cooldown is active (prevents immediate restart after false start)
     required bool cooldownActive,
@@ -40,8 +51,10 @@ sealed class TripStartState with _$TripStartState {
   factory TripStartState.initial() {
     return const TripStartState(
       confidence: 0.0,
-      consecutiveDetections: 0,
-      lastDetectionTime: null,
+      windowDetections: 0,
+      windowIntervals: 0,
+      coverageStart: null,
+      lastEvaluationTime: null,
       cooldownActive: false,
       cooldownStartTime: null,
       cooldownDuration: null,
@@ -51,22 +64,22 @@ sealed class TripStartState with _$TripStartState {
 
 /// Extension methods for TripStartState
 extension TripStartStateExtensions on TripStartState {
-  /// Whether the streak is still current, i.e. whether the stream of samples
-  /// has been continuous enough for [consecutiveDetections] to mean anything.
+  /// Whether the start window has covered a full [window] of continuous
+  /// evaluation, from [coverageStart] to the last interval counted, and may
+  /// therefore decide.
   ///
-  /// This is a *staleness* test, not the streak rule: the streak itself is
-  /// broken by [TripStartDetector] on the first evaluation interval scoring
-  /// below threshold (L-093). It only decides what to do with a positive
-  /// detection arriving after a gap in which nothing was evaluated at all — a
-  /// suspended process, a stalled sensor stream — where resuming an old streak
-  /// would start a trip on one sample.
-  ///
-  /// Compares [Duration]s. The `.inSeconds <= windowDuration.inSeconds` it
-  /// replaces truncated both sides, so a 5 s window silently meant 5.99 s.
-  bool isWithinDetectionWindow(DateTime now, Duration windowDuration) {
-    if (lastDetectionTime == null) return true;
-    return now.difference(lastDetectionTime!) <= windowDuration;
+  /// The interval that opened the coverage is itself one interval long, hence
+  /// the [interval] subtracted: 120 intervals one second apart span 119 s.
+  bool isWindowFull(Duration window, Duration interval) {
+    final start = coverageStart;
+    final last = lastEvaluationTime;
+    if (start == null || last == null) return false;
+    return last.difference(start) >= window - interval;
   }
+
+  /// Share of the window's intervals that scored above the threshold.
+  double get windowShare =>
+      windowIntervals == 0 ? 0.0 : windowDetections / windowIntervals;
 
   /// Check if cooldown period has expired
   ///
@@ -78,12 +91,14 @@ extension TripStartStateExtensions on TripStartState {
     return now.difference(cooldownStartTime!).inSeconds >= period.inSeconds;
   }
 
-  /// Reset detection state (clears consecutive detections and confidence)
+  /// Reset detection state (empties the window and clears the confidence)
   TripStartState reset() {
     return copyWith(
       confidence: 0.0,
-      consecutiveDetections: 0,
-      lastDetectionTime: null,
+      windowDetections: 0,
+      windowIntervals: 0,
+      coverageStart: null,
+      lastEvaluationTime: null,
     );
   }
 
@@ -94,7 +109,6 @@ extension TripStartStateExtensions on TripStartState {
       cooldownStartTime: now,
       cooldownDuration: period,
       confidence: 0.0,
-      consecutiveDetections: 0,
     );
   }
 

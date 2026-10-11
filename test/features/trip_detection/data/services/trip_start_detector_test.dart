@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:autoride/features/trip_detection/domain/models/motion_data.dart';
 import 'package:autoride/features/trip_detection/domain/models/location_data.dart';
 import 'package:autoride/features/trip_detection/data/services/trip_start_detector.dart';
+import 'package:autoride/features/trip_detection/domain/models/trip_start_state.dart';
 import 'package:autoride/core/constants/app_constants.dart';
 
 /// How these tests feed the detector, and why it changed in T050.
@@ -148,14 +149,25 @@ void main() {
       return started;
     }
 
-    /// [count] consecutive evaluations one interval apart, starting at [from].
+    /// Evaluation intervals in one full start window (T054 §3.1): the window
+    /// may not decide before it has covered this many.
+    ///
+    /// An interval is scored on the sample that opens it, i.e. on the motion
+    /// window of the second just elapsed — so the very first interval after a
+    /// reset reads an empty motion window and is negative. A full window of
+    /// cycling therefore holds `fullWindow - 1` positives.
+    final fullWindow = AppConstants.tripStartDutyWindow.inSeconds;
+
+    /// [count] consecutive evaluations one interval apart, starting at [from]
+    /// — by default exactly one full start window.
     Future<bool> evaluateRepeatedly(
       TripStartDetector detector, {
       required DateTime from,
       required MotionData Function(int i, DateTime at) sample,
       LocationData? Function(DateTime at)? location,
-      int count = AppConstants.tripStartMinConsecutiveDetections,
+      int? count,
     }) async {
+      count ??= fullWindow;
       var started = false;
       for (var i = 0; i < count; i++) {
         started =
@@ -219,9 +231,9 @@ void main() {
       final detector = container.read(tripStartDetectorProvider.notifier);
       final start = DateTime(2026, 9, 6, 23, 20);
 
-      // Three consecutive evaluation intervals. Detections are counted at most
-      // once per interval, so the seconds must be spread over real time - three
-      // back-to-back samples are ~60ms of motion, not a trip.
+      // A full window of evaluation intervals. Intervals are counted at most
+      // once per `detectionEvaluationInterval`, so the seconds must be spread
+      // over real time - back-to-back samples are ~60ms of motion, not a trip.
       await evaluateRepeatedly(
         detector,
         from: start,
@@ -234,9 +246,10 @@ void main() {
         state.confidence,
         greaterThanOrEqualTo(AppConstants.tripStartConfidenceThreshold),
       );
+      expect(state.windowIntervals, fullWindow);
       expect(
-        state.consecutiveDetections,
-        greaterThanOrEqualTo(AppConstants.tripStartMinConsecutiveDetections),
+        state.windowShare,
+        greaterThanOrEqualTo(AppConstants.tripStartDutyMinShare),
       );
       expect(detector.shouldStartTrip(), isTrue);
 
@@ -379,64 +392,63 @@ void main() {
       });
     });
 
-    test('should require consecutive detections (no single spike)', () async {
+    test('one second of cycling is not a trip (no single spike)', () async {
       final container = createContainer();
 
       final detector = container.read(tripStartDetectorProvider.notifier);
 
-      // A single second of cycling
-      await evaluate(
+      // A single second of cycling, read by the interval that follows it
+      await evaluateRepeatedly(
         detector,
-        at: DateTime(2026, 9, 6, 23, 20),
+        from: DateTime(2026, 9, 6, 23, 20),
         sample: cyclingSample,
         location: cyclingLocationAt,
+        count: 2,
       );
 
       final state = container.read(tripStartDetectorProvider);
-      expect(state.consecutiveDetections, equals(1));
+      expect(state.windowDetections, equals(1));
       expect(detector.shouldStartTrip(), isFalse);
 
       container.dispose();
     });
 
-    test(
-      'regression: a burst of samples inside one interval is NOT a trip start',
-      () async {
-        // Guards L-022: detections used to be counted per 50Hz sample, so
-        // `tripStartMinConsecutiveDetections = 3` meant ~60ms of motion and a
-        // single bump or hand movement could start a trip.
-        final container = createContainer();
-        addTearDown(container.dispose);
+    test('regression: a burst of samples inside one interval is NOT a trip start', () async {
+      // Guards L-022: detections used to be counted per 50Hz sample, so
+      // "3 detections" meant ~60ms of motion and a single bump or hand
+      // movement could start a trip. The window counts intervals the same
+      // way.
+      final container = createContainer();
+      addTearDown(container.dispose);
 
-        final detector = container.read(tripStartDetectorProvider.notifier);
+      final detector = container.read(tripStartDetectorProvider.notifier);
 
-        // 50 samples at 50Hz = 1 second's worth of data delivered inside a
-        // single evaluation interval.
-        final start = DateTime(2026, 9, 6, 23, 20);
-        for (int i = 0; i < 50; i++) {
-          final at = start.add(Duration(milliseconds: i * 20));
-          await detector.analyzeForTripStart(
-            cyclingSample(i, at),
-            cyclingLocationAt(at),
-            now: at,
-          );
-        }
-
-        final state = container.read(tripStartDetectorProvider);
-        expect(
-          state.confidence,
-          greaterThanOrEqualTo(AppConstants.tripStartConfidenceThreshold),
-          reason: 'confidence still tracks every sample',
+      // 50 samples at 50Hz = 1 second's worth of data delivered inside a
+      // single evaluation interval.
+      final start = DateTime(2026, 9, 6, 23, 20);
+      for (int i = 0; i < 50; i++) {
+        final at = start.add(Duration(milliseconds: i * 20));
+        await detector.analyzeForTripStart(
+          cyclingSample(i, at),
+          cyclingLocationAt(at),
+          now: at,
         );
-        expect(
-          state.consecutiveDetections,
-          lessThan(AppConstants.tripStartMinConsecutiveDetections),
-          reason:
-              'counters advance once per evaluation interval, not per sample',
-        );
-        expect(detector.shouldStartTrip(), isFalse);
-      },
-    );
+      }
+
+      final state = container.read(tripStartDetectorProvider);
+      expect(
+        state.confidence,
+        greaterThanOrEqualTo(AppConstants.tripStartConfidenceThreshold),
+        reason: 'confidence still tracks every sample',
+      );
+      expect(
+        state.windowIntervals,
+        1,
+        reason:
+            'the window advances once per evaluation interval, not per sample',
+      );
+      expect(detector.shouldStartTrip(), isFalse);
+    });
 
     test('should work with motion-only (no GPS)', () async {
       final container = createContainer();
@@ -452,7 +464,8 @@ void main() {
       final state = container.read(tripStartDetectorProvider);
       // Should have some confidence based on motion alone
       expect(state.confidence, greaterThan(0.0));
-      expect(state.consecutiveDetections, greaterThanOrEqualTo(3));
+      expect(state.windowDetections, fullWindow - 1);
+      expect(detector.shouldStartTrip(), isTrue);
 
       container.dispose();
     });
@@ -468,7 +481,6 @@ void main() {
       // Verify cooldown blocks trip start
       final state = container.read(tripStartDetectorProvider);
       expect(state.cooldownActive, isTrue);
-      expect(state.consecutiveDetections, equals(0));
       expect(detector.shouldStartTrip(), isFalse);
 
       container.dispose();
@@ -523,14 +535,21 @@ void main() {
 
       expect(await burst(start), isTrue);
 
-      // What the coordinator does when a `Detecting` phase times out: drop
-      // the streak, and nothing else. No cooldown is armed, so the detector
-      // is immediately available again — a real departure one second later
-      // must not have to wait out `tripStartCooldownPeriodSeconds`.
+      // What the coordinator does when a trip ends: empty the window, and
+      // nothing else. No cooldown is armed, so the detector is available again
+      // as soon as a new window has filled — it does not also have to wait
+      // out `tripStartCooldownPeriodSeconds`.
       detector.reset();
       expect(container.read(tripStartDetectorProvider).cooldownActive, isFalse);
 
-      expect(await burst(start.add(const Duration(seconds: 4))), isTrue);
+      expect(
+        await burst(
+          start.add(
+            AppConstants.tripStartDutyWindow + const Duration(seconds: 4),
+          ),
+        ),
+        isTrue,
+      );
 
       container.dispose();
     });
@@ -551,31 +570,32 @@ void main() {
             .read(tripStartDetectorProvider)
             .cooldownStartTime!;
 
-        // Sustained cycling inside the cooldown confirms nothing.
+        // Sustained cycling inside the cooldown confirms nothing...
+        const inside = AppConstants.tripStartCooldownPeriodSeconds - 1;
         expect(
           await evaluateRepeatedly(
             detector,
             from: armedAt.add(AppConstants.detectionEvaluationInterval),
             sample: cyclingSample,
+            count: inside,
           ),
           isFalse,
         );
+        // ...but it is still measured: the cooldown suppresses the decision,
+        // not the window, or the window would have to refill from scratch
+        // after it.
         expect(
-          container.read(tripStartDetectorProvider).consecutiveDetections,
-          equals(0),
+          container.read(tripStartDetectorProvider).windowDetections,
+          inside - 1,
         );
 
-        // Past the cooldown the same burst confirms again.
-        final after = armedAt.add(
-          const Duration(
-            seconds: AppConstants.tripStartCooldownPeriodSeconds + 1,
-          ),
-        );
+        // Past the cooldown, the same ride confirms once the window is full.
         expect(
           await evaluateRepeatedly(
             detector,
-            from: after,
+            from: armedAt.add(const Duration(seconds: inside + 1)),
             sample: cyclingSample,
+            count: fullWindow - inside,
           ),
           isTrue,
         );
@@ -748,78 +768,129 @@ void main() {
       );
 
       final stateBefore = container.read(tripStartDetectorProvider);
-      expect(stateBefore.consecutiveDetections, greaterThan(0));
+      expect(stateBefore.windowDetections, greaterThan(0));
 
       // Reset
       detector.reset();
 
       final stateAfter = container.read(tripStartDetectorProvider);
       expect(stateAfter.confidence, equals(0.0));
-      expect(stateAfter.consecutiveDetections, equals(0));
-      expect(stateAfter.lastDetectionTime, isNull);
+      expect(stateAfter.windowDetections, equals(0));
+      expect(stateAfter.windowIntervals, equals(0));
+      expect(stateAfter.coverageStart, isNull);
+      expect(stateAfter.lastEvaluationTime, isNull);
       expect(stateAfter.cooldownActive, isFalse);
 
       container.dispose();
     });
 
-    // L-093. The streak used to slide: `lastDetectionTime` was refreshed on
-    // every positive detection and the window comparison truncated to whole
-    // seconds, so "3 consecutive detections" meant three spikes each within
-    // 5.99 s of the previous one — up to 18 s of wall clock, with any number of
-    // near-zero samples in between. All ten false starts of the 2026-09-03
-    // kitchen run are that signature.
-    group('the streak counts consecutive intervals (L-093)', () {
-      test('Pixel trip 3 replayed: five flat seconds break the streak', () async {
-        final container = createContainer();
-        final detector = container.read(tripStartDetectorProvider.notifier);
-        final start = DateTime(2026, 9, 3, 21, 33, 22);
-
-        // `c=0.834 n=2` at 21:33:22, then 0.203 / 0 / 0 / 0.273 / 0.156 across
-        // five consecutive seconds with `n` unchanged at 2, then `c=0.803 n=3
-        // go` 5.35 s later. Two firm gestures, a meal cooked in between, and a
-        // ride in the database.
-        var started = await evaluate(
-          detector,
-          at: start,
-          sample: cyclingSample,
-        );
-        for (var s = 1; s <= 5; s++) {
+    // T054 §3.1 (L-108, L-114). The decision is the share of a window's
+    // seconds above the threshold — 23.4 % riding against 7.0 % at rest on the
+    // replayed corpus — because the length of a burst does not separate them:
+    // both have a two-second median.
+    group('a duty cycle, not a streak (T054 §3.1)', () {
+      /// [pattern] decides, second by second over [count] seconds, whether
+      /// that second is cycling or a phone at rest.
+      Future<bool> evaluatePattern(
+        TripStartDetector detector, {
+        required DateTime from,
+        required bool Function(int second) pattern,
+        int? count,
+      }) async {
+        var started = false;
+        for (var s = 0; s < (count ?? fullWindow); s++) {
           started =
               await evaluate(
                 detector,
-                at: start.add(Duration(seconds: s)),
-                sample: walkingSample,
+                at: from.add(Duration(seconds: s)),
+                sample: pattern(s) ? cyclingSample : walkingSample,
               ) ||
               started;
         }
-        started =
-            await evaluate(
-              detector,
-              at: start.add(const Duration(milliseconds: 5350)),
-              sample: cyclingSample,
-            ) ||
-            started;
+        return started;
+      }
+
+      test(
+        'a pocket: quiet, then a five-second burst, starts nothing',
+        () async {
+          // The L-108 signature: ~18 s of quiet then a burst, which used to
+          // start a trip on its third second.
+          final container = createContainer();
+          final detector = container.read(tripStartDetectorProvider.notifier);
+
+          final started = await evaluatePattern(
+            detector,
+            from: DateTime(2026, 9, 12, 22, 12, 10),
+            pattern: (s) => s >= 18 && s < 23,
+          );
+
+          expect(started, isFalse);
+
+          container.dispose();
+        },
+      );
+
+      test('a ride in two-second bursts at ~23 % duty starts', () async {
+        // What a real ride looks like to this score: short bursts, most of the
+        // seconds below the threshold. A streak longer than two seconds would
+        // never be satisfied by it.
+        final container = createContainer();
+        final detector = container.read(tripStartDetectorProvider.notifier);
+
+        final started = await evaluatePattern(
+          detector,
+          from: DateTime(2026, 9, 6, 23, 20, 50),
+          pattern: (s) => s % 13 < 3,
+        );
+
+        expect(started, isTrue);
+
+        container.dispose();
+      });
+
+      test('a share under the bound starts nothing', () async {
+        // 3 seconds in 20 is 15 %, under the 18 % bound.
+        final container = createContainer();
+        final detector = container.read(tripStartDetectorProvider.notifier);
+
+        final started = await evaluatePattern(
+          detector,
+          from: DateTime(2026, 9, 6, 23, 20, 50),
+          pattern: (s) => s % 20 < 3,
+        );
 
         expect(started, isFalse);
-        // Back to the first detection of a new streak, not the third of an old
-        // one.
         expect(
-          container.read(tripStartDetectorProvider).consecutiveDetections,
-          1,
+          container.read(tripStartDetectorProvider).windowShare,
+          lessThan(AppConstants.tripStartDutyMinShare),
         );
 
         container.dispose();
       });
 
-      test('three consecutive seconds of cycling still start a trip', () async {
+      test('the window must be full before it decides', () async {
+        // The price of the rule, and the latency the back-date has to pay
+        // back: a minute of flawless cycling is not yet enough.
         final container = createContainer();
         final detector = container.read(tripStartDetectorProvider.notifier);
+        final start = DateTime(2026, 9, 6, 23, 20, 50);
 
         expect(
           await evaluateRepeatedly(
             detector,
-            from: DateTime(2026, 9, 3, 21, 33, 22),
+            from: start,
             sample: cyclingSample,
+            count: fullWindow ~/ 2,
+          ),
+          isFalse,
+        );
+
+        expect(
+          await evaluateRepeatedly(
+            detector,
+            from: start.add(Duration(seconds: fullWindow ~/ 2)),
+            sample: cyclingSample,
+            count: fullWindow - fullWindow ~/ 2,
           ),
           isTrue,
         );
@@ -827,8 +898,68 @@ void main() {
         container.dispose();
       });
 
+      test('a gap in which nothing was evaluated empties the window', () async {
+        // `tripStartDetectionWindowSeconds` is the staleness bound: a
+        // suspended process must not come back and let the seconds before
+        // the gap vouch for the ones after it. 7.5 s also pins the
+        // truncation fix — an `.inSeconds` comparison would read 5.5 s as
+        // within a 5 s bound.
+        final container = createContainer();
+        final detector = container.read(tripStartDetectorProvider.notifier);
+        final start = DateTime(2026, 9, 3, 21, 33, 22);
+
+        await evaluateRepeatedly(
+          detector,
+          from: start,
+          sample: cyclingSample,
+          count: 100,
+        );
+
+        final after = start.add(
+          const Duration(seconds: 99, milliseconds: 7500),
+        );
+        final started = await evaluateRepeatedly(
+          detector,
+          from: after,
+          sample: cyclingSample,
+          count: 30,
+        );
+
+        expect(started, isFalse);
+        expect(container.read(tripStartDetectorProvider).windowIntervals, 30);
+
+        container.dispose();
+      });
+
+      test('evidence ages out of the window', () async {
+        // What ends a `Detecting` phase now: the last positive second leaving
+        // the window, read on the coordinator's 1 Hz tick even when no motion
+        // sample arrives.
+        final container = createContainer();
+        final detector = container.read(tripStartDetectorProvider.notifier);
+        final start = DateTime(2026, 9, 3, 21, 33, 22);
+
+        await evaluateRepeatedly(
+          detector,
+          from: start,
+          sample: cyclingSample,
+          count: 2,
+        );
+        final last = start.add(AppConstants.detectionEvaluationInterval);
+        expect(detector.windowDetectionsAt(last), 1);
+
+        expect(
+          detector.windowDetectionsAt(
+            last.add(AppConstants.tripStartDutyWindow),
+          ),
+          0,
+        );
+
+        container.dispose();
+      });
+
       test('a few calm samples inside a cycling second do not break it', () async {
-        // The streak counts intervals, not samples, and a windowed fit is meant
+        // The window counts intervals, not samples, and a windowed fit is meant
         // to be indifferent to a handful of quiet instants inside a second —
         // a freewheel, a smooth patch of tarmac. Five calm samples in
         // twenty-five leave the spread at ~3.1, still on the plateau.
@@ -846,44 +977,6 @@ void main() {
 
         container.dispose();
       });
-
-      test(
-        'a gap in which nothing was evaluated starts a new streak',
-        () async {
-          // The staleness bound is all `tripStartDetectionWindowSeconds` still
-          // does: a suspended process must not come back and finish a streak it
-          // began before the gap. 6.5 s also pins the truncation fix — the old
-          // `.inSeconds <= 5` comparison read 5.5 s as within a 5 s window.
-          final container = createContainer();
-          final detector = container.read(tripStartDetectorProvider.notifier);
-          final start = DateTime(2026, 9, 3, 21, 33, 22);
-
-          await evaluateRepeatedly(
-            detector,
-            from: start,
-            sample: cyclingSample,
-            count: 2,
-          );
-          expect(
-            container.read(tripStartDetectorProvider).consecutiveDetections,
-            2,
-          );
-
-          final started = await evaluate(
-            detector,
-            at: start.add(const Duration(milliseconds: 7500)),
-            sample: cyclingSample,
-          );
-
-          expect(started, isFalse);
-          expect(
-            container.read(tripStartDetectorProvider).consecutiveDetections,
-            1,
-          );
-
-          container.dispose();
-        },
-      );
     });
   });
 }

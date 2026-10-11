@@ -66,8 +66,8 @@ short; the table below is the whole vocabulary.
 | `gate` | Motion-gated GPS | `a` = open/sched/close; `why` = trip/motion (open), stationary (sched), inactivityTimeout/stop/session/dispose (close); `in` (s) on a sched |
 | `fix` | GPS fix | `lat` `lon` `ac` m `sp` **m/s** `al` `hd` `gt` (provider time). `sp` is always what the OS said; `dsp` **m/s** appears only where T048 derived a speed from the displacement since the previous fix and the pipeline used *that* — so `dsp` present means `sp` was 0 or invalid |
 | `hb` | Heartbeat, every 30 s | `n` ticks, `mn` motion samples the pipeline processed, `dr` samples the rate hold dropped, `fn` fixes, `dt` ms, `hz` configured sampling rate. `mn / (dt / 1000)` is what the pipeline ran at; `(mn + dr) / (dt / 1000)` is what the OS delivered, and that is the figure to compare with `hz` (L-086, T045) |
-| `start` | Trip-start evaluation | `c` confidence, `n` streak, `go`, `asd` `gav` `wn`, `mag` `gyr` `spk`, `vt`. **`asd`/`gav`/`wn` are what `c`'s motion half is computed from** since schema 3 (T050): the standard deviation of \|a\| and the mean \|gyro\| over the last `k.evalMs`, and the samples the window held. `mag`/`gyr` are the *instantaneous* sample the line was emitted on and no longer feed any decision. `vt` false means the fix reported no speed at all, or was too coarse (`k.spAcc`) or too old (`k.spAge`) for its speed to be believed, so `c` is motion-only and `spk` did **not** enter it (T048, T050); absent when there was no fix at all |
-| `dto` | Detection window timed out | `el` s, `n` streak at timeout |
+| `start` | Trip-start evaluation | `c` confidence, `n` positive seconds in the start window (a consecutive streak before `sv` 4), `nw` seconds the window holds (`sv` 4+), `go`, `asd` `gav` `wn`, `mag` `gyr` `spk`, `vt`. **`asd`/`gav`/`wn` are what `c`'s motion half is computed from** since schema 3 (T050): the standard deviation of \|a\| and the mean \|gyro\| over the last `k.evalMs`, and the samples the window held. `mag`/`gyr` are the *instantaneous* sample the line was emitted on and no longer feed any decision. `vt` false means the fix reported no speed at all, or was too coarse (`k.spAcc`) or too old (`k.spAge`) for its speed to be believed, so `c` is motion-only and `spk` did **not** enter it (T048, T050); absent when there was no fix at all |
+| `dto` | `Detecting` ended without a start | `el` s spent in `Detecting`, `n`. From `sv` 4 it fires when the window's last positive second ages out (`n` 0, `el` measured); before, it was a fixed `k.detTo` (30 s) and `n` the streak dropped |
 | `cool` | Start cooldown | `a` = arm (`d` s, `why` = falseStart) / expire (`d` s). Armed only by a recording discarded for being **too short** — a long one discarded for want of route points is a GPS failure, not a false start (L-081) |
 | `win` | Stationary window (**verbose**) | `n` `sd` m/s² `gy` rad/s `sta` `src` = gps/gps+vib/sensors `spk` km/h. Throttled to 1 Hz; every change of `sta` or `src` is kept (L-085) |
 | `sens` | 1 Hz sensor aggregate (**verbose**) | `am` `gm` `ms` (MotionState) |
@@ -158,6 +158,18 @@ verdict.** Check `hdr.sv` first:
 
 So on a `sv` 3 file a refusal to start is read off `asd` and `gav`: `asd` under
 `k.asdMin` is a phone that is not being shaken by a road, whatever `mag` says.
+
+**What `go` requires depends on the schema too.**
+
+* **`sv` ≤ 3** — `n` consecutive seconds with `c ≥ k.conf`, `n` reaching `k.nDet` (3). Rest
+  supplies three seconds (L-108).
+* **`sv` ≥ 4** (T054 §3.1) — a **duty cycle**: once the window spans `k.dutyS` seconds of
+  continuous evaluation, `n / nw ≥ k.dutyMin`. `n` is not a streak and climbs and falls with the
+  seconds entering and leaving the window; an `n` of 20 is not "a start long overdue", it is 20 of
+  `nw`. A gap over `k.detWin` seconds between evaluations empties the window, and so does every
+  trip ending — so no automatic start can come less than `k.dutyS` after one. Expect a real start
+  ~2 min after the old rule would have fired, paid back by `bdate` when the rider was already
+  rolling.
 
 **The speed axis is closed (T053, L-106).** `k.vehKmh` (35) and `k.vehShare` (0.25) still produce
 `vfx`/`vmf` and the flag, and they are **not to be recalibrated** — three logs and three Karoo FIT

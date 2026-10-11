@@ -1,3 +1,5 @@
+import 'dart:collection';
+
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../../domain/models/location_data.dart';
@@ -9,6 +11,14 @@ import '../../../../core/audit/audit_log.dart';
 import '../../../../core/constants/app_constants.dart';
 
 part 'trip_start_detector.g.dart';
+
+/// One counted evaluation interval of the start window.
+class _Interval {
+  const _Interval(this.at, {required this.positive});
+
+  final DateTime at;
+  final bool positive;
+}
 
 /// Service that detects when a cycling trip should start
 ///
@@ -34,6 +44,11 @@ class TripStartDetector extends _$TripStartDetector {
   /// readable: the two numbers below are the whole of the motion score now.
   double get accelerationStdDev => _motionWindow.accelerationStdDev;
 
+  /// The evaluation intervals of the last `tripStartDutyWindow`, oldest first
+  /// (T054 §3.1). Scratch state like [_motionWindow]; the counts it adds up to
+  /// are published in [TripStartState].
+  final Queue<_Interval> _intervals = Queue<_Interval>();
+
   /// Mean gyroscope magnitude over the current window (rad/s) — the audit's
   /// `gav`.
   double get averageRotation => _motionWindow.averageRotation;
@@ -51,17 +66,16 @@ class TripStartDetector extends _$TripStartDetector {
   ///
   /// Updates internal state and returns whether trip start should be triggered.
   ///
-  /// This is called for every motion sample (50 Hz), but a *detection* is
-  /// counted at most once per [AppConstants.detectionEvaluationInterval], so
-  /// `tripStartMinConsecutiveDetections` means seconds of sustained cycling
-  /// rather than a few tens of milliseconds. Samples arriving inside the
-  /// current interval still refresh the confidence score.
+  /// This is called for every motion sample (50 Hz), but the start window
+  /// counts at most one interval per [AppConstants.detectionEvaluationInterval]
+  /// — scored on the confidence of the sample that opens it — so its share is
+  /// a share of *seconds*, not of samples. Samples inside the current interval
+  /// still refresh the confidence score.
   ///
-  /// "Sustained" is now literal (L-093): the streak requires a positive
-  /// detection in *every* interval, and one interval passing without one
-  /// resets it to zero. `tripStartDetectionWindowSeconds` no longer bounds the
-  /// streak — it only guards against resuming a stale one across a gap in
-  /// which nothing was evaluated at all.
+  /// The decision is a duty cycle (T054 §3.1): see [shouldStartTrip]. It
+  /// replaces the consecutive streak of L-093, which rest could satisfy in
+  /// three seconds (L-108) and which a rider, whose bursts above the threshold
+  /// last two seconds at the median, could not satisfy for longer (L-114).
   ///
   /// [now] exists so tests can drive the clock deterministically; production
   /// callers omit it.
@@ -84,6 +98,46 @@ class TripStartDetector extends _$TripStartDetector {
     // must find a full window rather than spend another interval filling one.
     _motionWindow.add(motion, now);
 
+    // Calculate confidence score
+    final confidence = _calculateStartConfidence(location, now);
+
+    // Count one interval per evaluation interval. Recorded during a cooldown
+    // too: the cooldown suppresses a *decision*, and a window that stopped
+    // measuring would have to refill for a whole `tripStartDutyWindow` after
+    // it, which is a far longer blindness than the cooldown itself.
+    final last = state.lastEvaluationTime;
+    if (last == null ||
+        now.difference(last) >= AppConstants.detectionEvaluationInterval) {
+      // A gap with no evaluation at all — the process was suspended, the
+      // sensor stream stalled — leaves a window that describes a moment that
+      // is over. Start a new one rather than continuing it.
+      final stale =
+          last != null &&
+          now.difference(last) >
+              const Duration(
+                seconds: AppConstants.tripStartDetectionWindowSeconds,
+              );
+      if (stale) _intervals.clear();
+      _intervals.add(
+        _Interval(
+          now,
+          positive: confidence >= AppConstants.tripStartConfidenceThreshold,
+        ),
+      );
+      _prune(now);
+      state = state.copyWith(
+        confidence: confidence,
+        windowDetections: _intervals.where((i) => i.positive).length,
+        windowIntervals: _intervals.length,
+        coverageStart: stale || state.coverageStart == null
+            ? now
+            : state.coverageStart,
+        lastEvaluationTime: now,
+      );
+    } else {
+      state = state.copyWith(confidence: confidence);
+    }
+
     // Check if cooldown is still active
     if (state.cooldownActive) {
       if (state.isCooldownExpired(
@@ -105,71 +159,8 @@ class TripStartDetector extends _$TripStartDetector {
         );
         state = state.deactivateCooldown();
       } else {
-        // Still in cooldown, don't detect
+        // Still in cooldown, don't decide
         return false;
-      }
-    }
-
-    // Calculate confidence score
-    final confidence = _calculateStartConfidence(location, now);
-
-    // A new detection is only counted once per evaluation interval, and the
-    // same boundary decides when the streak has missed one.
-    final lastDetection = state.lastDetectionTime;
-    final intervalElapsed =
-        lastDetection == null ||
-        now.difference(lastDetection) >=
-            AppConstants.detectionEvaluationInterval;
-
-    // Update state based on confidence and timing
-    if (confidence >= AppConstants.tripStartConfidenceThreshold) {
-      // Positive detection
-      if (!intervalElapsed) {
-        // Same evaluation interval: refresh confidence only. Do NOT advance
-        // the streak or the detection timestamp, otherwise 50 Hz sampling
-        // would satisfy the consecutive-detection threshold in ~60 ms.
-        state = state.copyWith(confidence: confidence);
-      } else {
-        // A gap with no evaluation at all — the process was suspended, the
-        // sensor stream stalled — leaves a streak that describes a moment that
-        // is over. Start a new one rather than continuing it.
-        final stale = !state.isWithinDetectionWindow(
-          now,
-          const Duration(seconds: AppConstants.tripStartDetectionWindowSeconds),
-        );
-        state = state.copyWith(
-          confidence: confidence,
-          consecutiveDetections: stale ? 1 : state.consecutiveDetections + 1,
-          lastDetectionTime: now,
-        );
-      }
-    } else {
-      // Negative detection. The streak means *consecutive* evaluation
-      // intervals, so it dies as soon as one of them has gone by without a
-      // positive detection in it — which is precisely what `intervalElapsed`
-      // says here, the last positive being more than one interval old (L-093).
-      //
-      // The previous rule kept the streak alive for as long as a positive
-      // landed within `tripStartDetectionWindowSeconds` of the previous one:
-      // Pixel trip 3 of the 2026-09-03 run held `n=2` through five consecutive
-      // sub-threshold seconds and started a ride on the sixth. Three firm
-      // gestures inside twelve seconds of cooking were enough.
-      //
-      // Sub-threshold samples *inside* the current interval only refresh the
-      // confidence. That mattered more before T050, when the fit was a single
-      // sample and dipped below the threshold constantly; a windowed score
-      // barely moves within one interval, which is the point of it.
-      if (intervalElapsed) {
-        // `confidence` is carried rather than zeroed, unlike `reset()`: the
-        // audit's `c` is the reason the reset happened and reading a flat 0
-        // cannot distinguish a near miss from no motion at all.
-        state = state.copyWith(
-          confidence: confidence,
-          consecutiveDetections: 0,
-          lastDetectionTime: null,
-        );
-      } else {
-        state = state.copyWith(confidence: confidence);
       }
     }
 
@@ -177,12 +168,55 @@ class TripStartDetector extends _$TripStartDetector {
     return shouldStartTrip();
   }
 
-  /// Check if conditions are met to start trip
+  /// Drop the intervals that have left the window.
+  void _prune(DateTime now) {
+    while (_intervals.isNotEmpty &&
+        now.difference(_intervals.first.at) >=
+            AppConstants.tripStartDutyWindow) {
+      _intervals.removeFirst();
+    }
+  }
+
+  /// Positive intervals still inside the window at [now], after dropping the
+  /// ones that have aged out.
+  ///
+  /// What `Detecting` is made of since T054: the phase lasts for as long as
+  /// the window holds evidence, and ends when the last positive second leaves
+  /// it. Asked by the coordinator's 1 Hz tick, so a phone that went still —
+  /// and therefore stopped producing positives — is noticed even though no
+  /// new interval would be positive.
+  int windowDetectionsAt(DateTime now) {
+    _prune(now);
+    final positives = _intervals.where((i) => i.positive).length;
+    if (positives != state.windowDetections ||
+        _intervals.length != state.windowIntervals) {
+      state = state.copyWith(
+        windowDetections: positives,
+        windowIntervals: _intervals.length,
+      );
+    }
+    return positives;
+  }
+
+  /// Check if conditions are met to start trip: the window is full, and at
+  /// least `tripStartDutyMinShare` of its intervals scored above the
+  /// threshold.
+  ///
+  /// Not gated on the current confidence: the share is the evidence, and the
+  /// replay that priced it (`scripts/t054-replay/`) fires on the share alone.
+  ///
+  /// Fullness is measured between evaluated intervals, never against the wall
+  /// clock: two seconds evaluated an hour ago are two seconds of evidence, not
+  /// a window that has had an hour to fill.
   bool shouldStartTrip() {
-    return state.confidence >= AppConstants.tripStartConfidenceThreshold &&
-        state.consecutiveDetections >=
-            AppConstants.tripStartMinConsecutiveDetections &&
-        !state.cooldownActive;
+    if (state.cooldownActive || state.windowIntervals == 0) return false;
+    if (!state.isWindowFull(
+      AppConstants.tripStartDutyWindow,
+      AppConstants.detectionEvaluationInterval,
+    )) {
+      return false;
+    }
+    return state.windowShare >= AppConstants.tripStartDutyMinShare;
   }
 
   /// Activate cooldown period (e.g., after false start)
@@ -202,6 +236,7 @@ class TripStartDetector extends _$TripStartDetector {
   void reset() {
     state = TripStartState.initial();
     _motionWindow.clear();
+    _intervals.clear();
   }
 
   /// Calculate confidence score for trip start (0.0-1.0)
