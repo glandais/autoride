@@ -1,8 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import 'package:autoride/core/audit/audit_level.dart';
+import 'package:autoride/core/permissions/exceptions/permission_exceptions.dart';
+import 'package:autoride/core/permissions/models/permission_status.dart';
+import 'package:autoride/core/permissions/services/permission_handler_service.dart';
 import 'package:autoride/core/theme/app_colors.dart';
 import 'package:autoride/core/utils/error_handler.dart';
 import 'package:autoride/features/diagnostics/data/services/audit_export_service.dart';
@@ -10,6 +15,7 @@ import 'package:autoride/features/diagnostics/data/services/audit_log_controller
 import 'package:autoride/features/diagnostics/domain/models/audit_log_stats.dart';
 import 'package:autoride/features/diagnostics/presentation/widgets/audit_privacy_dialog.dart';
 import 'package:autoride/features/settings/data/services/settings_service.dart';
+import 'package:autoride/features/trip_detection/data/services/activity_recognition_session.dart';
 import 'package:autoride/features/settings/domain/models/user_settings.dart';
 import 'package:autoride/features/settings/presentation/widgets/setting_radio_group.dart';
 import 'package:autoride/features/settings/presentation/widgets/setting_section.dart';
@@ -28,6 +34,13 @@ Future<AuditLogStats> auditLogStats(Ref ref) {
   ref.watch(auditLogControllerProvider);
   return ref.read(auditLogControllerProvider.notifier).stats();
 }
+
+/// Whether the OS activity classifier may be read (T055): Motion & Fitness on
+/// iOS, Physical activity on Android.
+@riverpod
+Future<AppPermissionStatus> activityRecognitionPermission(Ref ref) => ref
+    .read(permissionHandlerServiceProvider.notifier)
+    .checkPermission(AppPermission.activityRecognition);
 
 /// Diagnostic log settings.
 ///
@@ -104,6 +117,9 @@ class _AuditLogSectionState extends ConsumerState<AuditLogSection> {
                   .updatePartial((s) => s.copyWith(auditLogLevel: value));
             },
           ),
+
+          const Divider(height: 1),
+          const _ActivityRecognitionTile(),
 
           const Divider(height: 1),
           _StatsTile(),
@@ -250,5 +266,86 @@ class _StatsTile extends ConsumerWidget {
   static String _formatDate(DateTime at) {
     String two(int value) => value.toString().padLeft(2, '0');
     return '${two(at.day)}/${two(at.month)} ${two(at.hour)}:${two(at.minute)}';
+  }
+}
+
+/// The one permission the log asks for on its own account (T055).
+///
+/// The activity the OS recognises is journalled for as long as detection runs,
+/// but only once it is granted, and the session never prompts: it can start
+/// from a background relaunch. This row is where the prompt lives — in the
+/// foreground, next to the log it feeds. Detection does not depend on it.
+class _ActivityRecognitionTile extends ConsumerStatefulWidget {
+  const _ActivityRecognitionTile();
+
+  @override
+  ConsumerState<_ActivityRecognitionTile> createState() =>
+      _ActivityRecognitionTileState();
+}
+
+class _ActivityRecognitionTileState
+    extends ConsumerState<_ActivityRecognitionTile>
+    with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  /// Back from the Settings app, where the grant may have changed.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _refresh();
+  }
+
+  void _refresh() {
+    ref.invalidate(activityRecognitionPermissionProvider);
+    unawaited(
+      ref.read(activityRecognitionSessionProvider.notifier).permissionChanged(),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final status = ref.watch(activityRecognitionPermissionProvider);
+    final granted = status.value?.isGranted ?? false;
+
+    return SettingTile(
+      title: 'Recognised activity',
+      subtitle: status.when(
+        data: (s) => s.isGranted
+            ? 'Recorded: what the phone recognises — cycling, driving, '
+                  'walking. Read by nothing else.'
+            : 'Not allowed. Tap to let the log record what the phone '
+                  'recognises — cycling, driving, walking.',
+        loading: () => 'Reading…',
+        error: (_, _) => 'Unavailable on this device',
+      ),
+      trailing: Icon(
+        granted ? Icons.check_circle_outline : Icons.chevron_right,
+        color: granted ? AppColors.success : null,
+      ),
+      onTap: granted || status.isLoading ? null : _request,
+    );
+  }
+
+  Future<void> _request() async {
+    final service = ref.read(permissionHandlerServiceProvider.notifier);
+    try {
+      await service.requestPermission(AppPermission.activityRecognition);
+    } on PermissionPermanentlyDeniedException {
+      // Already refused once: only the Settings app can change it now, and
+      // the resume observer above re-reads it on the way back.
+      await service.openAppSettings();
+    } on PermissionRequestInProgressException {
+      return;
+    }
+    if (mounted) _refresh();
   }
 }

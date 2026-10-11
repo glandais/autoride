@@ -68,7 +68,7 @@ None of them is a store-compliance matter; no reviewer will catch them, every us
 | R-32 | ✅ | README no longer advertises an unimplemented "Export data"; `data-safety.md` §10 re-verified (5 of 6 fixed). | `363384e` (2026-09-21), T037 §5.6 |
 | R-33 | ☐ | **iOS backup exclusion**: `autoride.db` goes to iCloud backup while Android has `allowBackup="false"`. Set `NSURLIsExcludedFromBackupKey` (native code), then update policy §7.3 and close `data-safety.md` §10 item 5. | T037 §5.7, `data-safety.md` §7.5 |
 | R-34 | ☐ | **Accessibility**: not one `Semantics` / `semanticLabel` in `lib/`. At least label the icon-only actions and the map; run a VoiceOver and a TalkBack pass. | `design:accessibility-review` skill |
-| R-35 | ☐ | **Dead `activityRecognition` permission model** in `lib/core/permissions/` — no caller. Delete it, or keep it knowingly for the classifier. | L-028 |
+| R-35 | ✅ | **Dead `activityRecognition` permission model** in `lib/core/permissions/` — no caller. Delete it, or keep it knowingly for the classifier. | Kept, and given a caller by T055 (2026-10-11): Settings → Diagnostic log asks for it, `ACTIVITY_RECOGNITION` is declared, iOS maps it to Motion & Fitness. The Play listing still does not mention it, which is right — it is optional and feeds only the log. | L-028, T055 |
 | R-36 | ☐ | Widget tests for settings, history, detail, `InitialRouteScreen`; an E2E flow. | T030, T031 |
 | R-37 | ☐ | CI: `flutter pub get --enforce-lockfile`, coverage collection. | L-050 |
 | R-38 | ☐ | Release lanes: un-skip the changelog upload; remember `release_status` after the first production upload. | L-032, L-035 |

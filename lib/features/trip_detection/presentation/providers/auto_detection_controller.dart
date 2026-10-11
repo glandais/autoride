@@ -14,6 +14,7 @@ import '../../../../core/utils/logger.dart';
 import '../../../diagnostics/data/services/capture_controller.dart';
 import '../../../onboarding/data/services/onboarding_service.dart';
 import '../../../settings/data/services/settings_service.dart';
+import '../../data/services/activity_recognition_session.dart';
 import '../../data/services/location_permission_service.dart';
 import '../../data/services/ios_background_session.dart';
 import '../../data/services/trip_detection_coordinator.dart';
@@ -277,6 +278,12 @@ class AutoDetectionController extends _$AutoDetectionController {
     // No-op off iOS.
     final iosSession = ref.read(iosBackgroundSessionProvider.notifier);
     unawaited(shouldListen ? iosSession.arm() : iosSession.disarm());
+
+    // The activity the OS recognises, journalled for as long as detection is
+    // enabled (T055). Read by nothing; it is the evidence the mode of travel
+    // is to be decided on.
+    final activity = ref.read(activityRecognitionSessionProvider.notifier);
+    unawaited(shouldListen ? activity.start() : activity.stop());
   }
 
   /// Start a trip right now, whatever the "Automatic detection" setting says.

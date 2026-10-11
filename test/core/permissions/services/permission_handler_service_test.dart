@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:geolocator/geolocator.dart'
@@ -78,6 +79,18 @@ void main() {
           Permission.activityRecognition,
         ]),
       );
+    });
+
+    test('on iOS, activity recognition is Motion & Fitness, which '
+        'permission_handler calls sensors (T055)', () async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+
+      await serviceOn().checkPermission(AppPermission.activityRecognition);
+
+      // Android's `sensors` is BODY_SENSORS — heart rate — and must never be
+      // what Android asks for; iOS has no `activityRecognition` at all.
+      expect(handler.checked, equals([Permission.sensors]));
     });
 
     test('translates a granted platform status', () async {

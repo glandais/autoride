@@ -6,7 +6,7 @@ description: What AutoRide stores on your device, what leaves it, and how to del
 # AutoRide — Privacy Policy
 
 **Effective date:** 2026-07-25
-**Last updated:** 2026-09-13
+**Last updated:** 2026-10-11
 **Applies to:** AutoRide for iOS and Android (`io.github.glandais.autoride`)
 **Contact:** gabriel.landais@gmail.com
 
@@ -94,6 +94,13 @@ readings, which arrive fifty times a second, are not recorded at any setting of 
 The one case where the raw readings *are* recorded is a training-data session that you start
 yourself — see §2.6.
 
+Separately, if you allow it, AutoRide reads the **activity your phone itself recognises** —
+cycling, driving, walking, running or still — from iOS (Motion & Fitness) or Android (Physical
+activity). Your phone works this out on its own; AutoRide only receives the verdict, with a
+confidence level and the time it began. It is used for nothing yet: it is written to the
+diagnostic log (§2.5) when that log is on, and discarded otherwise. Declining it changes nothing
+in how trips are detected.
+
 ### 2.5 Diagnostic log (off by default)
 
 **Settings → Diagnostic log** records what trip detection is doing, so a problem you report can be
@@ -103,7 +110,8 @@ When it is on, the log holds: trip state changes, the detector's decisions and s
 including latitude, longitude, accuracy, speed, altitude and heading**, battery level and power
 mode, permission status, which notification was shown, cancelled or tapped (never the text it
 displayed), app foreground/background changes, and error messages. At the "Verbose" setting it
-also holds the sensor summaries described above and the GPS fixes the recorder rejected.
+also holds the sensor summaries described above and the GPS fixes the recorder rejected. If you
+allowed it (§2.4), it also holds each change of the activity your phone recognises.
 
 It does not hold your name, your email address, any account, or any advertising or device
 identifier. It does hold your device model, OS version and app version.
@@ -199,7 +207,7 @@ All three are entirely your decision, one file at a time. Share them only with s
 |---|---|---|
 | **Location — while using the app** | Record the GPS route, distance and speed of a trip | No; without it the app cannot record trips |
 | **Location — always / background** | Detect that a ride has started and record it when the app is closed or in the background | **Yes.** Decline it and AutoRide still works; you start and stop recording manually |
-| **Motion and fitness (iOS) / body sensors** | Read accelerometer and gyroscope to recognise pedalling, so GPS stays off when you are not riding | No; declining it forces continuous GPS or manual recording |
+| **Motion & Fitness (iOS) / Physical activity (Android)** | Record the activity your phone recognises — cycling, driving, walking — in the diagnostic log (§2.4). Asked from Settings → Diagnostic log, never on its own. Reading the accelerometer and gyroscope needs no permission on either platform | **Yes.** Declining it changes nothing in detection |
 | **Notifications** | Show the ongoing-trip notification, which Android requires for background location tracking, and trip start/stop alerts | Partly; Android needs a visible notification while tracking in the background |
 
 Background location is the permission worth thinking about, because it means the app can receive
@@ -287,6 +295,12 @@ The only network connection the app makes (§3.1) uses HTTPS.
 Material changes — in particular, any change that would cause data to leave your device — will
 be reflected here with a new "Last updated" date before the feature ships, and the app's store
 listings and privacy declarations will be updated in the same release.
+
+**2026-10-11** — no new data leaves the device. If you allow it, AutoRide now reads the activity
+your phone recognises (cycling, driving, walking…) and writes it to the diagnostic log when that
+log is on (§2.4, §2.5). It is asked for from Settings → Diagnostic log, it is optional, and
+declining it changes nothing. §4 was corrected: reading the motion sensors themselves never
+required a permission.
 
 **2026-09-13** — no new data and nothing new leaving the device. The diagnostic log's size cap
 rose from about 20 MB to about 100 MB, so a full log now reaches back days of riding rather than

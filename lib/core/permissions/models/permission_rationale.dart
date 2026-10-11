@@ -72,12 +72,16 @@ class PermissionRationale {
   static const activityRecognition = PermissionRationale(
     permission: AppPermission.activityRecognition,
     title: 'Activity Recognition',
-    description: 'Improve trip detection accuracy with activity recognition.',
+    // T055: recorded in the diagnostic log and read by nothing else yet, so
+    // the rationale promises evidence, not better detection.
+    description:
+        'Record the activity your phone recognises — cycling, driving, '
+        'walking — in the diagnostic log.',
     icon: Icons.directions_bike,
     benefits: [
-      'Better cycling detection accuracy',
-      'Distinguish cycling from other activities',
-      'Reduce false trip detections',
+      'Shows whether a recorded trip was really a bike ride',
+      'Evidence for telling cycling from driving and walking',
+      'Stays on your device',
     ],
     isOptional: true,
   );

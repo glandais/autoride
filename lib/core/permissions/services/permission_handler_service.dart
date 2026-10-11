@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:permission_handler/permission_handler.dart' as ph;
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:geolocator/geolocator.dart'
@@ -33,7 +34,14 @@ class PermissionHandlerService extends _$PermissionHandlerService {
       AppPermission.locationWhenInUse => ph.Permission.locationWhenInUse,
       AppPermission.locationAlways => ph.Permission.locationAlways,
       AppPermission.notification => ph.Permission.notification,
-      AppPermission.activityRecognition => ph.Permission.activityRecognition,
+      // The same need, two names: on iOS the activity CoreMotion recognises
+      // sits behind Motion & Fitness, which permission_handler calls `sensors`
+      // (and builds only with PERMISSION_SENSORS=1, set in the Podfile). Its
+      // Android `sensors` is BODY_SENSORS — heart rate — which is not it.
+      AppPermission.activityRecognition =>
+        defaultTargetPlatform == TargetPlatform.iOS
+            ? ph.Permission.sensors
+            : ph.Permission.activityRecognition,
     };
   }
 

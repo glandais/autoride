@@ -124,6 +124,15 @@ class AppConstants {
   static const int sensorSamplingRateLow = 25;
   static const int sensorSamplingRateCritical = 20;
 
+  // OS activity recognition (T055)
+  //
+  // The interval Android's ActivityRecognitionClient is asked to report at.
+  // A request, like a sampling period: Play services delivers faster when
+  // another app asks for faster, and stops reporting altogether while the
+  // device is still. iOS takes no interval — CoreMotion reports on every
+  // change of activity. Journalled only; nothing decides on it yet.
+  static const Duration activityRecognitionInterval = Duration(seconds: 10);
+
   // Cycling Detection Thresholds (T008)
 
   // Acceleration thresholds (m/s²)

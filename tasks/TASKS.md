@@ -522,6 +522,24 @@ recordings**, 3 h 44 of them, and the one 41 km ride it measured to within 66 m 
   - *Dependencies*: T050 (the windowed fit this extends), T053 (the build that produced the log)
   - *Acceptance*: ~~replay first~~ **done** — the bar to beat is **21/21 journeys at 15.6 false starts a day**, re-measurable on any corpus with `scripts/t054-replay/`. The 2026-09-03 kitchen logs are `sv:2` and cannot be replayed at all. Then, on a device: an idle evening (T049 §5 run 1, never yet passed on any build — and it will **not** pass now, ~40 % is the ceiling, so the criterion has to become a rate, not zero) and a Karoo-paired ride starting within 60 s **with `bdate` present**.
 
+
+---
+
+## Phase 11.10: The phone already knows (T055)
+
+2026-10-03 → 10-09, six days on **1.0.0+19**, cross-referenced against CoreMotion's own activity
+stream recorded by a second app on the same phone. 97 trips started, 21 kept — and of the 21,
+**two were town drives and seven were walks**. CoreMotion said `cycling` on all twelve real rides,
+`automotive` on both drives and `walking` on the walks: the separation T053 (speed) and T054 §6
+(motion fit) cannot make. T054's replay, re-run on the same log, starts every walk and every
+drive under every rule. The T046 `lr:"background"` relaunch (L-115) was seen for the first time.
+
+- ⏳ **T055**: Journal the OS Activity Classifier
+  - *Status*: **step 1 written 2026-10-11** — CoreMotion (iOS) and Play services Activity Recognition (Android) journalled as `act`, read by nothing. Device run outstanding on both platforms.
+  - *Detail*: `tasks/T055-os-activity-evidence.md`
+  - *Scope*: (1) journal only, for as long as automatic detection runs; the permission is asked from Settings → Diagnostic log and never by the session. (2) a device run per platform. (3) decide, on logs that carry `act`, whether the classifier may badge or confirm a recording — under T053's rule that evidence labels and never silently discards.
+  - *Dependencies*: T043 (the log), T046 (the iOS process it runs in)
+  - *Release*: `ACTIVITY_RECOGNITION` now declared and requested (closes the substance of R-11 and gives R-35's model a caller); Motion & Fitness prompt on iOS; privacy policy updated 2026-10-11.
 ---
 
 ## Phase 12: Data Portability
@@ -559,9 +577,9 @@ recordings**, 3 h 44 of them, and the one 41 km ride it measured to within 66 m 
 
 ## Progress Summary
 
-**Total Tasks**: 52
+**Total Tasks**: 53
 **Completed**: 26
-**In Progress**: 18 (T006, T013, T030, T034, T037, T038, T039, T041, T042, T043, T046, T048, T049, T050, T051, T052, T053, T054)
+**In Progress**: 19 (T006, T013, T030, T034, T037, T038, T039, T041, T042, T043, T046, T048, T049, T050, T051, T052, T053, T054, T055)
 **Pending**: 12
 **Blocked**: 0
 

@@ -114,5 +114,8 @@ abstract final class AuditSchema {
     'batCrit': AppConstants.criticalBatteryThreshold,
     'batLow': AppConstants.lowBatteryThreshold,
     'batMed': AppConstants.mediumBatteryThreshold,
+    // The interval Android's activity recognition is asked for (T055), in
+    // ms; iOS reports on change and takes none.
+    'actMs': AppConstants.activityRecognitionInterval.inMilliseconds,
   };
 }

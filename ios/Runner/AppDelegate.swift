@@ -29,5 +29,7 @@ import UIKit
     // strictly after `bootstrap` above. That ordering is the point: staying
     // alive must not depend on Dart being up.
     AutoRideBackgroundSession.shared.register(with: engineBridge.applicationRegistrar.messenger())
+    // T055: the activity CoreMotion recognises, journalled and nothing more.
+    AutoRideActivityRecognition.shared.register(with: engineBridge.applicationRegistrar.messenger())
   }
 }

@@ -248,6 +248,29 @@ abstract final class AuditEvent {
   /// Android emits none of these.
   static const String iosBackground = 'ios';
 
+  /// The activity the OS recognises (T055): CoreMotion on iOS, Play services'
+  /// activity recognition on Android. `a` names what happened:
+  ///
+  ///   * `upd` — a new activity. `k` the primary kind, one of bike|car|run|
+  ///     walk|foot|still|tilt|unknown (`foot` and `tilt` are Android's only),
+  ///     `o` the other kinds raised with it, `cf` = low|medium|high, `pc` the
+  ///     percentage Android banded `cf` from (absent on iOS), and `at` the
+  ///     instant the OS says the activity began, in ms — on iOS that can be
+  ///     well before the line's own `t`. Only a change of `k`, `o` or `cf` is
+  ///     written: Android repeats an unchanged verdict every interval.
+  ///   * `start` with `st` — the subscription was asked for; `st` = granted
+  ///     means updates are running, anything else (notDetermined, denied,
+  ///     restricted, unavailable) says why none will come.
+  ///   * `stop` — the subscription ended with the detection session.
+  ///   * `fail` with `ex` — the platform call failed.
+  ///
+  /// **Evidence, never a decision.** No detector reads these lines. The
+  /// classifier is iOS's or Google's, not AutoRide's, and whether it may
+  /// confirm, badge or refuse a recording is to be decided on logs that carry
+  /// it — under T053's rule that evidence may label but never silently
+  /// discard.
+  static const String activity = 'act';
+
   // --- Diagnostics -------------------------------------------------------
   /// Bridged from [Logger]. `lv` = d|i|w|e, `tag`, `m`.
   static const String log = 'log';
@@ -291,6 +314,7 @@ abstract final class AuditEvent {
     foregroundService,
     notification,
     iosBackground,
+    activity,
     log,
     error,
   ];
