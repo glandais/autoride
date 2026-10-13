@@ -94,5 +94,5 @@ dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
     // ActivityRecognitionClient (T055). geolocator_android already ships it, but as an
     // `implementation` dependency of its own, which does not reach this module's classpath.
-    implementation("com.google.android.gms:play-services-location:21.3.0")
+    implementation("com.google.android.gms:play-services-location:21.4.0")
 }
