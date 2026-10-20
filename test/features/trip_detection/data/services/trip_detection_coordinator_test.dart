@@ -1388,11 +1388,13 @@ void main() {
       expect(_stateName(container.read(tripStateMachineProvider)), 'idle');
     });
 
-    test('a measured cycling speed disarms it for good', () async {
+    test('measured cycling speeds disarm it for good', () async {
       await startTrip();
 
-      // 5 m/s = 18 km/h, over `cyclingSpeedMin`. One honest fix is proof
-      // enough that a bicycle is involved.
+      // 5 m/s = 18 km/h, over `cyclingSpeedMin`, on two fixes 22 m apart —
+      // well short of `minTripNetDisplacementMeters`, so it is the speed term
+      // that answers.
+      await pushFix(0);
       await pushFix(1);
 
       // Well past the deadline, and short of `gpsLossStopTimeout` — which owns
@@ -1405,6 +1407,23 @@ void main() {
       expect(recorder.stopCalls, 0);
       expect(_stateName(container.read(tripStateMachineProvider)), 'active');
     });
+
+    test(
+      'a single measured cycling speed does not disarm it (L-117)',
+      () async {
+        await startTrip();
+
+        // 2026-10-14, trip 676: one fix at 11.8 km/h (`sp` 3.27, `ac` 5.7) in
+        // the fifth minute of a phantom, 9 m from where it began. That one fix
+        // used to stand the deadline aside, and the recording ran 41 min.
+        await pushFix(0, speed: 3.27);
+
+        watchdog.advance(AppConstants.noProgressStopTimeout);
+        await tick();
+
+        expect(recorder.stopCalls, 1);
+      },
+    );
 
     test('walking pace does not disarm it', () async {
       await startTrip();
@@ -1548,11 +1567,14 @@ void main() {
     test('a fresh fix restarts the countdown', () async {
       await startTrip();
 
-      // Nearly out of time, then a fix arrives.
+      // Nearly out of time, then fixes arrive. Two of them, at cycling speed:
+      // that is what stands the no-progress deadline aside (L-117), and this
+      // test is about the other rule.
       watchdog.advance(
         AppConstants.gpsLossStopTimeout - const Duration(seconds: 1),
       );
       await pushFix(1);
+      await pushFix(2);
       await tick();
       expect(recorder.stopCalls, 0);
 

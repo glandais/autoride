@@ -117,15 +117,19 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
   /// [_gpsWatchdogReference].
   DateTime? _noProgressReference;
 
-  /// Whether any fix of the current recording has reported a **measured**
+  /// How many fixes of the current recording have reported a **measured**
   /// cycling speed.
   ///
   /// Measured, not derived: a `dsp` inherits the accuracy of the fixes it was
   /// computed from, and on a coarse pair that is how a walk reads 20 km/h —
-  /// the same rule, and the same reason, as `VehicleSpeedWatch`. This latches
-  /// on for the rest of the recording; one honest fix at cycling speed is proof
-  /// enough that a bicycle is involved.
-  bool _sawMeasuredCyclingSpeed = false;
+  /// the same rule, and the same reason, as `VehicleSpeedWatch`. Once it
+  /// reaches [AppConstants.noProgressMinCyclingFixes] the speed term stands
+  /// aside for the rest of the recording. One fix used to be enough, and one is
+  /// what a phone carried around a house supplies (L-117).
+  int _measuredCyclingFixes = 0;
+
+  bool get _sawMeasuredCyclingSpeed =>
+      _measuredCyclingFixes >= AppConstants.noProgressMinCyclingFixes;
 
   /// First accurate fix of the current recording, and the yardstick the
   /// deadline's displacement term is measured against.
@@ -705,7 +709,7 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
     // whether they ever say a bicycle is involved (T052, L-103).
     if (next.hasActiveTrip && previous?.hasActiveTrip != true) {
       _noProgressReference = now();
-      _sawMeasuredCyclingSpeed = false;
+      _measuredCyclingFixes = 0;
       _progressAnchor = null;
       AuditLog.emit(
         AuditEvent.noProgress,
@@ -722,11 +726,12 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
           () => <String, Object?>{
             'a': 'disarm',
             'cyc': _sawMeasuredCyclingSpeed,
+            'cfx': _measuredCyclingFixes,
           },
         );
       }
       _noProgressReference = null;
-      _sawMeasuredCyclingSpeed = false;
+      _measuredCyclingFixes = 0;
       _progressAnchor = null;
     }
 
@@ -963,7 +968,7 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
 
     if (rawLocation.hasReportedSpeed &&
         rawLocation.speedKmh >= AppConstants.cyclingSpeedMin) {
-      _sawMeasuredCyclingSpeed = true;
+      _measuredCyclingFixes++;
     }
     _progressAnchor ??= rawLocation;
   }
@@ -979,9 +984,11 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
   /// End a recording that has run [noProgressStopTimeout] with nothing saying a
   /// bicycle is involved (T052, L-103).
   ///
-  /// Two terms, and both are needed. **Speed**: no fix has ever reported a
-  /// measured cycling speed — the walks of 2026-09-09 never did, while every
-  /// genuine ride of the corpus eventually does. **Displacement**: the
+  /// Two terms, and both are needed. **Speed**: fewer than
+  /// [AppConstants.noProgressMinCyclingFixes] fixes have reported a measured
+  /// cycling speed — the walks of 2026-09-09 never did, a phone carried around
+  /// a house does once (L-117), and every genuine ride of the corpus
+  /// eventually does dozens of times. **Displacement**: the
   /// recording has not travelled [AppConstants.minTripNetDisplacementMeters]
   /// from where it began. Timing alone cannot carry this — one real commute
   /// went 423 s before its first measured cycling speed, because the iPhone
@@ -1018,6 +1025,7 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
           'el': elapsed.inSeconds,
           'net': net,
           'cyc': false,
+          'cfx': _measuredCyclingFixes,
         },
         critical: true,
       );
@@ -1033,6 +1041,7 @@ class TripDetectionCoordinator extends _$TripDetectionCoordinator {
         'lim': noProgressStopTimeout.inSeconds,
         'net': net,
         'cyc': false,
+        'cfx': _measuredCyclingFixes,
       },
       critical: true,
     );

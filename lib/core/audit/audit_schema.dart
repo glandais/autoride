@@ -106,6 +106,8 @@ abstract final class AuditSchema {
     'minTripLoop': AppConstants.minTripLoopDistanceMeters,
     // The no-progress deadline (T052, L-103), in seconds.
     'noProg': AppConstants.noProgressStopTimeout.inSeconds,
+    // Measured cycling-speed fixes it takes to stand the deadline aside (L-117).
+    'noProgFx': AppConstants.noProgressMinCyclingFixes,
     // Pre-trip buffer (L-076)
     'preBufS': AppConstants.preTripLocationBufferDuration.inSeconds,
     'preBufN': AppConstants.preTripLocationBufferMaxPoints,

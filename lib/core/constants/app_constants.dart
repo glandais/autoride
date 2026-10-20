@@ -722,6 +722,24 @@ class AppConstants {
   // arriving at all. This one asks whether they say anything.
   static const Duration noProgressStopTimeout = Duration(seconds: 420);
 
+  // How many measured cycling-speed fixes it takes for the deadline's speed
+  // term to stand aside for the rest of a recording (L-117).
+  //
+  // It was one, and one is what a phone being carried around a house supplies:
+  // on 2026-10-14 a single fix at 11.8 km/h (`sp` 3.27 m/s, `ac` 5.7 m, net
+  // displacement 9 m) latched the term in the fifth minute of a phantom, which
+  // then ran 41 min instead of 7; the next one ran 23 min on a single 12.5 km/h
+  // fix. Over three iPhone logs (2026-09-27 → 10-20, 220 recordings) **ten**
+  // phantoms carry exactly one such fix and one carries two; every real ride
+  // carries 73 or more. Where a ride's second one comes after 420 s, the
+  // displacement term answers instead: two rides had travelled 285 and 370 m
+  // by then. The third (2026-10-08, trip 599) had not, and is the cost: one
+  // fix at 8.03 km/h 23 s in, then **35 min at the same spot**, then 4 min and
+  // 1.1 km of riding. Under this rule its recording ends at 420 s as the
+  // phantom it then was, and the ride is left to a fresh start and its
+  // back-date.
+  static const int noProgressMinCyclingFixes = 2;
+
   // Database
   static const String databaseName = 'autoride.db';
   // v2 (L-068): `trips.status` (active/completed/discarded) for trip lifecycle
