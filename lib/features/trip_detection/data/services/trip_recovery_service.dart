@@ -3,7 +3,11 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 import '../../domain/models/location_data.dart';
 import '../../domain/models/trip.dart';
 import '../../../trip_history/data/repositories/trip_repository.dart';
+import '../../../../core/audit/audit_event.dart';
+import '../../../../core/audit/audit_log.dart';
+import '../../../../core/constants/app_constants.dart';
 import '../../../../core/utils/logger.dart';
+import 'vehicle_speed_watch.dart';
 
 part 'trip_recovery_service.g.dart';
 
@@ -59,7 +63,11 @@ class TripRecoveryReport {
 ///   stops, which is the safe direction: it keeps the trip above the validity
 ///   threshold rather than silently deleting a real ride;
 /// * anything still too short (or with no usable points) is deleted, route
-///   points included, via the `ON DELETE CASCADE` on `route_points.trip_id`.
+///   points included, via the `ON DELETE CASCADE` on `route_points.trip_id`;
+/// * the suspected-vehicle flag is re-read off the persisted points, and the
+///   ending is journalled like any other — `trip` (with `rec: true`) and, when
+///   flagged, `veh`. Until L-116 neither happened: a drive killed mid-recording
+///   reached History as an unbadged ride, and the log held only a `log` line.
 class TripRecoveryService {
   const TripRecoveryService(this._repository);
 
@@ -85,6 +93,7 @@ class TripRecoveryService {
       try {
         final points = await _repository.getRoutePoints(tripId);
         final recovered = rebuildFromRoutePoints(trip, points);
+        final vehicle = _vehicleEvidence(points);
 
         // The point-count arm cannot actually decide here — `rebuild` already
         // returned null for anything under two points — but this site applies
@@ -93,13 +102,21 @@ class TripRecoveryService {
         //
         // The net displacement is measured off the points themselves, ordered
         // by `rebuild`: first to last, straight line (L-095).
+        final netDisplacement = _netDisplacementMeters(points);
         final reason = recovered?.discardReason(
           points.length,
-          netDisplacementMeters: _netDisplacementMeters(points),
+          netDisplacementMeters: netDisplacement,
         );
         if (recovered == null || reason != null) {
           await _repository.deleteTrip(tripId);
           deleted.add(tripId);
+          _auditEnding(
+            recovered ?? trip,
+            discardReason: reason ?? 'pts',
+            points: points.length,
+            netDisplacement: netDisplacement,
+            vehicle: vehicle,
+          );
           _logger.info(
             'Deleted interrupted trip $tripId '
             '(${reason ?? 'unrebuildable'}): '
@@ -109,6 +126,13 @@ class TripRecoveryService {
         } else {
           await _repository.updateTrip(recovered);
           completed.add(recovered);
+          _auditEnding(
+            recovered,
+            discardReason: null,
+            points: points.length,
+            netDisplacement: netDisplacement,
+            vehicle: vehicle,
+          );
           _logger.info(
             'Recovered trip $tripId: ${recovered.distance.toStringAsFixed(0)} m '
             'over ${recovered.duration}s from ${points.length} point(s)',
@@ -130,6 +154,71 @@ class TripRecoveryService {
       deleted: deleted,
       failed: failed,
     );
+  }
+
+  /// Journal a recovered ending in the shape `TripRecorderService` gives a live
+  /// one, so a log reader finds every ending under `trip` (L-116). `rec` marks
+  /// it: the numbers come from the persisted points, not from the recorder's
+  /// running totals, and `vfx`/`vmf` count route points rather than fixes.
+  static void _auditEnding(
+    Trip trip, {
+    required String? discardReason,
+    required int points,
+    required double netDisplacement,
+    required VehicleSpeedWatch vehicle,
+  }) {
+    AuditLog.emit(
+      AuditEvent.trip,
+      () => <String, Object?>{
+        'a': discardReason != null ? 'discard' : 'stop',
+        'id': trip.id,
+        'dist': trip.distance,
+        'dur': trip.duration,
+        'pau': trip.pauseDuration,
+        'avg': trip.avgSpeed,
+        'max': trip.maxSpeed,
+        'n': points,
+        'why': discardReason,
+        'net': netDisplacement,
+        'vfx': vehicle.vehicleFixes,
+        'vmf': vehicle.measuredFixes,
+        'rec': true,
+      },
+      critical: true,
+    );
+
+    if (discardReason == null && trip.suspectedVehicle) {
+      AuditLog.emit(
+        AuditEvent.vehicle,
+        () => <String, Object?>{
+          'a': 'flag',
+          'id': trip.id,
+          'lim': AppConstants.vehicleSpeedKmh,
+          'n': vehicle.vehicleFixes,
+          'm': vehicle.measuredFixes,
+          'rec': true,
+        },
+        critical: true,
+      );
+    }
+  }
+
+  /// The speed evidence of a killed trip, read back off its persisted points.
+  ///
+  /// The live watch sees every fix, paused ones included; recovery has only
+  /// the points the recorder kept, which is fewer of the same fixes. Replayed
+  /// over the 2026-10-14 → 10-20 log, the kept points flag every drive the
+  /// live watch flagged (66 %, 80 % and 83 % of measured points against a 25 %
+  /// share) and the one drive a kill hid from it (trip 690: 141 of 547).
+  static VehicleSpeedWatch _vehicleEvidence(List<RoutePoint> points) {
+    final watch = VehicleSpeedWatch();
+    for (final point in points) {
+      // A point with no stored accuracy is no evidence; `toLocationData` would
+      // read it as a perfect 0 m.
+      if (point.accuracy == null) continue;
+      watch.add(point.toLocationData());
+    }
+    return watch;
   }
 
   /// Recompute a killed trip's metrics from its persisted [points].
@@ -195,6 +284,9 @@ class TripRecoveryService {
           ? (distanceMeters / durationSeconds) * 3.6
           : null,
       maxSpeed: maxSpeedKmh > 0 ? maxSpeedKmh : null,
+      // A flag, not a verdict (T053, L-106), and the same one the live ending
+      // sets (L-116).
+      suspectedVehicle: _vehicleEvidence(ordered).looksLikeVehicle,
       status: TripStatus.completed,
     );
   }

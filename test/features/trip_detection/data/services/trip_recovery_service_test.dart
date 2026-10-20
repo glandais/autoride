@@ -1,7 +1,12 @@
+import 'dart:convert';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
+import 'package:autoride/core/audit/audit_level.dart';
+import 'package:autoride/core/audit/audit_log.dart';
+import 'package:autoride/core/audit/audit_sink.dart';
 import 'package:autoride/core/constants/app_constants.dart';
 import 'package:autoride/features/trip_detection/data/services/trip_recovery_service.dart';
 import 'package:autoride/features/trip_detection/domain/models/activity_confidence.dart';
@@ -242,6 +247,67 @@ void main() {
     });
   });
 
+  group('TripRecoveryService - vehicle flag and journal (L-116)', () {
+    late _RecordingSink sink;
+
+    setUp(() {
+      sink = _RecordingSink();
+      AuditLog.install(sink, level: AuditLogLevel.normal);
+    });
+
+    tearDown(AuditLog.uninstall);
+
+    test('a drive killed mid-recording is recovered with its badge', () async {
+      // 2026-10-17, trip 690: a car journey the process died in. 15 m/s is
+      // 54 km/h, over `vehicleSpeedKmh` on every point.
+      final tripId = await insertActiveTrip();
+      await insertPoints(tripId, count: 10, speed: 15.0);
+
+      await recovery.recoverInterruptedTrips();
+
+      final recovered = (await repository.getTripById(tripId))!;
+      expect(recovered.status, TripStatus.completed);
+      expect(recovered.suspectedVehicle, isTrue);
+
+      final ending = sink.fieldsOf('trip').single;
+      expect(ending['a'], 'stop');
+      expect(ending['id'], tripId);
+      expect(ending['rec'], isTrue);
+      expect(ending['n'], 10);
+      expect(ending['vfx'], 10);
+      expect(ending['vmf'], 10);
+
+      final flag = sink.fieldsOf('veh').single;
+      expect(flag['a'], 'flag');
+      expect(flag['id'], tripId);
+    });
+
+    test('a ride at cycling speed is recovered without one', () async {
+      final tripId = await insertActiveTrip();
+      await insertPoints(tripId, count: 10);
+
+      await recovery.recoverInterruptedTrips();
+
+      final recovered = (await repository.getTripById(tripId))!;
+      expect(recovered.suspectedVehicle, isFalse);
+      expect(sink.fieldsOf('trip').single['a'], 'stop');
+      expect(sink.fieldsOf('veh'), isEmpty);
+    });
+
+    test('a deleted interrupted trip is journalled as a discard', () async {
+      final tripId = await insertActiveTrip();
+      await insertPoints(tripId, count: 1);
+
+      await recovery.recoverInterruptedTrips();
+
+      final ending = sink.fieldsOf('trip').single;
+      expect(ending['a'], 'discard');
+      expect(ending['id'], tripId);
+      expect(ending['why'], 'pts');
+      expect(ending['rec'], isTrue);
+    });
+  });
+
   group('TripRecoveryService.rebuildFromRoutePoints', () {
     Trip tripAt(DateTime startTime) => Trip(
       startTime: startTime,
@@ -420,4 +486,26 @@ void main() {
       expect(identical(again, report), isTrue);
     });
   });
+}
+
+/// Collects audit lines and decodes them on demand.
+class _RecordingSink implements AuditSink {
+  final List<String> lines = <String>[];
+
+  @override
+  void write(
+    String line, {
+    required int t,
+    required String type,
+    required int lvl,
+    required bool critical,
+    int? session,
+  }) => lines.add(line);
+
+  @override
+  Future<void> flush() async {}
+
+  Iterable<Map<String, dynamic>> fieldsOf(String type) => lines
+      .map((l) => jsonDecode(l) as Map<String, dynamic>)
+      .where((m) => m['e'] == type);
 }
