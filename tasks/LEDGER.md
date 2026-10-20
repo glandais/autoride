@@ -1669,3 +1669,87 @@ not yet written up.
 | ID | Dim | Where | Finding | Status | Evidence |
 |---|---|---|---|---|---|
 | L-115 | platform | `ios/Runner/AppDelegate.swift` → `AutoRideBackgroundSession.bootstrap` (T046) | **`bootstrap {lr:"location"}` — T046's only proof that a kill or a reboot was survived — could never be written. The reason was read from `launchOptions[.location]`, and UIKit passes `launchOptions = nil` to an app that supports scenes, which this one has since 2026-04-10** | **Fixed 2026-10-03** (this change), awaiting T046 run 0 and run 3 | Apple, `application(_:didFinishLaunchingWithOptions:)`: *"If the app supports scenes, this is `nil`."* (`UIApplication.LaunchOptionsKey.location` is moreover deprecated.) `UIApplicationSceneManifest` + `FlutterSceneDelegate` came in with `b8dbba4` (2026-04-10); T046 (`5e2ff58`, 2026-09-03) was written five months later against a key that was already dead. **The survival itself works** — re-arming reads `UserDefaults[armedKey]`, not `launchOptions` — and this log holds what is very probably its first observed success, mislabelled: the process went quiet at 01/10 19:39:51 (battery 10 %), and a launch header appears at **20:06:27 with `lr:"normal"`**, one second after WhereIWas journalled a **visit departure** (automotive/high) at 20:06:26, with `sess start`, a 2.6 m `coarse` delivery and `fgs start` in the same second and **no `app` foreground transition at all** until the user opened the app for the export on 03/10 16:26. A hand launch would have produced `resumed`/`paused`. The `else if launchedForLocation { stopMonitoring() }` branch was dead code for the same reason. **Fix**: the reason is decided when Dart asks for it, from the scenes — `user` if one is (or comes) in the foreground within 3 s, `background` otherwise — and the raw `st` (application state), `sc` (connected scenes) and `w` (ms waited) are journalled beside it so the first device run checks the verdict instead of trusting it. `background` is not `location`: `UIBackgroundModes` also declares `fetch`, so a background refresh reads the same; the `visit`/`coarse` lines around it say which. On a log from ≤ 1.0.0+18, `lr:"normal"` means *unknown*; read a relaunch off the absence of foreground transitions (skill §5). |
+
+## 15. Field findings — 2026-10-14 → 10-20, six days on 1.0.0+20
+
+**Source**: one verbose audit log, `autoride-audit-20261020-1434.ndjson.gz`, iPhone 14,3 / iOS 27.0.1,
+**1.0.0+20** — the first build carrying T054 §3.1 (the duty cycle, schema 4) and T055 (the `act`
+journal) — 1 132 998 lines covering **14/10 14:37 → 20/10 14:34** local (CEST). Times local. The
+`WhereIWas` export of the same day was not needed: the log now carries CoreMotion's verdicts itself
+(25 800 `act` lines from 15/10 10:06, when the Motion & Fitness permission was granted).
+
+| | |
+|---|---|
+| Trips started | **30** (673 → 702) |
+| Real rides, kept | **7** — 680, 681, 683, 684, 692, 694, 695 |
+| Drives, kept | **4** — 689, 696, 697 badged; **690 not** (L-116) |
+| Discarded | **19** — 8 `still`, 9 `pts`, 2 `dur` — **3.2 a day**, 3 h 08 of recording |
+| Rides missed | none found: no `bike` episode outside a recording looks like a ride |
+
+### What held
+
+**T054 §3.1 holds on the road.** 3.2 phantoms a day against 12.3 on 1.0.0+19 (§1 of T055) and the
+6.0 the replay predicted (T054 §3.1). Every real ride started **24-117 s** after `idle→detecting`,
+and where a fix already existed the back-date paid the latency back (684 −100 s, 694, 695 −116 s
+and 575 m). The `conf` a start carries is the last second's `c`, not the decision: 674 opened at
+0.171 and 701 at **0** on `n/nw` 22/120. Cosmetic, but a reader must not take it for the vote.
+
+**T055 step 2 passes on iOS, and the separation repeats.** The settings row prompted once
+(`act {a:"start", st:"notDetermined"}` 10:06:36, `granted` 10:06:47), every later session start
+reads `granted`, no `fail`. Over the eleven kept recordings, the OS classifier separates again
+without an exception:
+
+| CoreMotion over the recording | Trips |
+|---|---|
+| `bike` 11-33 % of the time, `car` 0 | the 7 rides (683 and later; 680/681 predate the grant) |
+| `car` 37-66 %, `bike` 0 | 689, 690, 696, 697 |
+
+Two limits for step 3. **Latency**: the first `bike` comes +11 s to +230 s into a ride. **False
+`bike` at rest**: 15/10 13:17:18-25, three `bike`/`high` updates at a standstill (`fix` `sp` 1.65,
+`dto` five seconds later) — a confirmation rule cannot rest on one `upd`.
+
+**L-115's fix holds, twice — the first positive proof of T046 in a log.**
+
+| Process went quiet | Came back | How |
+|---|---|---|
+| 17/10 12:07:02, trip 690 paused (`so` 290) | 12:16:28 | `bootstrap {lr:"background", st:"background", sc:1}`, a visit departure 12:16:45 |
+| 18/10 01:06:04, gate closed after trip 694 | 02:29:25 | `bootstrap {lr:"background"}`, a visit departure — **and the relaunch caught a real ride**: 695, back-dated 116 s and 575 m |
+
+No `app detached` before either: both are terminations, not suspensions. Coverage lost: 9 min and
+83 min. Neither cause is in the log.
+
+### High
+
+| ID | Dim | Where | Finding | Status | Evidence |
+|---|---|---|---|---|---|
+| L-116 | recording | `trip_recovery_service.dart` `recoverInterruptedTrips` / `rebuildFromRoutePoints` | **A trip finalized by recovery after a process death never got the suspected-vehicle flag and left no `trip` line in the journal. A drive killed mid-recording reached History as an unbadged ride, visible in the log only as a `log` string** | **Fixed 2026-10-20** (this change) | Trip 690 (17/10 10:44): CoreMotion `car` 37 % / `walk` 28 %, measured speeds to 59 km/h, process dead at 12:07 while paused. The relaunch at 12:16:28 logged `Recovered trip 690: 10709 m over 3813s from 565 point(s)` — and nothing else: no `trip {a:"stop"}`, no `veh`. Recovery applied `discardReason` and never read `VehicleSpeedWatch`. Replaying the watch over the **kept route points** (`rp {a:"keep"}`) reproduces the live flag on all three badged drives — 134/202, 106/132, 124/150 measured points ≥ 35 km/h — and flags 690 at **141/547 = 25.8 %** against `k.vehShare` 0.25. **Fix**: recovery reruns the watch over the persisted points (points with no stored accuracy are skipped rather than read as 0 m) and sets `suspectedVehicle`; every recovered ending is journalled like a live one, `trip` + `veh`, with `rec: true` because its figures come from points, not from the recorder's totals. Deletions are journalled as `discard` with their reason (`pts` when nothing could be rebuilt). |
+| L-117 | detection | `trip_detection_coordinator.dart` `_feedNoProgressDeadline` (T052) | **One measured cycling-speed fix stood the no-progress deadline aside for the rest of a recording, and a phone carried around a house supplies one. Two phantoms ran 41 and 23 minutes instead of 7** | **Fixed 2026-10-20** (this change) | Trip 676 (14/10 15:23): a fix at `sp` 3.267 m/s = **11.8 km/h**, `ac` 5.7 m, at +305 s; net displacement at the end **8.9 m**, 31 points jittering inside 20 m; `prog` never fired, `prog {a:"disarm", cyc:true}` at the ending, **2 499 s**. Trip 677: same shape, one fix at 12.5 km/h at +2 s, 1 360 s, net 33 m. Together most of the afternoon's 10 %/h battery curve. Counted over **three iPhone logs** (§14's, T055's and this one, 220 recordings): **ten phantoms carry exactly one measured fix ≥ `k.cycMin`, one carries two, every real ride carries 73 or more**. **Fix**: the speed term needs `AppConstants.noProgressMinCyclingFixes` = **2** such fixes (`k.noProgFx`); `prog` lines carry `cfx`, the count. **Cost, measured on the same corpus**: three rides get their second fix after 420 s. Two had travelled 285 and 370 m by then, so the displacement term disarms the deadline as before. The third — 2026-10-08, trip 599 — is not a ride at 420 s: one 8.03 km/h fix at +23 s, then **35 min within 46 m**, then 4 min and 1.1 km of riding. It now ends at 420 s as the phantom it then was, and the ride is left to a fresh start and its back-date. |
+
+### Medium
+
+| ID | Dim | Where | Finding | Status | Evidence |
+|---|---|---|---|---|---|
+| L-118 | battery | `trip_detection_coordinator.dart` — the motion-gated GPS outside a recording | **The GPS gate is open 16.8 h of 144 outside any recording — twice the time spent recording — in 832 motion wake-ups** | **Open** | 832 `gate open` → `close {why:"inactivityTimeout"}` spans that no trip covers, **139 a day**, median 46 s, p90 134 s, max 20 min; 4 305 fixes delivered outside recordings. Recording time over the same six days: 8.2 h. Battery between charges: 1.7-4.2 %/h on ordinary days — but the file is verbose, so that is an upper bound, not T041 item 4. This is the half of the drain the duty cycle did not touch: it gates the *start*, not the *gate*. |
+
+### Low
+
+| ID | Dim | Where | Finding | Status | Evidence |
+|---|---|---|---|---|---|
+| L-119 | diagnostics | `trip {a:"start"}.conf` / `Trip.confidenceScore` under schema 4 | **A trip's confidence is the last second's `c`, which no longer decides anything: 674 started at 0.171, 678 at 0.488, 701 at 0** | **Open** (note) | All three are the first second the duty window could fire after a discard emptied it (`k.dutyS` 120 s after the ending), on `n/nw` 22/120. The duty ratio is what voted; the row stores something else. |
+
+### Remediation (2026-10-20) — L-116 and L-117
+
+- `TripRecoveryService`: `_vehicleEvidence` replays `VehicleSpeedWatch` over the persisted
+  points; `rebuildFromRoutePoints` sets `suspectedVehicle`; `_auditEnding` writes the `trip` line
+  (stop or discard, `rec: true`) and, on a flagged kept trip, `veh`.
+- `AppConstants.noProgressMinCyclingFixes` = 2, in the header as `k.noProgFx`; the coordinator
+  counts measured cycling fixes instead of latching on the first; `prog` lines carry `cfx`.
+- `autoride-audit-log` skill: `rec` on `trip`, `cfx` on `prog`, and how to read both on an older
+  log.
+
+Gates: `./check.sh` green — analyze clean, **835 tests** (+4: a drive recovered with its badge, a
+ride recovered without one, a recovered deletion journalled, a single measured fix no longer
+disarming the deadline). One existing GPS-loss test pushed one fix to keep the deadline out of its
+way; it now pushes two. Device verification outstanding: the next kill mid-drive should produce a
+`trip {rec:true}` and a `veh`, and the next pocketed afternoon should show `prog fire` with
+`cfx:1`.
