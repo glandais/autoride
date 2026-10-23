@@ -14,7 +14,7 @@ void main() {
         config.locationUpdateInterval,
         equals(const Duration(seconds: 30)),
       );
-      expect(config.locationAccuracy, equals(LocationAccuracy.medium));
+      expect(config.locationAccuracy, equals(LocationAccuracy.high));
     });
 
     test('critical config should have lowest power consumption', () {
@@ -26,7 +26,24 @@ void main() {
         config.locationUpdateInterval,
         equals(const Duration(seconds: 90)),
       );
-      expect(config.locationAccuracy, equals(LocationAccuracy.low));
+      expect(config.locationAccuracy, equals(LocationAccuracy.high));
+    });
+
+    test('every mode asks for GNSS accuracy (L-120)', () {
+      // `medium` and `low` are Android's balanced / low-power priorities:
+      // Wi-Fi and cell fixes at 100 m and worse, which record no ride.
+      for (final config in [
+        PowerModeConfig.normal,
+        PowerModeConfig.medium,
+        PowerModeConfig.low,
+        PowerModeConfig.critical,
+      ]) {
+        expect(
+          config.locationAccuracy,
+          equals(LocationAccuracy.high),
+          reason: config.name,
+        );
+      }
     });
 
     test('configs should be comparable', () {

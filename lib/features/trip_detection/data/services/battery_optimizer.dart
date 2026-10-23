@@ -37,6 +37,14 @@ class PowerModeConfig {
   /// Which of the four modes this is, for logs and the audit journal.
   final String name;
 
+  /// Always [LocationAccuracy.high], in every mode (L-120).
+  ///
+  /// On Android, geolocator maps `medium` to `PRIORITY_BALANCED_POWER_ACCURACY`
+  /// and `low` to `PRIORITY_LOW_POWER`: neither turns the GNSS receiver on, so
+  /// the fused provider serves Wi-Fi and cell fixes at 100-1 100 m, which the
+  /// recorder rejects (`maxLocationAccuracyMeters`) — a ride records nothing.
+  /// The power modes save battery through the update interval, the distance
+  /// filter and the sampling rate; the motion gate decides whether GPS runs.
   final LocationAccuracy locationAccuracy;
   final int sensorSamplingRate; // Hz
   final Duration mlInferenceInterval;
@@ -55,7 +63,7 @@ class PowerModeConfig {
   /// Normal power mode (battery >50%)
   static const normal = PowerModeConfig(
     name: 'normal',
-    locationAccuracy: LocationAccuracy.medium,
+    locationAccuracy: LocationAccuracy.high,
     sensorSamplingRate: AppConstants.sensorSamplingRateNormal,
     mlInferenceInterval: Duration(seconds: 10),
     locationUpdateInterval: AppConstants.locationUpdateNormal,
@@ -65,7 +73,7 @@ class PowerModeConfig {
   /// Medium power mode (battery 20-50%)
   static const medium = PowerModeConfig(
     name: 'medium',
-    locationAccuracy: LocationAccuracy.medium,
+    locationAccuracy: LocationAccuracy.high,
     sensorSamplingRate: AppConstants.sensorSamplingRateMedium,
     mlInferenceInterval: Duration(seconds: 12),
     locationUpdateInterval: AppConstants.locationUpdateMedium,
@@ -75,7 +83,7 @@ class PowerModeConfig {
   /// Low power mode (battery 10-20%)
   static const low = PowerModeConfig(
     name: 'low',
-    locationAccuracy: LocationAccuracy.low,
+    locationAccuracy: LocationAccuracy.high,
     sensorSamplingRate: AppConstants.sensorSamplingRateLow,
     mlInferenceInterval: Duration(seconds: 15),
     locationUpdateInterval: AppConstants.locationUpdateLow,
@@ -85,7 +93,7 @@ class PowerModeConfig {
   /// Critical power mode (battery <10%)
   static const critical = PowerModeConfig(
     name: 'critical',
-    locationAccuracy: LocationAccuracy.low,
+    locationAccuracy: LocationAccuracy.high,
     sensorSamplingRate: AppConstants.sensorSamplingRateCritical,
     mlInferenceInterval: Duration(seconds: 20),
     locationUpdateInterval: AppConstants.locationUpdateCritical,
