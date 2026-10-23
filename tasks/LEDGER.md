@@ -1753,3 +1753,41 @@ disarming the deadline). One existing GPS-loss test pushed one fix to keep the d
 way; it now pushes two. Device verification outstanding: the next kill mid-drive should produce a
 `trip {rec:true}` and a `veh`, and the next pocketed afternoon should show `prog fire` with
 `cfx:1`.
+
+## 16. Field findings — 2026-10-20 → 10-22, two phones on 1.0.0+21
+
+**Source**: two verbose audit logs exported on 22/10 — `autoride-audit-20261022-1537.ndjson.gz`
+(iPhone 14,3 / iOS 27.0.1, 1 131 733 lines) and `autoride-audit-20261022-1538.ndjson.gz` (Pixel 6a
+/ Android 17, 1 136 864 lines), both **1.0.0+21**. The Pixel was installed at 21/10 08:19 and
+carried in a pocket alongside the iPhone until 18:05, through both commutes. Times local (CEST).
+
+| | iPhone | Pixel |
+|---|---|---|
+| Trips started (20/10 14:34 →) | 19 (703 → 721) | 10 (5 → 14), all on 21/10 |
+| Kept | 6 — 704, 715, 720, 721 rides; 717, 719 badged | **0** |
+| Discarded | 13 — `still` / `pts` / `dur`, every one by `prog` or the floors | **10, all `pts`** |
+| Morning commute 08:39 → 09:13 | 704, 7.2 km | 5-8: four starts, four discards, 0 m |
+| Evening commute 17:29 → 18:05 | 715, 8.2 km | 11-14: four starts, four discards, 0 m |
+
+### What held
+
+Detection and survival on Android. `fgs start` at 08:19, no heartbeat gap all day, no `err`. Starts
+within seconds of the iPhone's (08:30:27 vs 08:30:01, 17:29:49 vs 17:29:41). Play services Activity
+Recognition (T055, first Android run with the permission granted) reads `bike`/`high` across both
+commutes — 08:38:46 → 08:54, 17:33 → 17:55 — and `foot` on the walk to the bike before each.
+L-117 holds on the iPhone: nine pocketed phantoms on 21/10 10:07 → 15:09, none kept.
+
+### High
+
+| ID | Dim | Where | Finding | Status | Evidence |
+|---|---|---|---|---|---|
+| L-120 | platform · recording | `battery_optimizer.dart` `PowerModeConfig` → `adaptive_location_settings.dart` `AndroidSettings` | **No power mode ever asked Android for GNSS. `normal`/`medium` request `LocationAccuracy.medium`, which geolocator maps to `PRIORITY_BALANCED_POWER_ACCURACY`; `low`/`critical` request `low`, i.e. `PRIORITY_LOW_POWER`. The fused provider served Wi-Fi/cell fixes only, the recorder rejected every one, and both commutes recorded nothing** | **Fixed 2026-10-22** (this change) | `pwr {la:"medium"}` throughout. During the two rides the Pixel received fixes every ~30 s at **100-1 100 m** (the 100/200/300… cell ladder), `sp` 0 on all of them, none ≤ `k.rpAcc` 50 m → `n` 0, `net` 0, `prog fire` at 420 s with `cfx` 0, a new start 120 s later: four starts per commute. Mapping read in `geolocator_android` 5.1.1 `FusedLocationClient.java:142`. The good Pixel fixes of §7 (2026-09-03, 14-43 m on the same config) are consistent with balanced priority piggy-backing on another app's GNSS request, which is not something to rely on. iOS was unaffected in practice (`medium` = hundred-metre accuracy, but `fitness` activity gets GNSS fixes; 364 measured cycling fixes on 704), which is why this survived since `529db42` (2026-08-31). **Fix**: every mode requests `LocationAccuracy.high`; battery is saved by the interval, distance filter and sampling rate, and by the motion gate deciding whether GPS runs at all (L-118 is that cost). |
+
+### Remediation (2026-10-22) — L-120
+
+- `PowerModeConfig.{normal,medium,low,critical}.locationAccuracy` = `LocationAccuracy.high`, with
+  the reason on the field; a test asserts it for every mode.
+
+Device verification outstanding: the next pocketed commute on the Pixel should show `pwr {la:"high"}`,
+fixes at ≤ 50 m during the ride, and a kept trip. Watch the Pixel's drain against §15's L-118: the
+gate's open time now costs GNSS on Android too.
