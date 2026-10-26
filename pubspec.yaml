@@ -20,7 +20,7 @@ dependencies:
   flutter_map: ^8.3.2            # Map rendering with OpenStreetMap
   flutter_riverpod: ^3.4.3       # State management with code generation
   freezed_annotation: ^3.0.0     # Immutable models
-  geolocator: ^14.1.1            # GPS location tracking
+  geolocator: ^14.1.2            # GPS location tracking
   json_annotation: ^4.12.0       # Annotations for JSON serialization codegen
   latlong2: ^0.10.1               # Coordinate handling for flutter_map
   package_info_plus: ^10.2.2     # App version/build number for the Settings About row
@@ -31,7 +31,7 @@ dependencies:
   sensors_plus: ^7.1.1           # Accelerometer & gyroscope
   share_plus: ^13.3.1            # Share/save the exported .fit file via the OS sheet
   shared_preferences: ^2.5.6     # User settings storage
-  sqflite: ^2.4.4                # SQLite database for trips
+  sqflite: ^2.4.5                # SQLite database for trips
   url_launcher: ^6.3.3         # Open the hosted privacy policy / terms in the browser
 
 dev_dependencies:
@@ -48,8 +48,8 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
 
-  freezed: ^4.0.2                # Freezed code generation
-  json_serializable: ^6.14.1     # JSON serialization code generation
+  freezed: ^4.0.3                # Freezed code generation
+  json_serializable: ^6.15.2     # JSON serialization code generation
 
   # Testing seams for the audit-log export: the temporary directory is faked
   # (path_provider has no test double of its own) and faking a platform
@@ -66,7 +66,7 @@ dev_dependencies:
   riverpod_generator: ^4.0.8     # Riverpod code generation
 
   # Testing
-  sqflite_common_ffi: ^2.4.4     # SQLite testing on desktop platforms
+  sqflite_common_ffi: ^2.4.5     # SQLite testing on desktop platforms
 
 flutter:
   uses-material-design: true
