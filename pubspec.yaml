@@ -36,7 +36,7 @@ dependencies:
 
 dev_dependencies:
   # Code Generation
-  build_runner: ^2.16.2           # Code generation tool
+  build_runner: ^2.17.1           # Code generation tool
 
   # Assets
   flutter_launcher_icons: ^0.14.4  # App icon generation
